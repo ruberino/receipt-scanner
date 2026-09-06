@@ -1,14 +1,23 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { patchReceiptSchema } from '../../shared/schemas.ts';
+import type { AppDatabase } from '../db/client.ts';
 import { isUniqueViolation } from '../db/client.ts';
 import { products, receiptImages, receiptLines, receipts } from '../db/schema.ts';
+import { findPossibleDuplicate } from '../domain/extraction.ts';
 import { matchLines, type MatchLinesWarning } from '../domain/matching.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
 import { normaliseImage } from '../lib/images.ts';
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  before: z.coerce.number().int().positive().optional(),
+});
 const MATCHING_WARNINGS: readonly MatchLinesWarning[] = ['UNMATCHED_LINES', 'MATCHING_FAILED'];
+const LINE_SUM_KINDS: readonly string[] = ['item', 'discount', 'deposit'];
+const TOTAL_MATCH_TOLERANCE_ORE = 100;
 
 function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: number) {
   return {
@@ -24,6 +33,35 @@ function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: numb
     reviewedAt: receipt.reviewedAt,
     createdAt: receipt.createdAt,
   };
+}
+
+/** One `count(*) ... group by receipt_id` for however many receipts are asked about, instead of a query per receipt. */
+function loadLineCounts(db: AppDatabase, receiptIds: number[]): Map<number, number> {
+  if (receiptIds.length === 0) {
+    return new Map();
+  }
+  const rows = db
+    .select({ receiptId: receiptLines.receiptId, count: sql<number>`count(*)` })
+    .from(receiptLines)
+    .where(inArray(receiptLines.receiptId, receiptIds))
+    .groupBy(receiptLines.receiptId)
+    .all();
+  return new Map(rows.map((row) => [row.receiptId, row.count]));
+}
+
+function loadLineCount(db: AppDatabase, receiptId: number): number {
+  return loadLineCounts(db, [receiptId]).get(receiptId) ?? 0;
+}
+
+/** Sum of item/discount/deposit line totals for the total-mismatch check; `other` lines are excluded. */
+function computeLineSum(db: AppDatabase, receiptId: number): number {
+  return db
+    .select({ kind: receiptLines.kind, totalOre: receiptLines.totalOre })
+    .from(receiptLines)
+    .where(eq(receiptLines.receiptId, receiptId))
+    .all()
+    .filter((line) => LINE_SUM_KINDS.includes(line.kind))
+    .reduce((sum, line) => sum + line.totalOre, 0);
 }
 
 function buildReceiptDetail(app: FastifyInstance, receipt: typeof receipts.$inferSelect) {
@@ -122,6 +160,24 @@ export default async function receiptsRoutes(app: FastifyInstance): Promise<void
     reply.status(202).send({ id: receipt.id });
   });
 
+  app.get('/api/receipts', async (request) => {
+    const query = listQuerySchema.parse(request.query);
+
+    const rows = app.db
+      .select()
+      .from(receipts)
+      .where(query.before !== undefined ? lt(receipts.id, query.before) : undefined)
+      .orderBy(desc(receipts.id))
+      .limit(query.limit)
+      .all();
+
+    const lineCounts = loadLineCounts(
+      app.db,
+      rows.map((row) => row.id),
+    );
+    return rows.map((row) => toReceiptSummary(row, lineCounts.get(row.id) ?? 0));
+  });
+
   app.get('/api/receipts/:id', async (request) => {
     const params = idParamsSchema.parse(request.params);
 
@@ -131,6 +187,77 @@ export default async function receiptsRoutes(app: FastifyInstance): Promise<void
     }
 
     return buildReceiptDetail(app, receipt);
+  });
+
+  app.patch('/api/receipts/:id', async (request) => {
+    const params = idParamsSchema.parse(request.params);
+    const body = patchReceiptSchema.parse(request.body);
+
+    const receipt = app.db.select().from(receipts).where(eq(receipts.id, params.id)).get();
+    if (!receipt) {
+      throw new NotFoundError();
+    }
+    if (receipt.status !== 'done') {
+      throw new ConflictError('Kvitteringen er ikke ferdig behandlet');
+    }
+
+    const nextStoreName = 'storeName' in body ? (body.storeName ?? null) : receipt.storeName;
+    const nextPurchasedAt = body.purchasedAt ?? receipt.purchasedAt;
+    const nextTotalOre = body.totalOre ?? receipt.totalOre;
+    const recomputeChecks =
+      body.storeName !== undefined || body.purchasedAt !== undefined || body.totalOre !== undefined;
+
+    let warnings = JSON.parse(receipt.warningsJson) as string[];
+    let possibleDuplicateOf = receipt.possibleDuplicateOf;
+
+    if (recomputeChecks) {
+      warnings = warnings.filter((w) => w !== 'TOTAL_MISMATCH' && w !== 'POSSIBLE_DUPLICATE');
+
+      const lineSum = computeLineSum(app.db, params.id);
+      if (nextTotalOre === null || Math.abs(lineSum - nextTotalOre) > TOTAL_MATCH_TOLERANCE_ORE) {
+        warnings.push('TOTAL_MISMATCH');
+      }
+
+      possibleDuplicateOf =
+        nextPurchasedAt !== null && nextTotalOre !== null
+          ? findPossibleDuplicate(app.db, params.id, nextStoreName, nextPurchasedAt, nextTotalOre)
+          : null;
+      if (possibleDuplicateOf !== null) {
+        warnings.push('POSSIBLE_DUPLICATE');
+      }
+    }
+
+    const now = new Date().toISOString();
+    const updated = app.db
+      .update(receipts)
+      .set({
+        storeName: nextStoreName,
+        purchasedAt: nextPurchasedAt,
+        totalOre: nextTotalOre,
+        warningsJson: JSON.stringify(warnings),
+        possibleDuplicateOf,
+        reviewedAt: body.reviewed === true ? now : receipt.reviewedAt,
+        updatedAt: now,
+      })
+      .where(eq(receipts.id, params.id))
+      .returning()
+      .get();
+
+    return buildReceiptDetail(app, updated);
+  });
+
+  app.delete('/api/receipts/:id', async (request, reply) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const receipt = app.db.select().from(receipts).where(eq(receipts.id, params.id)).get();
+    if (!receipt) {
+      throw new NotFoundError();
+    }
+
+    // receipt_images and receipt_lines cascade via their foreign keys (architecture.md section 6).
+    app.db.delete(receipts).where(eq(receipts.id, params.id)).run();
+
+    reply.status(204).send();
   });
 
   app.post('/api/receipts/:id/retry', async (request, reply) => {
@@ -154,13 +281,7 @@ export default async function receiptsRoutes(app: FastifyInstance): Promise<void
 
     app.receiptProcessor.enqueue(params.id);
 
-    const lineCount = app.db
-      .select()
-      .from(receiptLines)
-      .where(eq(receiptLines.receiptId, params.id))
-      .all().length;
-
-    reply.status(202).send(toReceiptSummary(updated, lineCount));
+    reply.status(202).send(toReceiptSummary(updated, loadLineCount(app.db, params.id)));
   });
 
   app.post('/api/receipts/:id/rematch', async (request) => {

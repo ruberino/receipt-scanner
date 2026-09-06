@@ -23,6 +23,7 @@ import { KimiClient } from './llm/KimiClient.ts';
 import type { LlmClient } from './llm/LlmClient.ts';
 import authPlugin from './plugins/auth.ts';
 import healthRoutes from './routes/health.ts';
+import receiptLinesRoutes from './routes/receiptLines.ts';
 import receiptsRoutes from './routes/receipts.ts';
 
 declare module 'fastify' {
@@ -171,6 +172,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(healthRoutes, { version: readVersion() });
   app.register(authPlugin, { config });
   app.register(receiptsRoutes);
+  app.register(receiptLinesRoutes);
 
   return app;
 }
