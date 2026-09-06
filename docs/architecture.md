@@ -429,7 +429,7 @@ A long receipt split over two photos is not detected; the halves have different 
    Hit → set `product_id`, `match_source = 'alias'`.
 2. Collect distinct unmatched keys.
    If none, matching is complete.
-3. Otherwise one Kimi call with the `matchProducts` prompt: input is the list of unmatched receipt texts and the list of known product names (non-suppressed, ordered by purchase count descending, at most 1 000), plus `PRODUCT_CATEGORIES`.
+3. Otherwise the distinct unmatched texts are split into batches of at most 20, one Kimi call per batch with the `matchProducts` prompt: input is that batch's texts and the list of known product names (non-suppressed, ordered by purchase count descending, at most 1 000), plus `PRODUCT_CATEGORIES`; `maxTokens` is 150 per text in the batch plus 200.
    Output, validated with zod:
 
 ```json
@@ -448,7 +448,7 @@ A long receipt split over two photos is not detected; the halves have different 
    - Insert the alias `key → product_id` with `source = 'llm'`.
    - Set `match_source = 'llm'` on the lines.
 5. Texts the LLM did not return keep `product_id = null`; add `UNMATCHED_LINES`.
-6. If the matching call fails, the receipt still becomes `done` with `MATCHING_FAILED`; `POST /api/receipts/:id/rematch` re-runs steps 1–5 for lines with `product_id IS NULL`.
+6. An answer cut off at the token budget (`finishReason: 'length'`) counts as a failed batch, the same as a call that errors outright: its texts stay unmatched, the other batches' matches are kept, and the receipt still becomes `done` with `MATCHING_FAILED`; `POST /api/receipts/:id/rematch` re-runs steps 1–5 for lines with `product_id IS NULL`.
 
 Naming guidance in the prompt: Norwegian, singular, generic but specific enough to be useful on a shopping list ("Lettmelk 1 l", "Banan", "Grovbrød", "Kaffe filtermalt 250 g"), brand only when it distinguishes what to buy.
 
@@ -653,7 +653,7 @@ The database, including images, is replicated to the household S3 bucket only.
 | --- | --- | --- |
 | Pure domain | Vitest | `normalizeText`, `parseNok`, `applyExtraction` (warnings, øre conversion), `computeSuggestions` (every rule with fixtures and the worked example), dates and ISO weeks. |
 | LLM parsing | Vitest | `parseExtraction` and `parseMatches` against fixture responses, including malformed JSON, comma decimals, missing fields, truncated output. |
-| Matching | Vitest + in-memory DB + `FakeLlmClient` | Alias hit path, LLM path creating products and aliases, user correction overriding an alias, merge. |
+| Matching | Vitest + in-memory DB + `FakeLlmClient` | Alias hit path, LLM path creating products and aliases, user correction overriding an alias, merge, batching (batch sizes, `maxTokens`, a `finishReason: 'length'` batch failing without losing the others). |
 | Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, scan. |
 | API | Vitest + `app.inject()` | Every endpoint, including multipart upload with a fixture image, duplicate detection, auth. |
 | Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` check-off, ScanPage multi-upload, `ReceiptsPage` rendering and pagination. |

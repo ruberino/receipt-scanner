@@ -669,3 +669,19 @@ Steps:
 Acceptance criteria:
 
 - Matching the last unmatched line removes `UNMATCHED_LINES` from `GET /api/receipts/:id`; matching one of two leaves it.
+
+---
+
+## T26 — Product matching in batches
+
+Goal: a long receipt never loses all its matches to one truncated answer.
+
+Files: `src/server/domain/matching.ts`, `src/server/llm/matchProducts.ts`, `src/server/llm/KimiClient.ts` if the finish reason is not yet surfaced to callers, tests.
+
+Steps: see `docs/reviews/T26-plan.md`.
+
+Acceptance criteria:
+
+- 45 distinct unmatched texts produce three LLM calls of 20, 20 and 5 texts with `maxTokens` 3200, 3200 and 950.
+- When the second batch answers with `finishReason: 'length'`, the matches from batches one and three are saved, the receipt gets `MATCHING_FAILED`, and the error log carries `finishReason` and `batchSize`.
+- A receipt with 5 unmatched texts behaves exactly as before.
