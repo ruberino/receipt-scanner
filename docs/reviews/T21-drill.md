@@ -1,6 +1,6 @@
 # Restore drill — Kvitteringer
 
-Date: 2026-09-06 (host local time; container logs are UTC).
+Date: 2026-09-07 (host local time; container logs are UTC, stamped 22:31 on 2026-09-06 = 00:31 in Oslo).
 Run against a local MinIO via `docker-compose.drill.yml`, not the real bucket.
 No receipt was scanned: per the plan, the drill proves replication and restore, not extraction, so `MOONSHOT_API_KEY` is a dummy value and both receipts stay at status `uploaded` (T24), which already has its row and image bytes without a scan.
 
