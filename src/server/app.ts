@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
+import fastifyMultipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
@@ -21,6 +22,7 @@ import { KimiClient } from './llm/KimiClient.ts';
 import type { LlmClient } from './llm/LlmClient.ts';
 import authPlugin from './plugins/auth.ts';
 import healthRoutes from './routes/health.ts';
+import receiptsRoutes from './routes/receipts.ts';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -150,8 +152,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     });
   app.decorate('llm', llmClient);
 
+  app.register(fastifyMultipart, { limits: { fileSize: config.maxUploadBytes, files: 1 } });
+
   app.register(healthRoutes, { version: readVersion() });
   app.register(authPlugin, { config });
+  app.register(receiptsRoutes);
 
   return app;
 }

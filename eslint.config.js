@@ -13,6 +13,7 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     rules: {
       'no-console': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
   {
@@ -34,6 +35,24 @@ export default tseslint.config(
               group: ['openai/*'],
               message:
                 'Only src/server/llm/KimiClient.ts imports the openai SDK (ADR-0002); depend on the LlmClient interface instead.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/server/lib/images.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'sharp',
+              message:
+                'Only src/server/lib/images.ts imports sharp; call normaliseImage() instead.',
             },
           ],
         },
