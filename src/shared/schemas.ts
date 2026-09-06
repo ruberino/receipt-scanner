@@ -199,3 +199,14 @@ export const patchShoppingListItemSchema = z
   .strict();
 
 export type PatchShoppingListItemRequest = z.infer<typeof patchShoppingListItemSchema>;
+
+export const suggestionSchema = z.object({
+  productId: z.number().int(),
+  name: z.string(),
+  category: z.string().nullable(),
+  reason: z.string(),
+  quantityText: z.string(),
+  score: z.number(),
+});
+
+export type Suggestion = z.infer<typeof suggestionSchema>;

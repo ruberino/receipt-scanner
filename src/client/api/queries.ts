@@ -6,6 +6,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
+  CreateShoppingListItemRequest,
   PatchProductRequest,
   PatchReceiptLineRequest,
   PatchReceiptRequest,
@@ -15,8 +16,11 @@ import type {
   ReceiptLine,
   ReceiptStatus,
   ReceiptSummary,
+  ShoppingList,
+  ShoppingListItem,
+  Suggestion,
 } from '../../shared/schemas.ts';
-import { fetchJson, uploadFile } from './client.ts';
+import { ApiRequestError, fetchJson, uploadFile } from './client.ts';
 
 const POLLING_STATUSES = new Set<ReceiptStatus>(['pending', 'processing']);
 const POLLING_INTERVAL_MS = 2000;
@@ -257,6 +261,105 @@ export function useDeleteProductAlias() {
       fetchJson<void>(`/api/product-aliases/${aliasId}`, { method: 'DELETE' }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useSuggestions() {
+  return useQuery({
+    queryKey: ['suggestions'],
+    queryFn: () => fetchJson<Suggestion[]>('/api/suggestions'),
+  });
+}
+
+const CURRENT_SHOPPING_LIST_KEY = ['shopping-list', 'current'];
+
+/** `null` means "no open list" (the server answers 404), a real success state, not an error. */
+export function useCurrentShoppingList() {
+  return useQuery({
+    queryKey: CURRENT_SHOPPING_LIST_KEY,
+    queryFn: async () => {
+      try {
+        return await fetchJson<ShoppingList>('/api/shopping-lists/current');
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+  });
+}
+
+export function useCreateShoppingList() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => fetchJson<ShoppingList>('/api/shopping-lists', { method: 'POST' }),
+    onSuccess: (list) => {
+      queryClient.setQueryData(CURRENT_SHOPPING_LIST_KEY, list);
+    },
+  });
+}
+
+export function useCreateShoppingListItem(listId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: CreateShoppingListItemRequest) =>
+      fetchJson<ShoppingListItem>(`/api/shopping-lists/${listId}/items`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: CURRENT_SHOPPING_LIST_KEY });
+    },
+  });
+}
+
+/**
+ * Unbound so every row can share it. The instant, revert-on-failure checked state itself lives in
+ * `OpenListView`'s own state, not react-query's cache: `useMutation`'s `onMutate` still isn't
+ * synchronous with the click that triggers `.mutate()` (its internal state machine always defers
+ * at least a tick, async `onMutate` or not), which is exactly the T17 suppressed-checkbox bug again
+ * if the checkbox's `checked` prop is bound to anything that updates on that delay. Plain local
+ * `useState`, flipped directly in the click handler, is the only thing synchronous enough.
+ */
+export function useToggleShoppingListItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, checked }: { id: number; checked: boolean }) =>
+      fetchJson<ShoppingListItem>(`/api/shopping-list-items/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ checked }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: CURRENT_SHOPPING_LIST_KEY });
+    },
+  });
+}
+
+export function useDeleteShoppingListItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: number) =>
+      fetchJson<void>(`/api/shopping-list-items/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: CURRENT_SHOPPING_LIST_KEY });
+    },
+  });
+}
+
+export function useCompleteShoppingList(listId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<ShoppingList>(`/api/shopping-lists/${listId}/complete`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.setQueryData(CURRENT_SHOPPING_LIST_KEY, null);
     },
   });
 }

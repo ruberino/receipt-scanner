@@ -656,7 +656,7 @@ The database, including images, is replicated to the household S3 bucket only.
 | Matching | Vitest + in-memory DB + `FakeLlmClient` | Alias hit path, LLM path creating products and aliases, user correction overriding an alias, merge, batching (batch sizes, `maxTokens`, a `finishReason: 'length'` batch failing without losing the others). |
 | Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, scan. |
 | API | Vitest + `app.inject()` | Every endpoint, including multipart upload with a fixture image, duplicate detection, auth. |
-| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` check-off, ScanPage multi-upload, `ReceiptsPage` rendering and pagination, `ProductsPage` search/filter, `ProductPage` rename/suppress/merge/alias delete. |
+| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` suggestions preview, check-off (optimistic, reverts on failure), add item, complete, ScanPage multi-upload, `ReceiptsPage` rendering and pagination, `ProductsPage` search/filter, `ProductPage` rename/suppress/merge/alias delete. |
 | Extraction eval | `npm run eval:extraction`, real Kimi | Real receipt photos under `eval/receipts/` with expected JSON; metrics per receipt and aggregate written to `eval/results/`. Run before merging any prompt or model change. Costs real money; never runs in CI. |
 
 Unit and API tests never call the network; `KimiClient` is only exercised by the eval script.

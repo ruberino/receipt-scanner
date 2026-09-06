@@ -11,11 +11,7 @@ import ProductsPage from './pages/ProductsPage.tsx';
 import ReceiptPage from './pages/ReceiptPage.tsx';
 import ReceiptsPage from './pages/ReceiptsPage.tsx';
 import ScanPage from './pages/ScanPage.tsx';
-
-// Placeholder until its own task (T18) replaces it with the real page.
-function ShoppingListPage() {
-  return <h1 className="p-4 text-xl font-bold">Handleliste</h1>;
-}
+import ShoppingListPage from './pages/ShoppingListPage.tsx';
 
 function UnauthorizedBridge(): null {
   const navigate = useNavigate();
