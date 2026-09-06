@@ -250,4 +250,22 @@ describe('ScanPage', () => {
     expect(scanMutateAsync.mock.calls.map((call) => call[0])).toEqual([1, 2, 3]);
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/receipts'));
   });
+
+  it('disables "Skann" while a file is still uploading, and enables it once uploaded (T24 F2)', async () => {
+    mockReceipts([receiptSummary(5, 'uploaded')]);
+    const { calls } = mockControllableUpload();
+    renderScanPage();
+
+    await selectFiles(['a.jpg']);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Skann (1)' })).toBeDisabled());
+
+    await act(async () => {
+      callAt(calls, 0).resolve({ id: 7 });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Skann (1)' })).not.toBeDisabled(),
+    );
+  });
 });

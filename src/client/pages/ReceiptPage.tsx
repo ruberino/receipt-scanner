@@ -289,6 +289,7 @@ export default function ReceiptPage() {
   const id = Number(params.id);
   const { data, isPending, isError } = useReceipt(id);
   const scan = useScanReceipt();
+  const { showToast } = useToast();
 
   if (isPending) {
     return <p className="p-4">Laster …</p>;
@@ -316,7 +317,11 @@ export default function ReceiptPage() {
         </p>
         <button
           type="button"
-          onClick={() => scan.mutate(id)}
+          onClick={() =>
+            scan.mutate(id, {
+              onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+            })
+          }
           disabled={scan.isPending}
           className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
         >

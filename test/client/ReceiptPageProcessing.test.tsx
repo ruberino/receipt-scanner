@@ -119,6 +119,32 @@ describe('ReceiptPage — uploaded, processing and failed states', () => {
     expect(scanMutate).toHaveBeenCalledOnce();
   });
 
+  it('shows a toast when "Prøv igjen" fails (T24 F3)', async () => {
+    const scanMutate = vi.fn((_id: number, options: { onError: (error: unknown) => void }) => {
+      options.onError(new Error('nettverksfeil'));
+    });
+    vi.mocked(useScanReceipt).mockReturnValue({
+      mutate: scanMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useScanReceipt>);
+    vi.mocked(useReceipt).mockReturnValue({
+      data: {
+        status: 'failed',
+        imageUrl: '/api/receipts/42/image',
+        errorMessage: 'Kunne ikke lese kvitteringen',
+      },
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReceipt>);
+
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Prøv igjen' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
+  });
+
   it('shows a loading state before the first fetch resolves', () => {
     vi.mocked(useReceipt).mockReturnValue({
       data: undefined,

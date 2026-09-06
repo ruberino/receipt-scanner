@@ -58,6 +58,9 @@ export default function ScanPage() {
   const { data: allReceipts } = useReceipts();
 
   const uploadedReceipts = (allReceipts ?? []).filter((receipt) => receipt.status === 'uploaded');
+  const isQueueBusy = entries.some(
+    (entry) => entry.state.kind === 'preparing' || entry.state.kind === 'uploading',
+  );
 
   function updateEntryState(id: string, state: FileState) {
     setEntries((current) =>
@@ -208,7 +211,7 @@ export default function ScanPage() {
         <button
           type="button"
           onClick={() => void handleScanAll()}
-          disabled={scan.isPending}
+          disabled={scan.isPending || isQueueBusy}
           className="min-h-11 rounded bg-green-600 px-4 py-2 font-medium text-white disabled:opacity-50"
         >
           {uploadedReceipts.length === 1 ? 'Skann (1)' : `Skann alle (${uploadedReceipts.length})`}

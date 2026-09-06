@@ -11,13 +11,14 @@ A queue service or a worker process would be more infrastructure than the worklo
 
 ## Decision
 
-- Upload stores the image and a receipt with `status = 'pending'`, replies `202`, and pushes the id onto an in-memory FIFO queue in the same process.
+- Upload stores the image and a receipt with `status = 'uploaded'`, replies `201`; nothing is enqueued yet (T24: uploading and scanning are two separate operations).
+- `POST /api/receipts/:id/scan` moves an `uploaded` or `failed` receipt to `pending` and pushes the id onto an in-memory FIFO queue in the same process; `409` otherwise (T24, replacing the earlier `POST /api/receipts/:id/retry`, which only handled `failed`).
 - One worker loop processes the queue with concurrency 1.
   It sets `processing`, increments `attempts`, runs extraction and matching, and sets `done`; any error sets `failed` with a short Norwegian `error_message` and a full error log line.
 - Status lives in the database, never only in memory.
-  On startup `requeueUnfinished()` enqueues every `pending` and `processing` receipt, which turns a crash into a retry.
+  On startup `requeueUnfinished()` enqueues every `pending` and `processing` receipt, which turns a crash into a retry; `uploaded` receipts are left for the user to scan.
 - The client learns progress by polling `GET /api/receipts/:id` every two seconds while the status is `pending` or `processing`.
-- `POST /api/receipts/:id/retry` moves a `failed` receipt back to `pending` and enqueues it; there is no automatic retry beyond the SDK HTTP retries.
+- There is no automatic retry beyond the SDK HTTP retries; a `failed` receipt waits for the user to call scan again.
 - `GET /api/health` reports `queueLength` for visibility.
 
 ## Consequences
