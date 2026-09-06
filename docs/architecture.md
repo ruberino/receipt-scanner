@@ -118,6 +118,7 @@ receipt-scanner/
       dates.ts               civil date helpers: isIsoDate, diffDays, mondayOf, isoWeekKey, todayInOslo
       money.ts               formatOre(ore) -> "43,80 kr", parseNok(string|number) -> ore
       categories.ts          PRODUCT_CATEGORIES constant
+      normalize.ts           normalizeText(), shared with the client for ProductPicker's exact-match check
     server/
       index.ts
       app.ts                 buildApp(options)
@@ -130,7 +131,6 @@ receipt-scanner/
         auth.ts
       lib/
         errors.ts
-        normalize.ts         normalizeText() used for aliases and product names
         images.ts            normaliseImage(buffer): validate, rotate, resize, encode JPEG, sha256
       llm/
         LlmClient.ts         interface + request/result types
