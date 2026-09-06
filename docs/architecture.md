@@ -536,7 +536,7 @@ type ShoppingList = {
 | `GET /api/receipts?limit=50&before=<id>` | — | `200 ReceiptSummary[]` | Newest first, cursor pagination on id. |
 | `GET /api/receipts/:id` | — | `200 ReceiptDetail` | Client polls this every 2 s while `pending` or `processing`. |
 | `GET /api/receipts/:id/image` | — | `200 image/jpeg` | `Cache-Control: private, max-age=86400`. |
-| `PATCH /api/receipts/:id` | `{ storeName?, purchasedAt?, totalOre?, reviewed? }` | `200 ReceiptDetail` | `reviewed: true` sets `reviewedAt`. Recomputes `TOTAL_MISMATCH` and `POSSIBLE_DUPLICATE`. Only when `done`. |
+| `PATCH /api/receipts/:id` | `{ storeName?, purchasedAt?, totalOre?, reviewed? }` | `200 ReceiptDetail` | `reviewed: true` sets `reviewedAt`. Recomputes `TOTAL_MISMATCH` and `POSSIBLE_DUPLICATE`; when `storeName` is patched, `MISSING_STORE` is set only if it is null; when `purchasedAt` is patched, `MISSING_DATE` is removed and `FUTURE_DATE` is set only if the date is after `todayInOslo()`. Only when `done`. |
 | `POST /api/receipts/:id/retry` | — | `202 ReceiptSummary` | Only when `failed`, else `409`. |
 | `POST /api/receipts/:id/rematch` | — | `200 ReceiptDetail` | Runs matching for unmatched lines synchronously; may call Kimi. |
 | `DELETE /api/receipts/:id` | — | `204` | Cascades lines and image. |
