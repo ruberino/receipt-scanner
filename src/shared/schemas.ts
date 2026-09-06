@@ -148,3 +148,52 @@ export const mergeProductSchema = z
   .strict();
 
 export type MergeProductRequest = z.infer<typeof mergeProductSchema>;
+
+const shoppingListStatusSchema = z.enum(['open', 'done']);
+const shoppingListItemSourceSchema = z.enum(['suggested', 'manual']);
+
+export const shoppingListItemSchema = z.object({
+  id: z.number().int(),
+  productId: z.number().int().nullable(),
+  name: z.string(),
+  quantityText: z.string().nullable(),
+  source: shoppingListItemSourceSchema,
+  reason: z.string().nullable(),
+  checked: z.boolean(),
+  position: z.number().int(),
+});
+
+export type ShoppingListItem = z.infer<typeof shoppingListItemSchema>;
+
+export const shoppingListSchema = z.object({
+  id: z.number().int(),
+  weekStart: z.string(),
+  status: shoppingListStatusSchema,
+  createdAt: z.string(),
+  completedAt: z.string().nullable(),
+  items: z.array(shoppingListItemSchema),
+});
+
+export type ShoppingList = z.infer<typeof shoppingListSchema>;
+
+export const createShoppingListItemSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    productId: z.number().int().positive().optional(),
+    quantityText: z.string().trim().min(1).max(60).optional(),
+  })
+  .strict();
+
+export type CreateShoppingListItemRequest = z.infer<typeof createShoppingListItemSchema>;
+
+export const patchShoppingListItemSchema = z
+  .object({
+    checked: z.boolean(),
+    name: z.string().trim().min(1).max(120),
+    quantityText: z.string().trim().min(1).max(60).nullable(),
+    position: z.number().int().nonnegative(),
+  })
+  .partial()
+  .strict();
+
+export type PatchShoppingListItemRequest = z.infer<typeof patchShoppingListItemSchema>;
