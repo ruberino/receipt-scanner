@@ -21,3 +21,10 @@ The demo instance is updated to `main`, and receipts 1 and 2 there, both `MATCHI
 ## Done
 
 Fast-forward merge now and send the hash; T25 is next, then T17 and T18.
+
+## Real-data check after merge, 2026-09-06
+
+Merged as `709a1ca`; the demo instance was moved to it and `Prøv matching igjen` run on both receipts.
+Receipt 2, 56 item lines: three calls of 848, 786 and 614 completion tokens, all `stop`, 0 unmatched lines, warnings now only `TOTAL_MISMATCH`, 23 s.
+Receipt 1, 43 item lines: three calls of 853, 870 and 151 completion tokens, all `stop`, 0 unmatched lines, warnings now only `TOTAL_MISMATCH`, 19 s.
+The old single call would have needed about 2 250 tokens against a budget of 2 000, which is exactly the truncation seen before.
