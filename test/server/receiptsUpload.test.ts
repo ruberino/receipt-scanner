@@ -1,9 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
+import { receiptImages, receipts } from '../../src/server/db/schema.ts';
+import { normaliseImage } from '../../src/server/lib/images.ts';
 import { createTestApp } from '../helpers/createTestApp.ts';
 import { loginCookie } from '../helpers/login.ts';
 
@@ -120,6 +123,44 @@ describe('POST /api/receipts', () => {
     const body = second.json();
     expect(body.error.code).toBe('CONFLICT');
     expect(body.error.details.existingReceiptId).toBe(firstId);
+  });
+
+  it('gives 409 with the pre-existing id when a receipt_images row with the same sha256 already exists (T06 review F1)', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+    const bytes = await readFixture('receipt-small.jpg');
+    const normalised = await normaliseImage(bytes);
+
+    const now = new Date().toISOString();
+    const preInserted = app.db
+      .insert(receipts)
+      .values({ status: 'done', createdAt: now, updatedAt: now })
+      .returning()
+      .get();
+    app.db
+      .insert(receiptImages)
+      .values({
+        receiptId: preInserted.id,
+        mimeType: 'image/jpeg',
+        bytes: normalised.bytes,
+        width: normalised.width,
+        height: normalised.height,
+        sha256: normalised.sha256,
+      })
+      .run();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/receipts',
+      payload: multipartForm(bytes, 'receipt-small.jpg', 'image/jpeg'),
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.details.existingReceiptId).toBe(preInserted.id);
+    expect(
+      app.db.select().from(receipts).where(eq(receipts.id, preInserted.id)).all(),
+    ).toHaveLength(1);
   });
 
   it('gives 400 for a file that is not a recognised image', async () => {

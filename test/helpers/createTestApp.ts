@@ -19,6 +19,8 @@ export type TestAppOptions = {
   logStream?: LogStream;
   /** Defaults to a `FakeLlmClient` with an empty script; pass one scripted for the test. */
   llmClient?: LlmClient;
+  /** Pins the job runner's clock for deterministic `todayInOslo` results. */
+  now?: () => Date;
 };
 
 export function createTestApp(options: TestAppOptions = {}): FastifyInstance {
@@ -28,6 +30,7 @@ export function createTestApp(options: TestAppOptions = {}): FastifyInstance {
     databasePath: options.databasePath ?? ':memory:',
     llmClient: options.llmClient ?? new FakeLlmClient([]),
     ...(options.logStream ? { logStream: options.logStream } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
 }
 

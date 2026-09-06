@@ -1,0 +1,226 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { eq } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { afterEach, describe, expect, it } from 'vitest';
+import { receipts } from '../../src/server/db/schema.ts';
+import { FakeLlmClient } from '../../src/server/llm/FakeLlmClient.ts';
+import type { LlmClient } from '../../src/server/llm/LlmClient.ts';
+import { createTestApp } from '../helpers/createTestApp.ts';
+import { loginCookie } from '../helpers/login.ts';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const fixturesDir = path.resolve(here, '..', 'fixtures', 'images');
+
+async function readFixture(name: string): Promise<Buffer> {
+  return readFile(path.join(fixturesDir, name));
+}
+
+function multipartForm(bytes: Buffer, filename: string, type: string): FormData {
+  const form = new FormData();
+  form.set('image', new Blob([bytes], { type }), filename);
+  return form;
+}
+
+function fakeSuccess(overrides: Record<string, unknown> = {}) {
+  return {
+    text: JSON.stringify({
+      storeName: 'REMA 1000 Grünerløkka',
+      purchasedAt: '2026-09-03',
+      total: 43.8,
+      lines: [
+        {
+          text: 'TINE LETTMELK 1L',
+          kind: 'item',
+          quantity: 2,
+          unit: 'stk',
+          unitPrice: 21.9,
+          totalPrice: 43.8,
+        },
+      ],
+      ...overrides,
+    }),
+    finishReason: 'stop',
+    model: 'kimi-k2.6',
+    usage: { promptTokens: 10, completionTokens: 5 },
+    durationMs: 5,
+  };
+}
+
+async function uploadReceipt(app: FastifyInstance, cookie: string): Promise<number> {
+  const bytes = await readFixture('receipt-small.jpg');
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/receipts',
+    payload: multipartForm(bytes, 'receipt-small.jpg', 'image/jpeg'),
+    headers: { cookie },
+  });
+  return response.json().id;
+}
+
+let app: FastifyInstance | undefined;
+let tmpDir: string | undefined;
+
+afterEach(async () => {
+  await app?.close();
+  app = undefined;
+  if (tmpDir) {
+    await rm(tmpDir, { recursive: true, force: true });
+    tmpDir = undefined;
+  }
+});
+
+describe('GET /api/receipts/:id', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'GET', url: '/api/receipts/1' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown id', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/receipts/999',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns the done receipt with its lines, unmatched products and imageUrl', async () => {
+    app = createTestApp({ llmClient: new FakeLlmClient([fakeSuccess()]) });
+    const cookie = await loginCookie(app);
+
+    const id = await uploadReceipt(app, cookie);
+    await app.receiptProcessor.drain();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/receipts/${id}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.status).toBe('done');
+    expect(body.storeName).toBe('REMA 1000 Grünerløkka');
+    expect(body.totalOre).toBe(4380);
+    expect(body.lineCount).toBe(1);
+    expect(body.imageUrl).toBe(`/api/receipts/${id}/image`);
+    expect(body.lines).toHaveLength(1);
+    expect(body.lines[0]).toMatchObject({
+      rawText: 'TINE LETTMELK 1L',
+      totalOre: 4380,
+      product: null,
+      matchSource: null,
+    });
+  });
+});
+
+describe('POST /api/receipts/:id/retry', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'POST', url: '/api/receipts/1/retry' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 409 for a receipt that is not failed', async () => {
+    app = createTestApp({ llmClient: new FakeLlmClient([fakeSuccess()]) });
+    const cookie = await loginCookie(app);
+
+    const id = await uploadReceipt(app, cookie);
+    await app.receiptProcessor.drain();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/receipts/${id}/retry`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('gives 202 for a failed receipt, clears the error and reprocesses it to done', async () => {
+    app = createTestApp({
+      llmClient: new FakeLlmClient([
+        () => {
+          throw new Error('boom');
+        },
+        fakeSuccess(),
+      ]),
+    });
+    const cookie = await loginCookie(app);
+
+    const id = await uploadReceipt(app, cookie);
+    await app.receiptProcessor.drain();
+    expect(
+      (await app.inject({ method: 'GET', url: `/api/receipts/${id}`, headers: { cookie } })).json()
+        .status,
+    ).toBe('failed');
+
+    const retryResponse = await app.inject({
+      method: 'POST',
+      url: `/api/receipts/${id}/retry`,
+      headers: { cookie },
+    });
+    expect(retryResponse.statusCode).toBe(202);
+    expect(retryResponse.json().errorMessage).toBeNull();
+
+    await app.receiptProcessor.drain();
+    const final = await app.inject({
+      method: 'GET',
+      url: `/api/receipts/${id}`,
+      headers: { cookie },
+    });
+    expect(final.json().status).toBe('done');
+  });
+});
+
+describe('GET /api/health', () => {
+  it('reports the real queue length', async () => {
+    const hangingLlm: LlmClient = { completeJson: () => new Promise(() => {}) };
+    app = createTestApp({ llmClient: hangingLlm });
+    const cookie = await loginCookie(app);
+
+    const idle = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(idle.json().queueLength).toBe(0);
+
+    await uploadReceipt(app, cookie);
+
+    const busy = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(busy.json().queueLength).toBe(1);
+  });
+});
+
+describe('crash recovery', () => {
+  it('finishes a receipt left in "processing" after a restart', async () => {
+    tmpDir = await mkdtemp(path.join(tmpdir(), 'kvitteringer-'));
+    const databasePath = path.join(tmpDir, 'receipt-scanner.db');
+
+    const hangingLlm: LlmClient = { completeJson: () => new Promise(() => {}) };
+    app = createTestApp({ databasePath, llmClient: hangingLlm });
+    const cookie = await loginCookie(app);
+    const id = await uploadReceipt(app, cookie);
+
+    const stuck = app.db.select().from(receipts).where(eq(receipts.id, id)).get();
+    expect(stuck?.status).toBe('processing');
+
+    await app.close();
+
+    app = createTestApp({ databasePath, llmClient: new FakeLlmClient([fakeSuccess()]) });
+    await app.receiptProcessor.drain();
+
+    const finished = app.db.select().from(receipts).where(eq(receipts.id, id)).get();
+    expect(finished?.status).toBe('done');
+  });
+});

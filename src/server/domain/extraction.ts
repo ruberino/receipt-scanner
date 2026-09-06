@@ -1,5 +1,9 @@
+import { and, eq, ne } from 'drizzle-orm';
 import { diffDays } from '../../shared/dates.ts';
+import type { AppDatabase } from '../db/client.ts';
+import { receipts } from '../db/schema.ts';
 import { ExtractionError } from '../lib/errors.ts';
+import { normalizeText } from '../lib/normalize.ts';
 import type { ExtractionResult } from '../llm/extractReceipt.ts';
 
 export type ExtractionWarning =
@@ -77,4 +81,39 @@ export function applyExtraction(result: ExtractionResult, scanDate: string): App
   }
 
   return { storeName: result.storeName, purchasedAt, totalOre, warnings, lines };
+}
+
+/**
+ * Looks for another `done` receipt with the same purchased_at, total_ore and normalizeText(store_name)
+ * (two null stores count as equal); returns its id, or null (architecture.md 7.4).
+ */
+export function findPossibleDuplicate(
+  db: AppDatabase,
+  receiptId: number,
+  storeName: string | null,
+  purchasedAt: string,
+  totalOre: number,
+): number | null {
+  const normalizedStore = storeName === null ? null : normalizeText(storeName);
+
+  const candidates = db
+    .select({ id: receipts.id, storeName: receipts.storeName })
+    .from(receipts)
+    .where(
+      and(
+        eq(receipts.status, 'done'),
+        eq(receipts.purchasedAt, purchasedAt),
+        eq(receipts.totalOre, totalOre),
+        ne(receipts.id, receiptId),
+      ),
+    )
+    .all();
+
+  const match = candidates.find((candidate) => {
+    const candidateNormalized =
+      candidate.storeName === null ? null : normalizeText(candidate.storeName);
+    return candidateNormalized === normalizedStore;
+  });
+
+  return match ? match.id : null;
 }

@@ -18,6 +18,7 @@ import {
   appErrorFromHttpError,
   toErrorResponse,
 } from './lib/errors.ts';
+import { createReceiptProcessor, type ReceiptProcessor } from './jobs/receiptProcessor.ts';
 import { KimiClient } from './llm/KimiClient.ts';
 import type { LlmClient } from './llm/LlmClient.ts';
 import authPlugin from './plugins/auth.ts';
@@ -29,6 +30,7 @@ declare module 'fastify' {
     db: AppDatabase;
     sqlite: InstanceType<typeof Database>;
     llm: LlmClient;
+    receiptProcessor: ReceiptProcessor;
   }
 }
 
@@ -55,6 +57,8 @@ export type BuildAppOptions = {
   clientDir?: string;
   /** Overrides the LLM client; otherwise a `KimiClient` is built from config. Tests inject a `FakeLlmClient`. */
   llmClient?: LlmClient;
+  /** Overrides the job runner's clock; tests pin it for deterministic `todayInOslo` results. */
+  now?: () => Date;
 };
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
@@ -151,6 +155,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       logger: app.log,
     });
   app.decorate('llm', llmClient);
+
+  const receiptProcessor = createReceiptProcessor({
+    db,
+    sqlite,
+    llm: llmClient,
+    logger: app.log,
+    ...(options.now ? { now: options.now } : {}),
+  });
+  app.decorate('receiptProcessor', receiptProcessor);
+  receiptProcessor.requeueUnfinished();
 
   app.register(fastifyMultipart, { limits: { fileSize: config.maxUploadBytes, files: 1 } });
 

@@ -27,3 +27,7 @@ export function openDatabase(databasePath: string): OpenedDatabase {
 
   return { sqlite, db };
 }
+
+export function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Database.SqliteError && error.code === 'SQLITE_CONSTRAINT_UNIQUE';
+}
