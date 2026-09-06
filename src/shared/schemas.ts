@@ -84,3 +84,67 @@ export const patchReceiptLineSchema = z.union([
 ]);
 
 export type PatchReceiptLineRequest = z.infer<typeof patchReceiptLineSchema>;
+
+const productAliasSourceSchema = z.enum(['llm', 'user']);
+
+export const productSchema = z.object({
+  id: z.number().int(),
+  name: z.string(),
+  category: z.string().nullable(),
+  suppressed: z.boolean(),
+  timesBought: z.number().int(),
+  lastBought: z.string().nullable(),
+  medianIntervalDays: z.number().nullable(),
+});
+
+export type Product = z.infer<typeof productSchema>;
+
+export const productDetailSchema = productSchema.extend({
+  aliases: z.array(
+    z.object({
+      id: z.number().int(),
+      alias: z.string(),
+      source: productAliasSourceSchema,
+    }),
+  ),
+  purchases: z.array(
+    z.object({
+      receiptId: z.number().int(),
+      date: z.string(),
+      storeName: z.string().nullable(),
+      quantity: z.number(),
+      unit: lineUnitSchema,
+      totalOre: z.number().int(),
+    }),
+  ),
+});
+
+export type ProductDetail = z.infer<typeof productDetailSchema>;
+
+export const createProductSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    category: productCategorySchema.optional(),
+  })
+  .strict();
+
+export type CreateProductRequest = z.infer<typeof createProductSchema>;
+
+export const patchProductSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    category: productCategorySchema,
+    suppressed: z.boolean(),
+  })
+  .partial()
+  .strict();
+
+export type PatchProductRequest = z.infer<typeof patchProductSchema>;
+
+export const mergeProductSchema = z
+  .object({
+    intoProductId: z.number().int().positive(),
+  })
+  .strict();
+
+export type MergeProductRequest = z.infer<typeof mergeProductSchema>;
