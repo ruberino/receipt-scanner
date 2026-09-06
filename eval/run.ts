@@ -1,6 +1,6 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import pino from 'pino';
 import { loadConfig } from '../src/server/config.ts';
 import { normaliseImage } from '../src/server/lib/images.ts';
@@ -49,7 +49,7 @@ async function loadExpected(filePath: string): Promise<ExpectedReceipt> {
   return JSON.parse(raw) as ExpectedReceipt;
 }
 
-async function listPhotosWithExpected(
+export async function listPhotosWithExpected(
   receiptsDir: string,
 ): Promise<{ filename: string; photoPath: string; expectedPath: string }[]> {
   let entries: string[];
@@ -200,7 +200,6 @@ function buildRealLlmClient(): LlmClient {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const llm = buildRealLlmClient();
 
   if (args[0] === '--bootstrap') {
     const photoPath = args[1];
@@ -209,6 +208,7 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     }
+    const llm = buildRealLlmClient();
     const draftPath = await bootstrapExpected(llm, photoPath);
     console.log(`Wrote draft: ${draftPath}`);
     console.log('Review it by hand, correct it against the real receipt, then rename it to');
@@ -216,11 +216,23 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Only build the real client once there is at least one pair to run, so a checkout with no
+  // ground truth yet (or no .env at all) still prints the "nothing to run" line instead of
+  // failing on a missing MOONSHOT_API_KEY before it gets the chance to say so.
+  const pairs = await listPhotosWithExpected(DEFAULT_RECEIPTS_DIR);
+  if (pairs.length === 0) {
+    console.log(
+      `No receipt has a matching ${EXPECTED_SUFFIX} file in ${DEFAULT_RECEIPTS_DIR}; nothing to run.`,
+    );
+    return;
+  }
+
+  const llm = buildRealLlmClient();
   await runEval({ llm });
 }
 
 const isMainModule =
-  process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMainModule) {
   main().catch((error: unknown) => {
     console.error(error);
