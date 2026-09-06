@@ -16,7 +16,7 @@ The household shops about once a week, so all frequency logic is built around we
 ### In scope (MVP)
 
 - Log in with the shared household password.
-- Scan a receipt from the phone camera or pick an existing photo, upload it, and follow processing status.
+- Upload one or more receipt photos from the camera or the photo library, start the scan as a separate step, and follow processing status.
 - Automatic extraction of store, date, total and lines, with sanity warnings.
 - Automatic mapping of lines to canonical products; deterministic for lines seen before, LLM-assisted for new ones.
 - Review a receipt: correct store, date, total, and the product mapping of any line.
@@ -36,7 +36,7 @@ The household shops about once a week, so all frequency logic is built around we
 ## 2. Usage scenarios
 
 1. After shopping.
-   Open the app, tap "Skann", take a photo of the receipt, tap "Bruk".
+   Open the app, tap "Skann", take a photo; it uploads at once. Tap "Skann (1)".
    The app shows "Leser kvittering…" for 10–40 seconds, then the review screen with 23 lines, 21 mapped to known products and 2 new products created.
    The total matches the sum of the lines, so there is no warning.
    Tap "Ferdig".
@@ -48,6 +48,9 @@ The household shops about once a week, so all frequency logic is built around we
    Open the app on Friday, tap "Lag handleliste".
    The list contains 18 items such as "Lettmelk 1 l, 2 stk, kjøpes ca. hver 7. dag" and "Kaffe, sist for 20 dager siden".
    Remove two items, add "Bursdagskake", and check items off in the store.
+4. Catching up.
+   Pick six receipt photos from the library; they upload one after the other.
+   Tap "Skann alle (6)" and open the receipts list, where the six move from "Lastet opp" through "Leser…" to "Klar".
 
 ## 3. Stack
 
@@ -90,7 +93,8 @@ Render web service (one Docker container)
    Fastify process
      /                 -> static SPA from dist/client
      /api/*            -> JSON API (auth cookie)
-     POST /api/receipts -> store image + receipt(status=pending) -> 202 -> enqueue
+     POST /api/receipts -> store image + receipt(status=uploaded) -> 201
+     POST /api/receipts/:id/scan -> status=pending -> 202 -> enqueue
      Job runner (in-process, one at a time)          ADR-0006
         2. extraction  --image + prompt-->  Kimi (api.moonshot.ai)   ADR-0003
         3. alias lookup (deterministic)                              ADR-0004
@@ -215,7 +219,7 @@ Dates are `YYYY-MM-DD` strings, timestamps are ISO 8601 UTC strings.
 ```sql
 CREATE TABLE receipts (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  status          TEXT NOT NULL CHECK (status IN ('pending','processing','done','failed')),
+  status          TEXT NOT NULL CHECK (status IN ('uploaded','pending','processing','done','failed')),
   store_name      TEXT,
   purchased_at    TEXT,
   total_ore       INTEGER,
@@ -326,7 +330,7 @@ Definitions:
 2. `POST /api/receipts` (multipart field `image`) accepts `image/jpeg`, `image/png`, `image/webp`, at most `MAX_UPLOAD_BYTES`.
 3. The server runs `normaliseImage`: `sharp` reads metadata, rejects unknown formats with `400 VALIDATION_ERROR`, applies EXIF rotation, resizes so the long edge is at most 2000 px, encodes JPEG quality 85, and computes `sha256` of the result.
 4. If a `receipt_images.sha256` already exists, reply `409 CONFLICT` with `details: { existingReceiptId }`.
-5. Insert `receipts` (`status = 'pending'`) and `receipt_images` in one transaction, enqueue the id, reply `202 { id }`.
+5. Insert `receipts` (`status = 'uploaded'`) and `receipt_images` in one transaction, reply `201 { id }`; nothing is enqueued.
 
 ### 7.2 Job runner (ADR-0006)
 
@@ -334,8 +338,8 @@ Definitions:
 - `processReceipt(id)`: set `status = 'processing'`, `attempts += 1`; run extraction; run matching; set `status = 'done'`.
   Saving the extraction first deletes any lines left by an earlier attempt, in the same transaction as the insert, so a job that is retried after a crash replaces its data instead of duplicating it.
   Any thrown error sets `status = 'failed'`, stores a short Norwegian `error_message`, and logs the full error with `receiptId`.
-- On startup, `requeueUnfinished()` enqueues every receipt with status `pending` or `processing`, so a crash mid-job is retried after restart.
-- `POST /api/receipts/:id/retry` sets `pending` and enqueues; allowed only when `failed`.
+- On startup, `requeueUnfinished()` enqueues every receipt with status `pending` or `processing`, so a crash mid-job is retried after restart; `uploaded` receipts wait for the user.
+- `POST /api/receipts/:id/scan` sets `pending` and enqueues; allowed when `uploaded` or `failed`, else `409`.
 
 ### 7.3 Extraction call (ADR-0003)
 
@@ -490,7 +494,7 @@ Error body is `{ error: { code, message, details?, requestId } }` with codes `VA
 ### Shapes
 
 ```ts
-type ReceiptStatus = 'pending' | 'processing' | 'done' | 'failed';
+type ReceiptStatus = 'uploaded' | 'pending' | 'processing' | 'done' | 'failed';
 
 type ReceiptSummary = {
   id: number; status: ReceiptStatus; storeName: string | null; purchasedAt: string | null;
@@ -532,12 +536,12 @@ type ShoppingList = {
 | --- | --- | --- | --- |
 | `GET /api/health` | — | `200 { status: 'ok', version, queueLength }` | No auth. Never calls Kimi. |
 | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | as in ADR-0009 | | Cookie `kvitteringer_auth`. |
-| `POST /api/receipts` | multipart `image` | `202 { id }` | `400` bad image, `413 PAYLOAD_TOO_LARGE`, `409` duplicate with `details.existingReceiptId`. |
+| `POST /api/receipts` | multipart `image` | `201 { id }` | `400` bad image, `413 PAYLOAD_TOO_LARGE`, `409` duplicate with `details.existingReceiptId`. |
 | `GET /api/receipts?limit=50&before=<id>` | — | `200 ReceiptSummary[]` | Newest first, cursor pagination on id. |
 | `GET /api/receipts/:id` | — | `200 ReceiptDetail` | Client polls this every 2 s while `pending` or `processing`. |
 | `GET /api/receipts/:id/image` | — | `200 image/jpeg` | `Cache-Control: private, max-age=86400`. |
 | `PATCH /api/receipts/:id` | `{ storeName?, purchasedAt?, totalOre?, reviewed? }` | `200 ReceiptDetail` | `reviewed: true` sets `reviewedAt`. Recomputes `TOTAL_MISMATCH` and `POSSIBLE_DUPLICATE`; when `storeName` is patched, `MISSING_STORE` is set only if it is null; when `purchasedAt` is patched, `MISSING_DATE` is removed and `FUTURE_DATE` is set only if the date is after `todayInOslo()`. Only when `done`. |
-| `POST /api/receipts/:id/retry` | — | `202 ReceiptSummary` | Only when `failed`, else `409`. |
+| `POST /api/receipts/:id/scan` | — | `202 ReceiptSummary` | Only when `uploaded` or `failed`, else `409`. |
 | `POST /api/receipts/:id/rematch` | — | `200 ReceiptDetail` | Runs matching for unmatched lines synchronously; may call Kimi. |
 | `DELETE /api/receipts/:id` | — | `204` | Cascades lines and image. |
 | `PATCH /api/receipt-lines/:id` | `{ productId }` or `{ newProductName, category? }` | `200 ReceiptLine` | Upserts a user alias. |
@@ -565,9 +569,9 @@ type ShoppingList = {
 | --- | --- | --- |
 | `/login` | LoginPage | Password field. |
 | `/` | ShoppingListPage | The open list with check-off, add item, remove item, "Ferdig handlet"; when there is no open list, a preview of suggestions and a "Lag handleliste" button. |
-| `/scan` | ScanPage | Large "Ta bilde" button (`<input type="file" accept="image/*" capture="environment">`) and "Velg fra bilder" (same input without `capture`). Shows a preview, upload progress, then navigates to `/receipts/:id`. On `409` navigates to the existing receipt with a toast "Denne kvitteringen er allerede skannet". |
-| `/receipts` | ReceiptsPage | List with store, date, total, status badge and warning count; tap opens the receipt. |
-| `/receipts/:id` | ReceiptPage | While `pending`/`processing`: image thumbnail and "Leser kvittering…" with polling. When `failed`: error and "Prøv igjen". When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line, "Ferdig" that sets `reviewed`. |
+| `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
+| `/receipts` | ReceiptsPage | List with store, date, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. |
+| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and "Leser kvittering…" with polling. When `failed`: error and "Prøv igjen", which calls scan. When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line, "Ferdig" that sets `reviewed`. |
 | `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed. |
 | `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product, aliases with delete, purchase history. |
 
@@ -581,6 +585,8 @@ Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`
 - Receipt polling uses TanStack Query `refetchInterval` of 2 000 ms only while status is `pending` or `processing`, and stops otherwise.
 - Checking an item on the shopping list is optimistic; failure reverts and shows a toast.
 - Upload shows progress with `XMLHttpRequest` upload events or a simple indeterminate bar; either is acceptable.
+- Uploads run one at a time in selection order; a `409` on one file does not stop the others.
+- `ReceiptStatusBadge` shows `uploaded` as "Lastet opp".
 - Every mutation invalidates the affected queries: receipts, receipt detail, products, suggestions, current list.
 - A `401` clears the query cache and navigates to `/login`.
 - Layout is mobile-first at 360 px, tap targets at least 44 px, safe-area padding for the bottom bar.
@@ -645,9 +651,9 @@ The database, including images, is replicated to the household S3 bucket only.
 | Pure domain | Vitest | `normalizeText`, `parseNok`, `applyExtraction` (warnings, øre conversion), `computeSuggestions` (every rule with fixtures and the worked example), dates and ISO weeks. |
 | LLM parsing | Vitest | `parseExtraction` and `parseMatches` against fixture responses, including malformed JSON, comma decimals, missing fields, truncated output. |
 | Matching | Vitest + in-memory DB + `FakeLlmClient` | Alias hit path, LLM path creating products and aliases, user correction overriding an alias, merge. |
-| Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, retry. |
+| Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, scan. |
 | API | Vitest + `app.inject()` | Every endpoint, including multipart upload with a fixture image, duplicate detection, auth. |
-| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` check-off. |
+| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` check-off, ScanPage multi-upload. |
 | Extraction eval | `npm run eval:extraction`, real Kimi | Real receipt photos under `eval/receipts/` with expected JSON; metrics per receipt and aggregate written to `eval/results/`. Run before merging any prompt or model change. Costs real money; never runs in CI. |
 
 Unit and API tests never call the network; `KimiClient` is only exercised by the eval script.

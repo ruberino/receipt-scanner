@@ -530,8 +530,9 @@ Files: `src/client/pages/ReceiptsPage.tsx`, `src/client/public/manifest.webmanif
 Steps:
 
 1. `ReceiptsPage`: newest first, store, date, `formatOre(total)`, status badge, warning count; infinite scroll or "Last flere" using the `before` cursor.
-2. Manifest name "Kvitteringer", `display: standalone`, icons 192 and 512 px, apple touch icon, theme colour, `viewport-fit=cover`, safe-area padding.
-3. Walk every page at 360 × 780 and 1280 px and fix overflow and tap targets.
+2. "Skann" on each `uploaded` row and "Skann alle (n)" above the list, calling `POST /api/receipts/:id/scan` per receipt.
+3. Manifest name "Kvitteringer", `display: standalone`, icons 192 and 512 px, apple touch icon, theme colour, `viewport-fit=cover`, safe-area padding.
+4. Walk every page at 360 × 780 and 1280 px and fix overflow and tap targets.
 
 Acceptance criteria:
 
@@ -626,3 +627,45 @@ Acceptance criteria:
 - The history shows completed lists with their week and item count.
 
 Tests: API and rendering.
+
+---
+
+## T24 — Upload and scan as two operations, several photos at a time
+
+Goal: upload many receipt photos quickly, then scan them as a separate step.
+
+Files: `src/server/db/schema.ts` and a migration for the `status` check, `src/server/routes/receipts.ts` (`201` on upload, `scan` replaces `retry`), `src/shared/schemas.ts`, `src/client/pages/ScanPage.tsx`, `src/client/pages/ReceiptPage.tsx` (`uploaded` state, `Prøv igjen` calls scan), `src/client/components/ReceiptStatusBadge.tsx`, `src/client/api/queries.ts` (`useScanReceipt`, `useReceipts` if missing), tests for all of it.
+
+Steps:
+
+1. Docs as in `docs/reviews/T24-plan.md`, own commit.
+2. Server: status `uploaded`, migration, `POST /api/receipts` replies `201` and does not enqueue, `POST /api/receipts/:id/scan` for `uploaded` and `failed`, `retry` removed.
+3. Client: ScanPage list upload with per-file state, `Skann alle (n)`, ReceiptPage `uploaded` state, badge text, `Prøv igjen` through scan.
+4. Playwright walk with three photos, screenshots under `docs/reviews/screenshots/T24/`.
+
+Acceptance criteria:
+
+- Picking three photos uploads all three one after the other, each ending as «Lastet opp»; three receipts have status `uploaded` and the processor has not been called.
+- A photo that already exists shows «Allerede skannet» with a link and the remaining files still upload.
+- «Skann alle (3)» moves the three to `pending` and they reach `done` or `failed` without further input.
+- «Prøv igjen» on a `failed` receipt and «Skann» on an `uploaded` one both call `POST /api/receipts/:id/scan`; `done`, `pending` and `processing` answer `409`.
+- A server restart does not scan `uploaded` receipts.
+
+Tests: scan route (401, `uploaded` → 202 `pending`, `failed` → 202, `done` → 409), upload returns 201 without enqueue, requeue ignores `uploaded`, ScanPage with three mocked files (order, per-file state, one 409), `Skann alle` calls scan per id and navigates, ReceiptPage `uploaded` state, badge label.
+
+---
+
+## T25 — Recompute `UNMATCHED_LINES` after a manual match
+
+Goal: the unmatched warning disappears once every item line has a product.
+
+Files: `docs/architecture.md` PATCH receipt-lines row, `src/server/routes/receiptLines.ts`, its tests.
+
+Steps:
+
+1. Docs row: `PATCH /api/receipt-lines/:id` removes `UNMATCHED_LINES` from the receipt when no item line has `product_id IS NULL`; `MATCHING_FAILED` is left alone.
+2. Implement inside the existing transaction; return the line as before.
+
+Acceptance criteria:
+
+- Matching the last unmatched line removes `UNMATCHED_LINES` from `GET /api/receipts/:id`; matching one of two leaves it.
