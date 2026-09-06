@@ -21,7 +21,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
-    "eval:extraction": "tsx eval/run.ts"
+    "eval:extraction": "tsx eval/run.ts",
+    "eval:bootstrap": "tsx eval/run.ts --bootstrap"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
