@@ -30,7 +30,7 @@ The household shops about once a week, so all frequency logic is built around we
 - Price comparison, store price history, or recipe features (the `shopper` app does those).
 - Offline scanning and background sync.
 - Multiple households or per-person data.
-- Spending statistics beyond a simple per-month total (planned phase 2, task T20).
+- Spending statistics beyond a simple per-month total (planned phase 2, task T23).
 - Learning quantities per recipe or meal plan.
 
 ## 2. Usage scenarios
@@ -159,6 +159,7 @@ receipt-scanner/
         products.ts
         suggestions.ts
         shoppingLists.ts
+        stats.ts
     client/
       index.html
       main.tsx
@@ -561,8 +562,8 @@ type ShoppingList = {
 | `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | |
 | `DELETE /api/shopping-list-items/:id` | — | `204` | |
 | `POST /api/shopping-lists/:id/complete` | — | `200 ShoppingList` | Sets `done` and `completedAt`. |
-| `GET /api/shopping-lists?limit=20` | — | `200 ShoppingList[]` without items | History, newest first. Phase 2. |
-| `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[] }` | Phase 2 (T20). |
+| `GET /api/shopping-lists?limit=20` | — | `200 ShoppingListSummary[]` | History, `weekStart` descending, `id` descending tiebreak. `ShoppingListSummary` is `ShoppingList` without `items`, plus `itemCount` (the same relationship `ReceiptSummary` has to `ReceiptDetail`). Phase 2 (T23). |
+| `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[] }` | `months` is the `months` most recent calendar months ending with today, oldest first, every month present even at zero; a `done` receipt with no `purchasedAt` is excluded from every month. `topProducts` is the all-time top 10 by `timesBought` (not scoped to `months`, same fields as `GET /api/products`), suppressed included. Phase 2 (T23). |
 
 ## 10. Frontend
 
@@ -573,7 +574,7 @@ type ShoppingList = {
 | `/login` | LoginPage | Password field. |
 | `/` | ShoppingListPage | The open list with check-off, add item, remove item, "Ferdig handlet"; when there is no open list, a preview of suggestions and a "Lag handleliste" button. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
-| `/receipts` | ReceiptsPage | List with store, date, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. |
+| `/receipts` | ReceiptsPage | List with store, date, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
 | `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and "Leser kvittering…" with polling. When `failed`: error and "Prøv igjen", which calls scan. When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line, "Ferdig" that sets `reviewed`. |
 | `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed. |
 | `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product, aliases with delete, purchase history. |
@@ -656,7 +657,7 @@ The database, including images, is replicated to the household S3 bucket only.
 | Matching | Vitest + in-memory DB + `FakeLlmClient` | Alias hit path, LLM path creating products and aliases, user correction overriding an alias, merge, batching (batch sizes, `maxTokens`, a `finishReason: 'length'` batch failing without losing the others). |
 | Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, scan. |
 | API | Vitest + `app.inject()` | Every endpoint, including multipart upload with a fixture image, duplicate detection, auth. |
-| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` suggestions preview, check-off (optimistic, reverts on failure), add item, complete, ScanPage multi-upload, `ReceiptsPage` rendering and pagination, `ProductsPage` search/filter, `ProductPage` rename/suppress/merge/alias delete. |
+| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` suggestions preview, check-off (optimistic, reverts on failure), add item, complete, ScanPage multi-upload, `ReceiptsPage` rendering and pagination, `ProductsPage` search/filter, `ProductPage` rename/suppress/merge/alias delete, `ReceiptsPage`'s stats/history section (closed by default, both hooks disabled until opened). |
 | Extraction eval | `npm run eval:extraction`, real Kimi | Real receipt photos under `eval/receipts/` with expected JSON; metrics per receipt and aggregate written to `eval/results/`. Run before merging any prompt or model change. Costs real money; never runs in CI. |
 
 Unit and API tests never call the network; `KimiClient` is only exercised by the eval script.
@@ -679,7 +680,7 @@ Docker, `start.sh`, `litestream.yml` and `render.yaml` follow ADR-0011 with the 
 ## 15. Future work
 
 - Refresh suggestions into an existing open list without recreating it.
-- Spend per month and per category (T20).
+- Spend per category, on top of the per-month total T23 adds.
 - Compare the shopping list against the next receipt to learn forgotten items.
 - Export products and history as CSV.
 - Optional integration with the `shopper` app for prices.
