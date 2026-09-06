@@ -35,3 +35,10 @@ Chrome on Android offers `Installer app` for the served build, and iOS Safari's 
 ## Done
 
 F1 as one `fix:` commit on the T19 branch, run the five scripts, send the hash, and merge after the go-ahead is recorded here.
+
+## Go-ahead, 2026-09-06
+
+F1 landed as `50a7233`: `storeNameLabel` and `dateLabel` with the three texts, and the tests split into focused cases.
+All five scripts exit 0 in a clean worktree at `50a7233`, 394 tests.
+One more recommendation, no action now: `createdAt.slice(0, 10)` takes the UTC date, so an upload just after midnight Oslo time reads as `i går`; convert the timestamp to the local civil date first.
+Approved for fast-forward merge; T26 is next, then T25, T17, T18.
