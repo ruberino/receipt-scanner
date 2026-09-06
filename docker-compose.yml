@@ -1,0 +1,12 @@
+# Runs the production image locally, same as Render, on port 8080.
+services:
+  app:
+    build: .
+    ports:
+      - '8080:8080'
+    volumes:
+      - data:/data
+    env_file: .env
+
+volumes:
+  data:

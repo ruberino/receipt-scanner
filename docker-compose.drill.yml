@@ -1,0 +1,57 @@
+# Restore-drill harness only: a local MinIO stands in for the real S3-compatible
+# bucket so the drill costs nothing and touches none of Ruben's credentials.
+# Not used for local development or deployment; see docker-compose.yml for that.
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: drilluser
+      MINIO_ROOT_PASSWORD: drillpassword
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  createbucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 drilluser drillpassword &&
+      mc mb -p local/receipt-scanner-drill
+      "
+
+  app:
+    build: .
+    depends_on:
+      createbucket:
+        condition: service_completed_successfully
+    ports:
+      - '8080:8080'
+    volumes:
+      - app-data:/data
+    environment:
+      APP_PASSWORD: drill-password-123
+      SESSION_SECRET: drill-session-secret-at-least-32-characters
+      # Not a real key: the drill proves replication/restore, not extraction, so no receipt is
+      # scanned and no Kimi call happens. Receipts stay at status 'uploaded' (T24), which already
+      # has its row and image bytes without a scan.
+      MOONSHOT_API_KEY: dummy-key-for-drill
+      DATABASE_PATH: /data/receipt-scanner.db
+      LITESTREAM_BUCKET: receipt-scanner-drill
+      LITESTREAM_ENDPOINT: http://minio:9000
+      LITESTREAM_ACCESS_KEY_ID: drilluser
+      LITESTREAM_SECRET_ACCESS_KEY: drillpassword
+
+volumes:
+  minio-data:
+  app-data:

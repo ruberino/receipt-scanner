@@ -34,6 +34,44 @@ This starts the Vite dev server (client) and the Fastify server (API) together; 
 | `npm run db:generate`     | Generates a Drizzle migration under `drizzle/` from `src/server/db/schema.ts`.                |
 | `npm run eval:extraction` | Runs real receipts through Kimi and scores extraction quality (costs money, never run in CI). |
 
+## Deploy
+
+`Dockerfile` builds the production image: a multi-stage build compiles the client, copies the Litestream binary from `litestream/litestream:0.3.13`, and runs on `node:22-alpine`.
+See `docs/architecture.md` section 13 and ADR-0011 for the full design.
+
+Run the production image locally:
+
+```bash
+cp .env.example .env
+# edit .env and set APP_PASSWORD, SESSION_SECRET, MOONSHOT_API_KEY, and (optionally) the LITESTREAM_* variables
+docker compose up --build
+```
+
+The app is reachable at `http://localhost:8080`, and `/api/health` returns 200.
+Without `LITESTREAM_BUCKET` set, the container starts and logs a warning that data is lost on restart; with it set, `start.sh` restores from the replica on boot and replicates continuously.
+
+### Restore drill
+
+Repeat this after any change to `start.sh` or `litestream.yml` (ADR-0011).
+It runs against a local MinIO started from `docker-compose.drill.yml`, never against the real bucket.
+
+```bash
+docker compose -f docker-compose.drill.yml up --build -d
+# log in, upload a couple of receipts, create a product, create a shopping list and add an item
+docker compose -f docker-compose.drill.yml down
+docker volume rm receipt-scanner_app-data
+docker compose -f docker-compose.drill.yml up -d
+# check http://localhost:8080/api/health and that the receipts, product and list are back
+docker compose -f docker-compose.drill.yml down -v
+```
+
+See `docs/reviews/T21-drill.md` for the last recorded run.
+
+### Render
+
+`render.yaml` declares one `web` service, `runtime: docker`, `plan: free`, `healthCheckPath: /api/health`.
+Creating the service and setting `APP_PASSWORD`, `SESSION_SECRET`, `MOONSHOT_API_KEY` and the four `LITESTREAM_*` secrets is a manual step in the Render dashboard; the blueprint marks them `sync: false` for exactly that reason.
+
 ## Dependency notes
 
 Versions are pinned exactly at the newest stable release; see `docs/architecture.md` section 3 for the policy and its exceptions (peer conflicts, a different Node major, config-only-passable checks, pre-releases).

@@ -1,0 +1,7 @@
+node_modules
+dist
+data
+.env
+docs/reviews/screenshots
+test
+eval/receipts
