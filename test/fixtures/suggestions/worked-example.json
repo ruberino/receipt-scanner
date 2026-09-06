@@ -1,0 +1,57 @@
+{
+  "today": "2026-09-04",
+  "histories": [
+    {
+      "productId": 1,
+      "name": "Melk",
+      "category": "Meieri",
+      "suppressed": false,
+      "purchases": [
+        { "date": "2026-08-07", "quantity": 1, "unit": "stk" },
+        { "date": "2026-08-14", "quantity": 1, "unit": "stk" },
+        { "date": "2026-08-21", "quantity": 1, "unit": "stk" },
+        { "date": "2026-08-28", "quantity": 1, "unit": "stk" }
+      ]
+    },
+    {
+      "productId": 2,
+      "name": "Kaffe",
+      "category": "Tørrvarer",
+      "suppressed": false,
+      "purchases": [
+        { "date": "2026-07-24", "quantity": 1, "unit": "stk" },
+        { "date": "2026-08-14", "quantity": 1, "unit": "stk" }
+      ]
+    },
+    {
+      "productId": 3,
+      "name": "Mel",
+      "category": "Tørrvarer",
+      "suppressed": false,
+      "purchases": [
+        { "date": "2026-06-01", "quantity": 1, "unit": "kg" },
+        { "date": "2026-06-15", "quantity": 1, "unit": "kg" }
+      ]
+    },
+    {
+      "productId": 4,
+      "name": "Bananer",
+      "category": "Frukt og grønt",
+      "suppressed": false,
+      "purchases": [
+        { "date": "2026-08-26", "quantity": 1, "unit": "kg" },
+        { "date": "2026-09-02", "quantity": 1, "unit": "kg" }
+      ]
+    },
+    {
+      "productId": 5,
+      "name": "Chips",
+      "category": "Snacks",
+      "suppressed": false,
+      "purchases": [
+        { "date": "2026-08-31", "quantity": 1, "unit": "stk" },
+        { "date": "2026-09-01", "quantity": 1, "unit": "stk" }
+      ]
+    }
+  ]
+}

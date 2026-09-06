@@ -26,6 +26,7 @@ import healthRoutes from './routes/health.ts';
 import productsRoutes from './routes/products.ts';
 import receiptLinesRoutes from './routes/receiptLines.ts';
 import receiptsRoutes from './routes/receipts.ts';
+import suggestionsRoutes from './routes/suggestions.ts';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -179,6 +180,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(receiptsRoutes, { now: options.now ?? (() => new Date()) });
   app.register(receiptLinesRoutes);
   app.register(productsRoutes);
+  app.register(suggestionsRoutes, { now: options.now ?? (() => new Date()) });
 
   return app;
 }
