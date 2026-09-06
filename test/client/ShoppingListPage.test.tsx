@@ -262,6 +262,27 @@ describe('ShoppingListPage', () => {
       expect(toggleMutate).toHaveBeenCalledWith({ id: 1, checked: true }, expect.anything());
     });
 
+    it('toggles when the name is tapped, not only the checkbox itself (T18 F1)', async () => {
+      mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l', checked: false })] }));
+      renderPage();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByText('Lettmelk 1 l'));
+
+      expect(toggleMutate).toHaveBeenCalledWith({ id: 1, checked: true }, expect.anything());
+    });
+
+    it('does not toggle when "Fjern" is tapped (T18 F1)', async () => {
+      mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l', checked: false })] }));
+      renderPage();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Fjern Lettmelk 1 l'));
+
+      expect(toggleMutate).not.toHaveBeenCalled();
+      expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
+    });
+
     it('reverts and shows a toast when toggling fails', async () => {
       toggleMutate.mockImplementation((_body, options) => {
         options?.onError?.(new Error('nettverksfeil'));
