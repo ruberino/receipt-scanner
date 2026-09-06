@@ -100,19 +100,9 @@ describe('ReceiptsPage', () => {
     expect(screen.getByText('Ingen kvitteringer ennå.')).toBeInTheDocument();
   });
 
-  it('renders store, date, total and status for each receipt, with fallbacks for missing fields', () => {
+  it('renders store, date, total and status for a done receipt', () => {
     mockList([
-      [
-        receipt({ id: 1, storeName: 'KIWI Torshov', purchasedAt: '2026-09-01', totalOre: 12345 }),
-        receipt({
-          id: 2,
-          status: 'uploaded',
-          storeName: null,
-          purchasedAt: null,
-          totalOre: null,
-          warnings: ['MISSING_STORE', 'MISSING_DATE'],
-        }),
-      ],
+      [receipt({ id: 1, storeName: 'KIWI Torshov', purchasedAt: '2026-09-01', totalOre: 12345 })],
     ]);
     mockScan();
 
@@ -120,11 +110,54 @@ describe('ReceiptsPage', () => {
 
     expect(screen.getByText('KIWI Torshov')).toBeInTheDocument();
     expect(screen.getByText(/123,45\s*kr/)).toBeInTheDocument();
-    expect(screen.getByText('Ukjent butikk')).toBeInTheDocument();
-    expect(screen.getByText('2 varsler')).toBeInTheDocument();
-    expect(screen.getAllByText('–')).toHaveLength(2);
     expect(screen.getByText('Ferdig')).toBeInTheDocument();
-    expect(screen.getByText('Lastet opp')).toBeInTheDocument();
+  });
+
+  it('shows the warning count when there are warnings', () => {
+    mockList([[receipt({ id: 1, warnings: ['MISSING_STORE', 'MISSING_DATE'] })]]);
+    mockScan();
+
+    renderReceiptsPage();
+
+    expect(screen.getByText('2 varsler')).toBeInTheDocument();
+  });
+
+  it('shows "Ukjent butikk" only when done, "Ikke skannet ennå" when uploaded and "Lesing feilet" when failed, all without a store name (T19 F1)', () => {
+    mockList([
+      [
+        receipt({ id: 1, status: 'done', storeName: null }),
+        receipt({ id: 2, status: 'uploaded', storeName: null }),
+        receipt({ id: 3, status: 'failed', storeName: null }),
+      ],
+    ]);
+    mockScan();
+
+    renderReceiptsPage();
+
+    expect(screen.getByText('Ukjent butikk')).toBeInTheDocument();
+    expect(screen.getByText('Ikke skannet ennå')).toBeInTheDocument();
+    expect(screen.getByText('Lesing feilet')).toBeInTheDocument();
+  });
+
+  it('shows the upload date instead of "–" when there is no purchasedAt, but keeps "–" for an unknown total (T19 F1)', () => {
+    mockList([
+      [
+        receipt({
+          id: 1,
+          status: 'uploaded',
+          storeName: null,
+          purchasedAt: null,
+          totalOre: null,
+          createdAt: '2026-09-01T00:00:00.000Z',
+        }),
+      ],
+    ]);
+    mockScan();
+
+    renderReceiptsPage();
+
+    expect(screen.getByText(/^Lastet opp /)).toBeInTheDocument();
+    expect(screen.getAllByText('–')).toHaveLength(1);
   });
 
   it('links each row to its receipt', () => {

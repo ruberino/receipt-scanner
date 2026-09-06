@@ -14,6 +14,26 @@ function warningCountLabel(count: number): string | null {
   return count === 1 ? '1 varsel' : `${count} varsler`;
 }
 
+function storeNameLabel(receipt: ReceiptSummary): string {
+  if (receipt.storeName !== null) {
+    return receipt.storeName;
+  }
+  if (receipt.status === 'uploaded') {
+    return 'Ikke skannet ennå';
+  }
+  if (receipt.status === 'failed') {
+    return 'Lesing feilet';
+  }
+  return 'Ukjent butikk';
+}
+
+function dateLabel(receipt: ReceiptSummary): string {
+  if (receipt.purchasedAt !== null) {
+    return formatRelativeDate(receipt.purchasedAt);
+  }
+  return `Lastet opp ${formatRelativeDate(receipt.createdAt.slice(0, 10))}`;
+}
+
 function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
   const { showToast } = useToast();
   const scan = useScanReceipt();
@@ -28,10 +48,8 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
   return (
     <li className="flex items-center justify-between gap-3 border-b border-gray-200 p-4">
       <Link to={`/receipts/${receipt.id}`} className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate font-medium">{receipt.storeName ?? 'Ukjent butikk'}</span>
-        <span className="text-sm text-gray-600">
-          {receipt.purchasedAt !== null ? formatRelativeDate(receipt.purchasedAt) : '–'}
-        </span>
+        <span className="truncate font-medium">{storeNameLabel(receipt)}</span>
+        <span className="text-sm text-gray-600">{dateLabel(receipt)}</span>
         {warningLabel !== null && <span className="text-xs text-yellow-800">{warningLabel}</span>}
       </Link>
       <div className="flex flex-shrink-0 items-center gap-2">
