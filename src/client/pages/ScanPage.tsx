@@ -124,7 +124,13 @@ export default function ScanPage() {
             Bruk
           </button>
           {isBusy && (
-            <div role="progressbar" className="h-2 w-full rounded bg-gray-200">
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress * 100)}
+              className="h-2 w-full rounded bg-gray-200"
+            >
               <div
                 className="h-2 rounded bg-blue-600"
                 style={{ width: `${Math.round(progress * 100)}%` }}

@@ -76,20 +76,38 @@ describe('ScanPage', () => {
     expect(screen.getByAltText('Forhåndsvisning av kvittering')).toBeInTheDocument();
   });
 
-  it('downscales, uploads with a progress callback, and navigates to the receipt on success', async () => {
+  it('downscales, uploads with a progress bar that reaches 100%, and navigates to the receipt on success', async () => {
+    let resolveUpload: ((value: { id: number }) => void) | undefined;
+    let isPending = false;
     const mutateAsync = vi.fn(
       ({ onProgress }: { onProgress?: (fraction: number) => void }) =>
         new Promise((resolve) => {
+          isPending = true;
+          resolveUpload = (value) => {
+            isPending = false;
+            resolve(value);
+          };
           onProgress?.(1);
-          resolve({ id: 7 });
         }),
     );
-    mockUpload(mutateAsync);
+    // isPending must be read fresh on every render, not captured once, since the upload starts
+    // synchronously inside handleUse (no await before it) and only then does React re-render.
+    vi.mocked(useUploadReceipt).mockImplementation(
+      () => ({ mutateAsync, isPending }) as unknown as ReturnType<typeof useUploadReceipt>,
+    );
     renderScanPage();
     await selectAFile();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Bruk' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    });
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemin', '0');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '100');
+
+    resolveUpload?.({ id: 7 });
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith('/receipts/7');
