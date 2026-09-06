@@ -5,7 +5,8 @@ import { todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { receiptImages, receiptLines, receipts } from '../db/schema.ts';
 import { applyExtraction, findPossibleDuplicate } from '../domain/extraction.ts';
-import { ExtractionError } from '../lib/errors.ts';
+import { matchLines } from '../domain/matching.ts';
+import { ExtractionError, type ExtractionStage } from '../lib/errors.ts';
 import { runExtraction } from '../llm/extractReceipt.ts';
 import type { LlmClient } from '../llm/LlmClient.ts';
 
@@ -42,7 +43,7 @@ async function processReceipt(deps: ReceiptProcessorDeps, receiptId: number): Pr
     .where(eq(receipts.id, receiptId))
     .run();
 
-  let stage: 'extraction' | 'matching' = 'extraction';
+  let stage: ExtractionStage = 'extraction';
   try {
     const image = db
       .select()
@@ -70,14 +71,12 @@ async function processReceipt(deps: ReceiptProcessorDeps, receiptId: number): Pr
       warnings.push('POSSIBLE_DUPLICATE');
     }
 
-    // Matching is a stub until T09: item lines stay unmatched, no MATCHING_FAILED/UNMATCHED_LINES yet.
-    stage = 'matching';
-
+    // Saved while still `processing`: matching (below) needs the lines in place, and a retry after
+    // a crash here must not duplicate them, so delete-then-insert stays in the same transaction.
     sqlite.transaction(() => {
       db.delete(receiptLines).where(eq(receiptLines.receiptId, receiptId)).run();
       db.update(receipts)
         .set({
-          status: 'done',
           storeName: applied.storeName,
           purchasedAt: applied.purchasedAt,
           totalOre: applied.totalOre,
@@ -107,6 +106,17 @@ async function processReceipt(deps: ReceiptProcessorDeps, receiptId: number): Pr
           .run();
       }
     })();
+
+    stage = 'matching';
+    // matchLines never throws for an LLM/parsing failure; it returns MATCHING_FAILED instead, so
+    // only a genuine extraction failure above ends the receipt as `failed`.
+    const matched = await matchLines({ db, sqlite, llm, logger, receiptId });
+    const finalWarnings = [...warnings, ...matched.warnings];
+
+    db.update(receipts)
+      .set({ status: 'done', warningsJson: JSON.stringify(finalWarnings), updatedAt: nowIso() })
+      .where(eq(receipts.id, receiptId))
+      .run();
   } catch (error) {
     const errorMessage =
       error instanceof ExtractionError ? error.userMessage : 'Ukjent feil under lesing';

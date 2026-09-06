@@ -10,6 +10,7 @@ import type { JsonCompletionResult } from '../../../src/server/llm/LlmClient.ts'
 
 const NOW = '2026-09-03T12:00:00.000Z';
 const FIXED_NOW = () => new Date(NOW);
+const LINE_TEXT = 'TINE LETTMELK 1L';
 
 function extractionText(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -18,7 +19,7 @@ function extractionText(overrides: Record<string, unknown> = {}): string {
     total: 43.8,
     lines: [
       {
-        text: 'TINE LETTMELK 1L',
+        text: LINE_TEXT,
         kind: 'item',
         quantity: 2,
         unit: 'stk',
@@ -30,7 +31,7 @@ function extractionText(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-function fakeResult(overrides: Partial<JsonCompletionResult> = {}): JsonCompletionResult {
+function fakeExtraction(overrides: Partial<JsonCompletionResult> = {}): JsonCompletionResult {
   return {
     text: extractionText(),
     finishReason: 'stop',
@@ -38,6 +39,26 @@ function fakeResult(overrides: Partial<JsonCompletionResult> = {}): JsonCompleti
     usage: { promptTokens: 10, completionTokens: 5 },
     durationMs: 5,
     ...overrides,
+  };
+}
+
+/** A matching response that creates a new product for LINE_TEXT; used whenever a test needs matching to succeed. */
+function fakeMatch(): JsonCompletionResult {
+  return {
+    text: JSON.stringify({
+      matches: [
+        {
+          text: LINE_TEXT,
+          existingProduct: null,
+          newProductName: 'Lettmelk 1 l',
+          category: 'Meieri',
+        },
+      ],
+    }),
+    finishReason: 'stop',
+    model: 'kimi-k2.6',
+    usage: { promptTokens: 10, completionTokens: 5 },
+    durationMs: 5,
   };
 }
 
@@ -73,6 +94,10 @@ function getReceipt(id: number) {
   return opened.db.select().from(receipts).where(eq(receipts.id, id)).get();
 }
 
+function stubLogger(): FastifyBaseLogger {
+  return { error: vi.fn() } as unknown as FastifyBaseLogger;
+}
+
 afterEach(() => {
   opened.sqlite.close();
 });
@@ -81,11 +106,11 @@ describe('receiptProcessor', () => {
   it('processes an upload to done with the fake response and attempts 1, resolved by drain()', async () => {
     opened = createDb();
     const id = insertPendingReceipt();
-    const llm = new FakeLlmClient([fakeResult()]);
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch()]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 
@@ -108,7 +133,8 @@ describe('receiptProcessor', () => {
       () => {
         throw new Error('network down');
       },
-      fakeResult(),
+      fakeExtraction(),
+      fakeMatch(),
     ]);
     const logger = { error: vi.fn() };
     const processor = createReceiptProcessor({
@@ -148,11 +174,11 @@ describe('receiptProcessor', () => {
         { receiptId: id, lineNo: 2, kind: 'item', rawText: 'OLD 2', totalOre: 200, createdAt: NOW },
       ])
       .run();
-    const llm = new FakeLlmClient([fakeResult()]);
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch()]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 
@@ -161,18 +187,19 @@ describe('receiptProcessor', () => {
 
     const lines = opened.db.select().from(receiptLines).where(eq(receiptLines.receiptId, id)).all();
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.rawText).toBe('TINE LETTMELK 1L');
+    expect(lines[0]?.rawText).toBe(LINE_TEXT);
   });
 
   it('processes two uploads sequentially in id order', async () => {
     opened = createDb();
     const first = insertPendingReceipt();
     const second = insertPendingReceipt();
-    const llm = new FakeLlmClient([fakeResult(), fakeResult()]);
+    // Up to 2 LLM calls per receipt (extraction + matching); extras are simply unused.
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch(), fakeExtraction(), fakeMatch()]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 
@@ -180,7 +207,9 @@ describe('receiptProcessor', () => {
     processor.enqueue(second);
     await processor.drain();
 
-    expect(llm.requests.map((r) => r.receiptId)).toEqual([first, second]);
+    const firstIndices = llm.requests.flatMap((r, i) => (r.receiptId === first ? [i] : []));
+    const secondIndices = llm.requests.flatMap((r, i) => (r.receiptId === second ? [i] : []));
+    expect(Math.max(...firstIndices)).toBeLessThan(Math.min(...secondIndices));
     expect(getReceipt(first)?.status).toBe('done');
     expect(getReceipt(second)?.status).toBe('done');
   });
@@ -191,28 +220,32 @@ describe('receiptProcessor', () => {
     const processing = insertPendingReceipt({ status: 'processing' });
     insertPendingReceipt({ status: 'done' });
     insertPendingReceipt({ status: 'failed' });
-    const llm = new FakeLlmClient([fakeResult(), fakeResult()]);
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch(), fakeExtraction(), fakeMatch()]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 
     processor.requeueUnfinished();
     await processor.drain();
 
-    expect(llm.requests.map((r) => r.receiptId)).toEqual([pending, processing]);
+    const pendingIndices = llm.requests.flatMap((r, i) => (r.receiptId === pending ? [i] : []));
+    const processingIndices = llm.requests.flatMap((r, i) =>
+      r.receiptId === processing ? [i] : [],
+    );
+    expect(Math.max(...pendingIndices)).toBeLessThan(Math.min(...processingIndices));
   });
 
   it('reports queueLength while processing and 0 once drained', async () => {
     opened = createDb();
     const id = insertPendingReceipt();
-    const llm = new FakeLlmClient([fakeResult()]);
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch()]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 
@@ -227,11 +260,13 @@ describe('receiptProcessor', () => {
     opened = createDb();
     const firstId = insertPendingReceipt();
     const secondId = insertPendingReceipt();
-    const llm = new FakeLlmClient([fakeResult(), fakeResult()]);
+    // The second receipt's line matches by alias (created while processing the first), so it needs
+    // no matching call of its own; extras beyond what is actually consumed are simply unused.
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch(), fakeExtraction(), fakeMatch()]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 
@@ -250,13 +285,15 @@ describe('receiptProcessor', () => {
     const firstId = insertPendingReceipt();
     const secondId = insertPendingReceipt();
     const llm = new FakeLlmClient([
-      fakeResult(),
-      fakeResult({ text: extractionText({ total: 99.9 }) }),
+      fakeExtraction(),
+      fakeMatch(),
+      fakeExtraction({ text: extractionText({ total: 99.9 }) }),
+      fakeMatch(),
     ]);
     const processor = createReceiptProcessor({
       ...opened,
       llm,
-      logger: { error: vi.fn() } as unknown as FastifyBaseLogger,
+      logger: stubLogger(),
       now: FIXED_NOW,
     });
 

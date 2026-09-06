@@ -3,10 +3,12 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { isUniqueViolation } from '../db/client.ts';
 import { products, receiptImages, receiptLines, receipts } from '../db/schema.ts';
+import { matchLines, type MatchLinesWarning } from '../domain/matching.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
 import { normaliseImage } from '../lib/images.ts';
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const MATCHING_WARNINGS: readonly MatchLinesWarning[] = ['UNMATCHED_LINES', 'MATCHING_FAILED'];
 
 function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: number) {
   return {
@@ -21,6 +23,36 @@ function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: numb
     possibleDuplicateOf: receipt.possibleDuplicateOf,
     reviewedAt: receipt.reviewedAt,
     createdAt: receipt.createdAt,
+  };
+}
+
+function buildReceiptDetail(app: FastifyInstance, receipt: typeof receipts.$inferSelect) {
+  const lines = app.db
+    .select({
+      id: receiptLines.id,
+      lineNo: receiptLines.lineNo,
+      kind: receiptLines.kind,
+      rawText: receiptLines.rawText,
+      quantity: receiptLines.quantity,
+      unit: receiptLines.unit,
+      unitPriceOre: receiptLines.unitPriceOre,
+      totalOre: receiptLines.totalOre,
+      matchSource: receiptLines.matchSource,
+      product: { id: products.id, name: products.name, category: products.category },
+    })
+    .from(receiptLines)
+    .leftJoin(products, eq(receiptLines.productId, products.id))
+    .where(eq(receiptLines.receiptId, receipt.id))
+    .orderBy(receiptLines.lineNo)
+    .all();
+
+  return {
+    ...toReceiptSummary(receipt, lines.length),
+    imageUrl: `/api/receipts/${receipt.id}/image`,
+    lines: lines.map((line) => ({
+      ...line,
+      product: line.product?.id == null ? null : line.product,
+    })),
   };
 }
 
@@ -98,33 +130,7 @@ export default async function receiptsRoutes(app: FastifyInstance): Promise<void
       throw new NotFoundError();
     }
 
-    const lines = app.db
-      .select({
-        id: receiptLines.id,
-        lineNo: receiptLines.lineNo,
-        kind: receiptLines.kind,
-        rawText: receiptLines.rawText,
-        quantity: receiptLines.quantity,
-        unit: receiptLines.unit,
-        unitPriceOre: receiptLines.unitPriceOre,
-        totalOre: receiptLines.totalOre,
-        matchSource: receiptLines.matchSource,
-        product: { id: products.id, name: products.name, category: products.category },
-      })
-      .from(receiptLines)
-      .leftJoin(products, eq(receiptLines.productId, products.id))
-      .where(eq(receiptLines.receiptId, params.id))
-      .orderBy(receiptLines.lineNo)
-      .all();
-
-    return {
-      ...toReceiptSummary(receipt, lines.length),
-      imageUrl: `/api/receipts/${receipt.id}/image`,
-      lines: lines.map((line) => ({
-        ...line,
-        product: line.product?.id == null ? null : line.product,
-      })),
-    };
+    return buildReceiptDetail(app, receipt);
   });
 
   app.post('/api/receipts/:id/retry', async (request, reply) => {
@@ -155,6 +161,38 @@ export default async function receiptsRoutes(app: FastifyInstance): Promise<void
       .all().length;
 
     reply.status(202).send(toReceiptSummary(updated, lineCount));
+  });
+
+  app.post('/api/receipts/:id/rematch', async (request) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const receipt = app.db.select().from(receipts).where(eq(receipts.id, params.id)).get();
+    if (!receipt) {
+      throw new NotFoundError();
+    }
+
+    const matched = await matchLines({
+      db: app.db,
+      sqlite: app.sqlite,
+      llm: app.llm,
+      logger: request.log,
+      receiptId: params.id,
+    });
+
+    const keptWarnings = (JSON.parse(receipt.warningsJson) as string[]).filter(
+      (warning) => !MATCHING_WARNINGS.includes(warning as MatchLinesWarning),
+    );
+    app.db
+      .update(receipts)
+      .set({
+        warningsJson: JSON.stringify([...keptWarnings, ...matched.warnings]),
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(receipts.id, params.id))
+      .run();
+
+    const updatedReceipt = app.db.select().from(receipts).where(eq(receipts.id, params.id)).get();
+    return buildReceiptDetail(app, updatedReceipt!);
   });
 
   app.get('/api/receipts/:id/image', async (request, reply) => {
