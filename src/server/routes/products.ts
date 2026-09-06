@@ -27,7 +27,7 @@ const listQuerySchema = z.object({
   includeSuppressed: z.enum(['true', 'false']).optional(),
 });
 
-function toProduct(product: typeof products.$inferSelect, stats: ProductStats) {
+export function toProduct(product: typeof products.$inferSelect, stats: ProductStats) {
   return {
     id: product.id,
     name: product.name,

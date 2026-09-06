@@ -3,17 +3,33 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReceiptSummary } from '../../src/shared/schemas.ts';
+import type {
+  MonthlyStats,
+  Product,
+  ReceiptSummary,
+  ShoppingListSummary,
+} from '../../src/shared/schemas.ts';
 import { ToastProvider } from '../../src/client/components/Toast.tsx';
 import ReceiptsPage from '../../src/client/pages/ReceiptsPage.tsx';
 
 vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/client/api/queries.ts')>();
-  return { ...actual, useReceiptsList: vi.fn(), useScanReceipt: vi.fn() };
+  return {
+    ...actual,
+    useReceiptsList: vi.fn(),
+    useScanReceipt: vi.fn(),
+    useStatsSummary: vi.fn(),
+    useShoppingListHistory: vi.fn(),
+  };
 });
 
-const { useReceiptsList, useScanReceipt, receiptsListRefetchInterval } =
-  await import('../../src/client/api/queries.ts');
+const {
+  useReceiptsList,
+  useScanReceipt,
+  useStatsSummary,
+  useShoppingListHistory,
+  receiptsListRefetchInterval,
+} = await import('../../src/client/api/queries.ts');
 
 function renderReceiptsPage() {
   render(
@@ -55,6 +71,55 @@ function mockList(
     isFetchingNextPage: false,
     ...extra,
   } as unknown as ReturnType<typeof useReceiptsList>);
+}
+
+function monthlyStats(overrides: Partial<MonthlyStats> = {}): MonthlyStats {
+  return { month: '2026-09', totalOre: 1000, receipts: 1, ...overrides };
+}
+
+function product(overrides: Partial<Product> = {}): Product {
+  return {
+    id: 1,
+    name: 'Lettmelk 1 l',
+    category: 'Meieri',
+    suppressed: false,
+    timesBought: 3,
+    lastBought: null,
+    medianIntervalDays: null,
+    ...overrides,
+  };
+}
+
+function shoppingListSummary(overrides: Partial<ShoppingListSummary> = {}): ShoppingListSummary {
+  return {
+    id: 1,
+    weekStart: '2026-08-31',
+    status: 'open',
+    createdAt: '2026-08-31T00:00:00.000Z',
+    completedAt: null,
+    itemCount: 3,
+    ...overrides,
+  };
+}
+
+function mockStats(extra: Partial<ReturnType<typeof useStatsSummary>> = {}) {
+  vi.mocked(useStatsSummary).mockReturnValue({
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    data: { months: [monthlyStats()], topProducts: [product()] },
+    ...extra,
+  } as unknown as ReturnType<typeof useStatsSummary>);
+}
+
+function mockHistory(extra: Partial<ReturnType<typeof useShoppingListHistory>> = {}) {
+  vi.mocked(useShoppingListHistory).mockReturnValue({
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    data: [shoppingListSummary()],
+    ...extra,
+  } as unknown as ReturnType<typeof useShoppingListHistory>);
 }
 
 function mockScan(
@@ -249,6 +314,65 @@ describe('ReceiptsPage', () => {
     renderReceiptsPage();
 
     expect(screen.queryByRole('button', { name: 'Last flere' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ReceiptsPage — Statistikk og historikk', () => {
+  it('renders collapsed, with the two hooks not enabled', () => {
+    mockList([[receipt({ id: 1 })]]);
+    mockScan();
+    mockStats();
+    mockHistory();
+
+    renderReceiptsPage();
+
+    expect(screen.getByText('Statistikk og historikk')).toBeInTheDocument();
+    expect(screen.queryByText('Mest kjøpt, alle kvitteringer')).not.toBeInTheDocument();
+    expect(vi.mocked(useStatsSummary)).toHaveBeenCalledWith(false);
+    expect(vi.mocked(useShoppingListHistory)).toHaveBeenCalledWith(false);
+  });
+
+  it('enables both hooks once opened, and renders monthly bars, top products and list history', async () => {
+    mockList([[receipt({ id: 1 })]]);
+    mockScan();
+    mockStats({
+      data: {
+        months: [monthlyStats({ month: '2026-08', totalOre: 5000 })],
+        topProducts: [product({ name: 'Lettmelk 1 l', timesBought: 4 })],
+      },
+    });
+    mockHistory({
+      data: [shoppingListSummary({ weekStart: '2026-08-24', status: 'done', itemCount: 5 })],
+    });
+
+    renderReceiptsPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Statistikk og historikk'));
+
+    expect(vi.mocked(useStatsSummary)).toHaveBeenCalledWith(true);
+    expect(vi.mocked(useShoppingListHistory)).toHaveBeenCalledWith(true);
+    expect(screen.getByText('aug. 2026')).toBeInTheDocument();
+    expect(screen.getByText(/50,00\s*kr/)).toBeInTheDocument();
+    expect(screen.getByText('Mest kjøpt, alle kvitteringer')).toBeInTheDocument();
+    expect(screen.getByText('Lettmelk 1 l')).toBeInTheDocument();
+    expect(screen.getByText('4×')).toBeInTheDocument();
+    expect(screen.getByText(/Uke/)).toBeInTheDocument();
+    expect(screen.getByText('5 varer')).toBeInTheDocument();
+    expect(screen.getByText('Fullført')).toBeInTheDocument();
+  });
+
+  it('shows a loading state and an error state independently for stats and history', async () => {
+    mockList([[receipt({ id: 1 })]]);
+    mockScan();
+    mockStats({ isPending: true, isSuccess: false, data: undefined });
+    mockHistory({ isError: true, isSuccess: false, data: undefined });
+
+    renderReceiptsPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Statistikk og historikk'));
+
+    expect(screen.getByText('Laster …')).toBeInTheDocument();
+    expect(screen.getByText('Noe gikk galt')).toBeInTheDocument();
   });
 });
 

@@ -162,6 +162,82 @@ describe('POST /api/shopping-lists', () => {
   });
 });
 
+describe('GET /api/shopping-lists', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'GET', url: '/api/shopping-lists' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns history newest week first, with an item count and no items array, including the open list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const older = insertDoneList('2026-08-17');
+    insertItem(older, 1);
+    const newer = insertDoneList('2026-08-24');
+    insertItem(newer, 1);
+    insertItem(newer, 2);
+    const open = insertOpenList('2026-08-31');
+    insertItem(open, 1);
+    insertItem(open, 2);
+    insertItem(open, 3);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/shopping-lists',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.map((list: { id: number }) => list.id)).toEqual([open, newer, older]);
+    expect(body[0]).toEqual({
+      id: open,
+      weekStart: '2026-08-31',
+      status: 'open',
+      createdAt: NOW,
+      completedAt: null,
+      itemCount: 3,
+    });
+    expect(body[1]).toMatchObject({ weekStart: '2026-08-24', status: 'done', itemCount: 2 });
+    expect(body[2]).toMatchObject({ weekStart: '2026-08-17', status: 'done', itemCount: 1 });
+    expect(body.every((list: Record<string, unknown>) => !('items' in list))).toBe(true);
+  });
+
+  it('breaks a tie on the same weekStart by id descending', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const first = insertDoneList('2026-08-24');
+    const second = insertDoneList('2026-08-24');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/shopping-lists',
+      headers: { cookie },
+    });
+
+    expect(response.json().map((list: { id: number }) => list.id)).toEqual([second, first]);
+  });
+
+  it('respects the limit query parameter', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    insertDoneList('2026-08-10');
+    insertDoneList('2026-08-17');
+    insertDoneList('2026-08-24');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/shopping-lists?limit=2',
+      headers: { cookie },
+    });
+
+    expect(response.json()).toHaveLength(2);
+  });
+});
+
 describe('GET /api/shopping-lists/current', () => {
   it('gives 401 without the auth cookie', async () => {
     app = createTestApp();

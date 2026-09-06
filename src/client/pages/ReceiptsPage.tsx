@@ -1,9 +1,20 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
-import type { ReceiptSummary } from '../../shared/schemas.ts';
+import type {
+  MonthlyStats,
+  Product,
+  ReceiptSummary,
+  ShoppingListSummary,
+} from '../../shared/schemas.ts';
 import { formatOre } from '../../shared/money.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
-import { formatRelativeDate } from '../lib/format.ts';
-import { useReceiptsList, useScanReceipt } from '../api/queries.ts';
+import { formatDate, formatMonth, formatRelativeDate } from '../lib/format.ts';
+import {
+  useReceiptsList,
+  useScanReceipt,
+  useShoppingListHistory,
+  useStatsSummary,
+} from '../api/queries.ts';
 import ReceiptStatusBadge from '../components/ReceiptStatusBadge.tsx';
 import { useToast } from '../components/Toast.tsx';
 
@@ -32,6 +43,100 @@ function dateLabel(receipt: ReceiptSummary): string {
     return formatRelativeDate(receipt.purchasedAt);
   }
   return `Lastet opp ${formatRelativeDate(receipt.createdAt.slice(0, 10))}`;
+}
+
+function shoppingListStatusLabel(status: ShoppingListSummary['status']): string {
+  return status === 'open' ? 'Åpen' : 'Fullført';
+}
+
+function MonthlyBarsSection({ months }: { months: MonthlyStats[] }) {
+  const maxOre = Math.max(0, ...months.map((month) => month.totalOre));
+
+  return (
+    <section>
+      <h3 className="mb-2 font-medium">Per måned</h3>
+      <ul className="flex flex-col gap-2">
+        {months.map((month) => (
+          <li key={month.month} className="flex items-center gap-3 text-sm">
+            <span className="w-16 flex-shrink-0 text-gray-600">{formatMonth(month.month)}</span>
+            <div className="h-3 flex-1 rounded bg-gray-100">
+              <div
+                className="h-3 rounded bg-blue-600"
+                style={{ width: `${maxOre === 0 ? 0 : (month.totalOre / maxOre) * 100}%` }}
+              />
+            </div>
+            <span className="w-20 flex-shrink-0 text-right">{formatOre(month.totalOre)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function TopProductsSection({ products }: { products: Product[] }) {
+  return (
+    <section>
+      <h3 className="mb-2 font-medium">Mest kjøpt, alle kvitteringer</h3>
+      <ol className="flex flex-col gap-1">
+        {products.map((product) => (
+          <li key={product.id} className="flex justify-between gap-3 text-sm">
+            <span className="truncate">{product.name}</span>
+            <span className="flex-shrink-0 text-gray-600">{product.timesBought}×</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function ShoppingListHistorySection({ lists }: { lists: ShoppingListSummary[] }) {
+  return (
+    <section>
+      <h3 className="mb-2 font-medium">Handlelistehistorikk</h3>
+      <ul className="flex flex-col gap-1">
+        {lists.map((list) => (
+          <li key={list.id} className="flex justify-between gap-3 text-sm">
+            <span>Uke {formatDate(list.weekStart)}</span>
+            <span className="flex-shrink-0 text-gray-600">
+              {list.itemCount} {list.itemCount === 1 ? 'vare' : 'varer'}
+            </span>
+            <span className="flex-shrink-0">{shoppingListStatusLabel(list.status)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function StatsAndHistory() {
+  const [isOpen, setIsOpen] = useState(false);
+  const stats = useStatsSummary(isOpen);
+  const history = useShoppingListHistory(isOpen);
+
+  return (
+    <details
+      className="border-b border-gray-200 p-4"
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer font-medium">Statistikk og historikk</summary>
+      {isOpen && (
+        <div className="mt-4 flex flex-col gap-6">
+          {stats.isPending && <p>Laster …</p>}
+          {stats.isError && <p>Noe gikk galt</p>}
+          {stats.isSuccess && (
+            <>
+              <MonthlyBarsSection months={stats.data.months} />
+              <TopProductsSection products={stats.data.topProducts} />
+            </>
+          )}
+
+          {history.isPending && <p>Laster …</p>}
+          {history.isError && <p>Noe gikk galt</p>}
+          {history.isSuccess && <ShoppingListHistorySection lists={history.data} />}
+        </div>
+      )}
+    </details>
+  );
 }
 
 function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
@@ -115,6 +220,8 @@ export default function ReceiptsPage() {
           </button>
         </div>
       )}
+
+      <StatsAndHistory />
 
       {receipts.length === 0 ? (
         <p className="p-4">Ingen kvitteringer ennå.</p>

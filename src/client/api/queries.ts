@@ -18,6 +18,8 @@ import type {
   ReceiptSummary,
   ShoppingList,
   ShoppingListItem,
+  ShoppingListSummary,
+  StatsSummary,
   Suggestion,
 } from '../../shared/schemas.ts';
 import { ApiRequestError, fetchJson, uploadFile } from './client.ts';
@@ -349,6 +351,25 @@ export function useDeleteShoppingListItem() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: CURRENT_SHOPPING_LIST_KEY });
     },
+  });
+}
+
+/** `enabled` ties the fetch to the "Statistikk og historikk" `<details>` being open, so the everyday
+ * visit to `/receipts` costs no extra request. */
+export function useStatsSummary(enabled: boolean) {
+  return useQuery({
+    queryKey: ['stats', 'summary'],
+    queryFn: () => fetchJson<StatsSummary>('/api/stats/summary'),
+    enabled,
+  });
+}
+
+/** Same gating as {@link useStatsSummary}. */
+export function useShoppingListHistory(enabled: boolean) {
+  return useQuery({
+    queryKey: ['shopping-lists', 'history'],
+    queryFn: () => fetchJson<ShoppingListSummary[]>('/api/shopping-lists'),
+    enabled,
   });
 }
 

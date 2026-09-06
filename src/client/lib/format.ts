@@ -8,6 +8,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('nb-NO', {
   year: 'numeric',
 });
 const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' });
+const MONTH_FORMATTER = new Intl.DateTimeFormat('nb-NO', { month: 'short', year: 'numeric' });
 
 function toUtcDate(date: string): Date {
   const [year, month, day] = date.split('-').map(Number);
@@ -32,6 +33,12 @@ export function formatRelativeDate(date: string, today: string = todayLocalIso()
     return `${days} dager siden`;
   }
   return SHORT_DATE_FORMATTER.format(toUtcDate(date));
+}
+
+/** `formatMonth('2026-07')` → `jul. 2026`. */
+export function formatMonth(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number);
+  return MONTH_FORMATTER.format(new Date(Date.UTC(year!, monthNumber! - 1, 1)));
 }
 
 /** `formatQuantity(1.5, 'kg')` → `1,5 kg`; `formatQuantity(2, null)` → `2`. */

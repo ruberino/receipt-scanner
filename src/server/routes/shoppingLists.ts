@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { createShoppingListItemSchema, patchShoppingListItemSchema } from '../../shared/schemas.ts';
 import { mondayOf, todayInOslo } from '../../shared/dates.ts';
@@ -15,9 +15,36 @@ export type ShoppingListsRouteOptions = {
 };
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 function findOpenList(db: AppDatabase) {
   return db.select().from(shoppingLists).where(eq(shoppingLists.status, 'open')).get();
+}
+
+function loadItemCounts(db: AppDatabase, listIds: number[]): Map<number, number> {
+  if (listIds.length === 0) {
+    return new Map();
+  }
+  const rows = db
+    .select({ listId: shoppingListItems.listId, count: sql<number>`count(*)` })
+    .from(shoppingListItems)
+    .where(inArray(shoppingListItems.listId, listIds))
+    .groupBy(shoppingListItems.listId)
+    .all();
+  return new Map(rows.map((row) => [row.listId, row.count]));
+}
+
+function toShoppingListSummary(list: typeof shoppingLists.$inferSelect, itemCount: number) {
+  return {
+    id: list.id,
+    weekStart: list.weekStart,
+    status: list.status,
+    createdAt: list.createdAt,
+    completedAt: list.completedAt,
+    itemCount,
+  };
 }
 
 function loadItems(db: AppDatabase, listId: number) {
@@ -105,6 +132,23 @@ export default async function shoppingListsRoutes(
     })();
 
     reply.status(201).send(buildShoppingListDetail(app.db, created));
+  });
+
+  app.get('/api/shopping-lists', async (request) => {
+    const query = listQuerySchema.parse(request.query);
+
+    const lists = app.db
+      .select()
+      .from(shoppingLists)
+      .orderBy(desc(shoppingLists.weekStart), desc(shoppingLists.id))
+      .limit(query.limit)
+      .all();
+
+    const itemCounts = loadItemCounts(
+      app.db,
+      lists.map((list) => list.id),
+    );
+    return lists.map((list) => toShoppingListSummary(list, itemCounts.get(list.id) ?? 0));
   });
 
   app.get('/api/shopping-lists/current', async () => {

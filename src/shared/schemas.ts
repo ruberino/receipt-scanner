@@ -178,6 +178,19 @@ export const shoppingListSchema = z.object({
 
 export type ShoppingList = z.infer<typeof shoppingListSchema>;
 
+/** `ShoppingList` without `items`, plus `itemCount` — the same relationship `ReceiptSummary` has
+ * to `ReceiptDetail` — for the history list (`GET /api/shopping-lists`), T23. */
+export const shoppingListSummarySchema = z.object({
+  id: z.number().int(),
+  weekStart: z.string(),
+  status: shoppingListStatusSchema,
+  createdAt: z.string(),
+  completedAt: z.string().nullable(),
+  itemCount: z.number().int(),
+});
+
+export type ShoppingListSummary = z.infer<typeof shoppingListSummarySchema>;
+
 export const createShoppingListItemSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
@@ -210,3 +223,19 @@ export const suggestionSchema = z.object({
 });
 
 export type Suggestion = z.infer<typeof suggestionSchema>;
+
+/** One calendar month's `done`-receipt totals (T23); `month` is `YYYY-MM`. */
+export const monthlyStatsSchema = z.object({
+  month: z.string(),
+  totalOre: z.number().int(),
+  receipts: z.number().int(),
+});
+
+export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
+
+export const statsSummarySchema = z.object({
+  months: z.array(monthlyStatsSchema),
+  topProducts: z.array(productSchema),
+});
+
+export type StatsSummary = z.infer<typeof statsSummarySchema>;
