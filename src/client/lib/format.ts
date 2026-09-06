@@ -1,4 +1,4 @@
-import { diffDays, todayLocalIso } from '../../shared/dates.ts';
+import { diffDays, isoWeekKey, todayLocalIso } from '../../shared/dates.ts';
 
 export { formatOre } from '../../shared/money.ts';
 
@@ -39,6 +39,12 @@ export function formatRelativeDate(date: string, today: string = todayLocalIso()
 export function formatMonth(month: string): string {
   const [year, monthNumber] = month.split('-').map(Number);
   return MONTH_FORMATTER.format(new Date(Date.UTC(year!, monthNumber! - 1, 1)));
+}
+
+/** `formatWeek('2026-08-24')` → `Uke 35, 2026`, via `isoWeekKey`'s `2026-W35`. */
+export function formatWeek(weekStart: string): string {
+  const [isoYear, week] = isoWeekKey(weekStart).split('-W');
+  return `Uke ${Number(week)}, ${isoYear}`;
 }
 
 /** `formatQuantity(1.5, 'kg')` → `1,5 kg`; `formatQuantity(2, null)` → `2`. */

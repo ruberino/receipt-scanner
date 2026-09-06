@@ -8,7 +8,7 @@ import type {
 } from '../../shared/schemas.ts';
 import { formatOre } from '../../shared/money.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
-import { formatDate, formatMonth, formatRelativeDate } from '../lib/format.ts';
+import { formatMonth, formatRelativeDate, formatWeek } from '../lib/format.ts';
 import {
   useReceiptsList,
   useScanReceipt,
@@ -96,7 +96,7 @@ function ShoppingListHistorySection({ lists }: { lists: ShoppingListSummary[] })
       <ul className="flex flex-col gap-1">
         {lists.map((list) => (
           <li key={list.id} className="flex justify-between gap-3 text-sm">
-            <span>Uke {formatDate(list.weekStart)}</span>
+            <span>{formatWeek(list.weekStart)}</span>
             <span className="flex-shrink-0 text-gray-600">
               {list.itemCount} {list.itemCount === 1 ? 'vare' : 'varer'}
             </span>

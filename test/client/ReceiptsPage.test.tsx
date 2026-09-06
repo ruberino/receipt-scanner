@@ -356,7 +356,7 @@ describe('ReceiptsPage — Statistikk og historikk', () => {
     expect(screen.getByText('Mest kjøpt, alle kvitteringer')).toBeInTheDocument();
     expect(screen.getByText('Lettmelk 1 l')).toBeInTheDocument();
     expect(screen.getByText('4×')).toBeInTheDocument();
-    expect(screen.getByText(/Uke/)).toBeInTheDocument();
+    expect(screen.getByText('Uke 35, 2026')).toBeInTheDocument();
     expect(screen.getByText('5 varer')).toBeInTheDocument();
     expect(screen.getByText('Fullført')).toBeInTheDocument();
   });

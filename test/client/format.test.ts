@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatOre, formatRelativeDate } from '../../src/client/lib/format.ts';
+import {
+  formatDate,
+  formatOre,
+  formatRelativeDate,
+  formatWeek,
+} from '../../src/client/lib/format.ts';
 
 const NBSP = ' ';
 
@@ -25,6 +30,13 @@ describe('formatRelativeDate', () => {
 
   it('returns a short date without a year beyond 30 days', () => {
     expect(formatRelativeDate('2026-08-06', '2026-09-06')).toBe('6. aug.');
+  });
+});
+
+describe('formatWeek', () => {
+  it('labels a week start with its ISO week number and year, not a date (T23 F1)', () => {
+    expect(formatWeek('2026-08-24')).toBe('Uke 35, 2026');
+    expect(formatWeek('2026-09-07')).toBe('Uke 37, 2026');
   });
 });
 
