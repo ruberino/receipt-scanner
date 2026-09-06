@@ -10,6 +10,8 @@ Both apps pin the same `better-sqlite3`, `fastify` and `vitest` versions, so the
 - npm 11.9 still runs `node-gyp rebuild` for the package on `npm ci`, ignoring its `gypfile: false`, and the build fails on a machine without Python and MSVC with `gyp ERR! find Python`.
 - npm 12.0.2 skips install scripts by default, prints `npm warn install-scripts better-sqlite3@13.0.3 (install: node-gyp rebuild)`, and `npm ci` exits 0; the module then loads from the bundled prebuild.
 - `node:22-alpine`, the production base image, carries npm 10 and no compiler, so the Dockerfile must install npm 12 in every stage that runs `npm ci`.
+- npm 12 declares `engines.node` as `^22.22.2 || ^24.15.0 || >=26.0.0`, so `node:22-alpine` images from 22.22.2 on take it cleanly, while this host on Node 24.14.0 can only install it globally with `--force`.
+  Until the host runs Node 24.15 or newer, `npx npm@12 ci` works without a global install (verified 2026-09-06); the README states both.
 
 Steps, in the next follow-up round:
 
