@@ -320,6 +320,7 @@ Definitions:
 - `extraction_json` is the validated extraction result, `raw_response` the exact LLM text; both exist for debugging and for growing the eval set.
 - At most one shopping list has `status = 'open'` at a time; enforced in code.
 - `PRODUCT_CATEGORIES` is the fixed list: `Frukt og grønt`, `Meieri`, `Kjøtt og fisk`, `Brød og bakevarer`, `Tørrvarer`, `Frossen`, `Drikke`, `Snacks`, `Husholdning`, `Hygiene`, `Annet`.
+- Migrations run with `foreign_keys` off and `PRAGMA foreign_key_check` after, because drizzle's SQLite table recreates would otherwise cascade-delete child rows.
 
 ## 7. Extraction pipeline
 

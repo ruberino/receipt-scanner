@@ -37,7 +37,7 @@ let opened: OpenedDatabase;
 
 function createDb(): OpenedDatabase {
   const db = openDatabase(':memory:');
-  runMigrations(db.db);
+  runMigrations(db);
   return db;
 }
 

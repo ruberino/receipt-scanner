@@ -15,13 +15,12 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const oldMigrationsFolder = path.resolve(here, '..', 'fixtures', 'migrations', '0000-only');
-const currentMigrationsFolder = path.resolve(here, '..', '..', 'drizzle');
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
 function createDb(): OpenedDatabase {
   const opened = openDatabase(':memory:');
-  runMigrations(opened.db);
+  runMigrations(opened);
   return opened;
 }
 
@@ -84,7 +83,7 @@ describe('database schema and migrations', () => {
   it('running migrations again does not fail or duplicate anything', () => {
     opened = createDb();
 
-    expect(() => runMigrations(opened.db)).not.toThrow();
+    expect(() => runMigrations(opened)).not.toThrow();
 
     const rows = opened.sqlite
       .prepare("select name from sqlite_master where type = 'table' and name = 'receipts'")
@@ -104,17 +103,46 @@ describe('database schema and migrations', () => {
     expect(() => insertReceipt(opened, { status: 'uploaded' })).not.toThrow();
   });
 
-  it('keeps an existing done receipt intact when migrating from 0000 to the uploaded status check (T24)', () => {
+  it('keeps an existing done receipt, its line and its image intact when migrating from 0000 to the uploaded status check (T24)', () => {
     opened = openDatabase(':memory:');
     migrate(opened.db, { migrationsFolder: oldMigrationsFolder });
 
     const receipt = insertReceipt(opened, { status: 'done', storeName: 'KIWI Torshov' });
+    const line = opened.db
+      .insert(receiptLines)
+      .values({
+        receiptId: receipt.id,
+        lineNo: 1,
+        kind: 'item',
+        rawText: 'BANAN',
+        totalOre: 1000,
+        createdAt: NOW,
+      })
+      .returning()
+      .get();
+    opened.db
+      .insert(receiptImages)
+      .values({
+        receiptId: receipt.id,
+        mimeType: 'image/jpeg',
+        bytes: Buffer.from('fake-jpeg-bytes'),
+        width: 800,
+        height: 1200,
+        sha256: 'c'.repeat(64),
+      })
+      .run();
 
-    migrate(opened.db, { migrationsFolder: currentMigrationsFolder });
+    runMigrations(opened);
 
     const stored = opened.db.select().from(receipts).where(eq(receipts.id, receipt.id)).get();
     expect(stored?.status).toBe('done');
     expect(stored?.storeName).toBe('KIWI Torshov');
+    expect(
+      opened.db.select().from(receiptLines).where(eq(receiptLines.id, line.id)).get(),
+    ).toBeDefined();
+    expect(
+      opened.db.select().from(receiptImages).where(eq(receiptImages.receiptId, receipt.id)).get(),
+    ).toBeDefined();
     expect(() => insertReceipt(opened, { status: 'uploaded' })).not.toThrow();
   });
 

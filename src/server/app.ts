@@ -142,10 +142,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     app.register(fastifyStatic, { root: clientDir });
   }
 
-  const { sqlite, db } = openDatabase(options.databasePath ?? config.databasePath, {
+  const opened = openDatabase(options.databasePath ?? config.databasePath, {
     verbose: options.dbVerbose,
   });
-  runMigrations(db);
+  const { sqlite, db } = opened;
+  runMigrations(opened);
   app.decorate('db', db);
   app.decorate('sqlite', sqlite);
   app.addHook('onClose', async () => {
