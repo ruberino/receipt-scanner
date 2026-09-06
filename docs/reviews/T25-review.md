@@ -14,7 +14,8 @@ The docs row for `PATCH /api/receipt-lines/:id` in section 9 carries the new sen
 ## Process note
 
 The agent stayed on `main` after the T26 merge and began this work there, noticed before committing, moved the work to a branch and fast-forwarded only the foreman's T26 note as its own commit (`9d3be3f`).
-Nothing landed on `main` without a branch; the sibling repository has a pre-commit hook that refuses commits on `main` for exactly this slip, and this repository should get the same hook when T22 (CI) is done, not before.
+Nothing landed on `main` without a branch.
+Correction, 2026-09-07: this repository already has the pre-commit hook that refuses commits on `main` (`c422246`, `5fd4651`) with `core.hooksPath` set, so a commit on `main` could not have happened; the earlier sentence here saying the hook would come with T22 was wrong.
 
 ## Done
 
