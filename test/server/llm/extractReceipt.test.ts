@@ -85,6 +85,43 @@ describe('parseExtraction', () => {
     expect(result.lines[3]).toMatchObject({ kind: 'other' }); // 'refund'
   });
 
+  it('keeps the parsed quantity when unit is null or missing, since null is a documented valid unit', () => {
+    const parsed = extractionResultSchema.parse({
+      storeName: null,
+      purchasedAt: null,
+      total: null,
+      lines: [
+        { text: 'A', kind: 'item', quantity: 2, unit: null, unitPrice: null, totalPrice: 10 },
+        { text: 'B', kind: 'item', quantity: 3, unitPrice: null, totalPrice: 10 },
+        { text: 'C', kind: 'item', quantity: 2, unit: 'pk', unitPrice: null, totalPrice: 10 },
+      ],
+    });
+
+    expect(parsed.lines[0]).toMatchObject({ quantity: 2, unit: null });
+    expect(parsed.lines[1]).toMatchObject({ quantity: 3, unit: null });
+    expect(parsed.lines[2]).toMatchObject({ quantity: 1, unit: null });
+  });
+
+  it('truncates more than 200 lines instead of failing', () => {
+    const lines = Array.from({ length: 201 }, (_, i) => ({
+      text: `LINE ${i}`,
+      kind: 'item',
+      quantity: 1,
+      unit: null,
+      unitPrice: null,
+      totalPrice: 1,
+    }));
+
+    const parsed = extractionResultSchema.parse({
+      storeName: null,
+      purchasedAt: null,
+      total: null,
+      lines,
+    });
+
+    expect(parsed.lines).toHaveLength(200);
+  });
+
   it('excludes an other-kind footer line but keeps it in the lines array', async () => {
     const text = await readFixture('extract-footer-lines.json');
 

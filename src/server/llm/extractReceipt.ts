@@ -34,7 +34,8 @@ const rawLineSchema = z.object({
 
 /**
  * Lenient normalisation per architecture.md 7.3: unknown kind -> other; missing/non-numeric/non-positive
- * quantity -> 1; g/hg/ml/cl/dl convert to kg/l, any other unit -> null with quantity reset to 1.
+ * quantity -> 1; a missing/null unit is valid and keeps the parsed quantity; g/hg/ml/cl/dl convert to
+ * kg/l; any other (non-null) unit string -> null with quantity reset to 1.
  * Only a missing/empty text or a totalPrice that fails to parse make this line fail validation.
  */
 const lineSchema = z.preprocess((raw) => {
@@ -53,7 +54,10 @@ const lineSchema = z.preprocess((raw) => {
 
   const rawUnit = typeof r.unit === 'string' ? r.unit.toLowerCase() : null;
   let unit: 'stk' | 'kg' | 'l' | null;
-  if (rawUnit !== null && UNITS.has(rawUnit)) {
+  if (rawUnit === null) {
+    // A missing or null unit is documented as valid ("stk, kg, l or null"); keep the parsed quantity.
+    unit = null;
+  } else if (UNITS.has(rawUnit)) {
     unit = rawUnit as 'stk' | 'kg' | 'l';
   } else if (rawUnit === 'g') {
     quantity /= 1000;
@@ -98,7 +102,12 @@ export const extractionResultSchema = z.object({
     return typeof value === 'string' && isIsoDate(value) ? value : null;
   }, z.string().nullable()),
   total: z.preprocess((value) => tryParseDecimal(value) ?? null, z.number().nullable()),
-  lines: z.array(lineSchema).max(200),
+  // Truncated, not failed: "lines at most 200" is a normalisation constraint, not one of the three
+  // documented hard-failure conditions.
+  lines: z.preprocess(
+    (value) => (Array.isArray(value) ? value.slice(0, 200) : value),
+    z.array(lineSchema),
+  ),
 });
 
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;
