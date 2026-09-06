@@ -14,6 +14,8 @@ export type KimiClientOptions = {
   thinking: KimiThinking;
   timeoutMs: number;
   logger: MinimalLogger;
+  /** Overrides the OpenAI SDK client; tests pass a stub so `completeJson` runs without network. */
+  client?: Pick<OpenAI, 'chat'>;
 };
 
 type KimiContentPart =
@@ -56,18 +58,20 @@ function stageFor(purpose: JsonCompletionRequest['purpose']): ExtractionStage {
 
 /** `LlmClient` implementation for Kimi (Moonshot AI) through the OpenAI-compatible API (ADR-0003). */
 export class KimiClient implements LlmClient {
-  private readonly client: OpenAI;
+  private readonly client: Pick<OpenAI, 'chat'>;
   private readonly model: string;
   private readonly thinking: KimiThinking;
   private readonly logger: MinimalLogger;
 
   constructor(options: KimiClientOptions) {
-    this.client = new OpenAI({
-      apiKey: options.apiKey,
-      baseURL: options.baseURL,
-      timeout: options.timeoutMs,
-      maxRetries: 2,
-    });
+    this.client =
+      options.client ??
+      new OpenAI({
+        apiKey: options.apiKey,
+        baseURL: options.baseURL,
+        timeout: options.timeoutMs,
+        maxRetries: 2,
+      });
     this.model = options.model;
     this.thinking = options.thinking;
     this.logger = options.logger;
