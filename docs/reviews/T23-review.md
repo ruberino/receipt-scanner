@@ -29,3 +29,9 @@ Steps: label each row `Uke 37, 2026` from `isoWeekKey(list.weekStart)`, with a s
 
 F1 as one `fix:` commit on the T23 branch, run the five scripts, send the hash, and merge after the go-ahead is recorded here.
 With T23 merged, every task in `docs/tasks.md` is done; what remains is Ruben's: the repository's remote, the Render service and secrets, the eval ground truth and the phone installation checks.
+
+## Go-ahead, 2026-09-07
+
+F1 landed as `ab87fec`: `formatWeek` turns `isoWeekKey`'s `2026-W37` into `Uke 37, 2026`, the row uses it, and the refreshed screenshots show it.
+All five scripts exit 0 in a clean worktree at the branch tip, 481 tests.
+Approved for fast-forward merge; this closes the task list.
