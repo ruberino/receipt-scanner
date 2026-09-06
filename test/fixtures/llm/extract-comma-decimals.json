@@ -1,0 +1,39 @@
+{
+  "storeName": "REMA 1000 Grünerløkka",
+  "purchasedAt": "2026-09-03",
+  "total": "458,90",
+  "lines": [
+    {
+      "text": "TINE LETTMELK 1L",
+      "kind": "item",
+      "quantity": "2",
+      "unit": "stk",
+      "unitPrice": "50,00",
+      "totalPrice": "100,00"
+    },
+    {
+      "text": "BANAN",
+      "kind": "item",
+      "quantity": "1,135",
+      "unit": "kg",
+      "unitPrice": "24,90",
+      "totalPrice": "150,00"
+    },
+    {
+      "text": "PANT",
+      "kind": "deposit",
+      "quantity": "4",
+      "unit": "stk",
+      "unitPrice": "25,00",
+      "totalPrice": "100,00"
+    },
+    {
+      "text": "KAFFE FILTERMALT 250G",
+      "kind": "item",
+      "quantity": "1",
+      "unit": "stk",
+      "unitPrice": "108,90",
+      "totalPrice": "108,90"
+    }
+  ]
+}

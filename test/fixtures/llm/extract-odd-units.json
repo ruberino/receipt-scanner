@@ -1,0 +1,39 @@
+{
+  "storeName": "KIWI Torshov",
+  "purchasedAt": "2026-09-03",
+  "total": 80.0,
+  "lines": [
+    {
+      "text": "MELK LØSVEKT",
+      "kind": "item",
+      "quantity": 500,
+      "unit": "g",
+      "unitPrice": 40.0,
+      "totalPrice": 20.0
+    },
+    {
+      "text": "SAFT",
+      "kind": "item",
+      "quantity": 5,
+      "unit": "dl",
+      "unitPrice": 10.0,
+      "totalPrice": 50.0
+    },
+    {
+      "text": "SJOKOLADE",
+      "kind": "item",
+      "quantity": 1,
+      "unit": "pk",
+      "unitPrice": 30.0,
+      "totalPrice": 30.0
+    },
+    {
+      "text": "RETUR VARE",
+      "kind": "refund",
+      "quantity": 1,
+      "unit": null,
+      "unitPrice": null,
+      "totalPrice": -20.0
+    }
+  ]
+}

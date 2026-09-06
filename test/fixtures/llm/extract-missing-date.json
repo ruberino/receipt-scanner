@@ -1,0 +1,15 @@
+{
+  "storeName": "KIWI Torshov",
+  "purchasedAt": null,
+  "total": 45.5,
+  "lines": [
+    {
+      "text": "GROVBRØD 750G",
+      "kind": "item",
+      "quantity": 1,
+      "unit": "stk",
+      "unitPrice": 45.5,
+      "totalPrice": 45.5
+    }
+  ]
+}
