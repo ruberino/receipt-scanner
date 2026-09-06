@@ -9,7 +9,10 @@ import { runMigrations } from '../../../src/server/db/migrate.ts';
 import { productAliases, products, receiptLines, receipts } from '../../../src/server/db/schema.ts';
 import { matchLines } from '../../../src/server/domain/matching.ts';
 import { FakeLlmClient } from '../../../src/server/llm/FakeLlmClient.ts';
-import type { JsonCompletionResult } from '../../../src/server/llm/LlmClient.ts';
+import type {
+  JsonCompletionRequest,
+  JsonCompletionResult,
+} from '../../../src/server/llm/LlmClient.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.resolve(here, '..', '..', 'fixtures', 'llm');
@@ -27,6 +30,32 @@ function fakeCompletion(text: string): JsonCompletionResult {
     usage: { promptTokens: 10, completionTokens: 5 },
     durationMs: 5,
   };
+}
+
+function truncatedCompletion(): JsonCompletionResult {
+  return {
+    text: '',
+    finishReason: 'length',
+    model: 'kimi-k2.6',
+    usage: { promptTokens: 10, completionTokens: 3200 },
+    durationMs: 5,
+  };
+}
+
+/** Matches every text in the request's batch to a new product named after itself, so a
+ * multi-batch test can assert per-batch effects without scripting each batch's content by hand. */
+function matchesEchoingBatch(request: JsonCompletionRequest): JsonCompletionResult {
+  const texts = [...request.userText.matchAll(/^- (ITEM \d+)$/gm)].map((match) => match[1]!);
+  return fakeCompletion(
+    JSON.stringify({
+      matches: texts.map((text) => ({
+        text,
+        existingProduct: null,
+        newProductName: text,
+        category: 'Annet',
+      })),
+    }),
+  );
 }
 
 function stubLogger(): FastifyBaseLogger {
@@ -386,5 +415,65 @@ describe('matchLines', () => {
 
     expect(llm.requests).toHaveLength(0);
     expect(result).toEqual({ matchedByAlias: 0, matchedByLlm: 0, unmatched: [], warnings: [] });
+  });
+
+  it('splits 45 distinct unmatched texts into batches of 20, 20 and 5 with a matching token budget (T26)', async () => {
+    opened = createDb();
+    const receiptId = insertReceipt();
+    for (let i = 1; i <= 45; i += 1) {
+      insertLine(receiptId, i, `ITEM ${i}`);
+    }
+    const llm = new FakeLlmClient([matchesEchoingBatch, matchesEchoingBatch, matchesEchoingBatch]);
+
+    await matchLines({
+      db: opened.db,
+      sqlite: opened.sqlite,
+      llm,
+      logger: stubLogger(),
+      receiptId,
+    });
+
+    expect(llm.requests).toHaveLength(3);
+    expect(llm.requests.map((request) => request.maxTokens)).toEqual([3200, 3200, 950]);
+    const batchSizes = llm.requests.map(
+      (request) => (request.userText.match(/^- ITEM \d+$/gm) ?? []).length,
+    );
+    expect(batchSizes).toEqual([20, 20, 5]);
+  });
+
+  it('keeps matches from the batches that succeed and sets MATCHING_FAILED, with finishReason and batchSize logged, when one batch is truncated (T26)', async () => {
+    opened = createDb();
+    const receiptId = insertReceipt();
+    const lineIds = Array.from({ length: 45 }, (_, index) =>
+      insertLine(receiptId, index + 1, `ITEM ${index + 1}`),
+    );
+    const errorSpy = vi.fn();
+    const logger = { error: errorSpy } as unknown as FastifyBaseLogger;
+    const llm = new FakeLlmClient([matchesEchoingBatch, truncatedCompletion, matchesEchoingBatch]);
+
+    const result = await matchLines({
+      db: opened.db,
+      sqlite: opened.sqlite,
+      llm,
+      logger,
+      receiptId,
+    });
+
+    expect(llm.requests).toHaveLength(3);
+    expect(result.warnings).toEqual(['MATCHING_FAILED']);
+    // Batch 1 (ITEM 1-20) and batch 3 (ITEM 41-45) matched; batch 2 (ITEM 21-40) stayed unmatched.
+    expect(getLine(lineIds[0]!)?.matchSource).toBe('llm');
+    expect(getLine(lineIds[44]!)?.matchSource).toBe('llm');
+    expect(getLine(lineIds[20]!)?.matchSource).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receiptId,
+        stage: 'matching',
+        err: expect.objectContaining({
+          cause: { finishReason: 'length', batchSize: 20 },
+        }),
+      }),
+      'Product matching failed',
+    );
   });
 });

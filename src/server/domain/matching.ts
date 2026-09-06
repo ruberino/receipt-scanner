@@ -5,10 +5,20 @@ import { PRODUCT_CATEGORIES } from '../../shared/categories.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { productAliases, products, receiptLines } from '../db/schema.ts';
 import { normalizeText } from '../../shared/normalize.ts';
-import { buildMatchRequest, parseMatches } from '../llm/matchProducts.ts';
+import { ExtractionError } from '../lib/errors.ts';
+import { buildMatchRequest, parseMatches, type MatchResult } from '../llm/matchProducts.ts';
 import type { LlmClient } from '../llm/LlmClient.ts';
 
 const MAX_KNOWN_PRODUCTS = 1000;
+const MATCH_BATCH_SIZE = 20;
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    batches.push(items.slice(index, index + size));
+  }
+  return batches;
+}
 
 export type MatchLinesDeps = {
   db: AppDatabase;
@@ -98,29 +108,33 @@ export async function matchLines(deps: MatchLinesDeps): Promise<MatchLinesResult
     return { matchedByAlias, matchedByLlm: 0, unmatched: [], warnings: [] };
   }
 
-  const unmatchedTexts = distinctUnmatchedKeys.map((key) => rawTextByKey.get(key) ?? key);
   const knownProductNames = loadKnownProductNames(db);
+  const batches = chunk(distinctUnmatchedKeys, MATCH_BATCH_SIZE);
+  const matches: MatchResult['matches'] = [];
+  let anyBatchFailed = false;
 
-  let matchResult;
-  try {
-    const request = buildMatchRequest(unmatchedTexts, knownProductNames, receiptId);
-    const completion = await llm.completeJson(request);
-    matchResult = parseMatches(completion.text);
-  } catch (error) {
-    logger.error({ err: error, receiptId, stage: 'matching' }, 'Product matching failed');
-    return {
-      matchedByAlias,
-      matchedByLlm: 0,
-      unmatched: distinctUnmatchedKeys,
-      warnings: ['MATCHING_FAILED'],
-    };
+  for (const batchKeys of batches) {
+    const batchTexts = batchKeys.map((key) => rawTextByKey.get(key) ?? key);
+    try {
+      const request = buildMatchRequest(batchTexts, knownProductNames, receiptId);
+      const completion = await llm.completeJson(request);
+      if (completion.finishReason === 'length') {
+        throw new ExtractionError('Kunne ikke tolke svaret fra lesingen', 'matching', {
+          cause: { finishReason: completion.finishReason, batchSize: batchTexts.length },
+        });
+      }
+      matches.push(...parseMatches(completion.text).matches);
+    } catch (error) {
+      anyBatchFailed = true;
+      logger.error({ err: error, receiptId, stage: 'matching' }, 'Product matching failed');
+    }
   }
 
   const now = new Date().toISOString();
   const matchedKeys = new Set<string>();
 
   sqlite.transaction(() => {
-    for (const match of matchResult.matches) {
+    for (const match of matches) {
       const key = normalizeText(match.text);
       const lineIds = unmatchedLineIdsByKey.get(key);
       if (!lineIds || matchedKeys.has(key)) {
@@ -186,11 +200,17 @@ export async function matchLines(deps: MatchLinesDeps): Promise<MatchLinesResult
   })();
 
   const unmatched = distinctUnmatchedKeys.filter((key) => !matchedKeys.has(key));
+  let warnings: MatchLinesWarning[] = [];
+  if (anyBatchFailed) {
+    warnings = ['MATCHING_FAILED'];
+  } else if (unmatched.length > 0) {
+    warnings = ['UNMATCHED_LINES'];
+  }
 
   return {
     matchedByAlias,
     matchedByLlm: matchedKeys.size,
     unmatched,
-    warnings: unmatched.length > 0 ? ['UNMATCHED_LINES'] : [],
+    warnings,
   };
 }

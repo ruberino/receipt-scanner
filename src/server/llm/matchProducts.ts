@@ -4,7 +4,8 @@ import { parseJsonObject } from './json.ts';
 import type { JsonCompletionRequest } from './LlmClient.ts';
 import { MATCH_PROMPT_VERSION, MATCH_SYSTEM_PROMPT } from './prompts/matchProducts.prompt.ts';
 
-const MAX_TOKENS = 2000;
+const TOKENS_PER_TEXT = 150;
+const TOKENS_OVERHEAD = 200;
 
 export const matchResultSchema = z.object({
   matches: z.array(
@@ -38,7 +39,7 @@ export function buildMatchRequest(
     purpose: 'match',
     system: MATCH_SYSTEM_PROMPT,
     userText,
-    maxTokens: MAX_TOKENS,
+    maxTokens: texts.length * TOKENS_PER_TEXT + TOKENS_OVERHEAD,
     promptVersion: MATCH_PROMPT_VERSION,
     receiptId,
   };
