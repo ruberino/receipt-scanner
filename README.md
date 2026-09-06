@@ -1,5 +1,7 @@
 # Kvitteringer
 
+Licensed under the MIT License, see LICENSE.
+
 A household grocery receipt tracker.
 See `docs/architecture.md` for the full design and `docs/adr/` for the decisions behind it.
 `docs/tasks.md` holds the ordered implementation tasks.

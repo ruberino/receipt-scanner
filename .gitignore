@@ -5,3 +5,7 @@ node_modules/
 dist/
 data/
 .env
+
+# Real household receipt photos for the eval harness (T20); never committed, especially once this
+# repo is public (architecture.md section 5 already treats them as private).
+eval/receipts/
