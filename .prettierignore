@@ -1,0 +1,7 @@
+docs/
+dist/
+data/
+drizzle/
+eval/receipts/
+eval/results/
+package-lock.json

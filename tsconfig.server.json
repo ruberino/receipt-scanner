@@ -1,25 +1,29 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022"],
+    "target": "ES2023",
+    "lib": ["ES2023"],
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
-    "strict": true,
     "skipLibCheck": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "types": ["node"]
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true
   },
   "include": [
-    "src/server/**/*",
-    "src/shared/**/*",
-    "test/server/**/*",
-    "test/shared/**/*",
-    "test/helpers/**/*",
-    "eval/**/*",
+    "src/server",
+    "src/shared",
+    "test/server",
+    "test/helpers",
+    "test/shared",
+    "eval",
+    "drizzle.config.ts",
     "vite.config.ts",
     "vitest.config.ts"
   ]
