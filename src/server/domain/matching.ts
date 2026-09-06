@@ -140,6 +140,11 @@ export async function matchLines(deps: MatchLinesDeps): Promise<MatchLinesResult
 
       if (productId === undefined) {
         const newNameNormalized = normalizeText(match.newProductName);
+        if (newNameNormalized === '') {
+          // No existingProduct resolved and nothing usable to name a new one; leave unmatched
+          // rather than create (or link everything to) a product named "".
+          continue;
+        }
         const existingByNewName = db
           .select()
           .from(products)

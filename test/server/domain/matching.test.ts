@@ -260,6 +260,38 @@ describe('matchLines', () => {
     expect(getLine(mysteryId)).toMatchObject({ productId: null, matchSource: null });
   });
 
+  it('leaves a line unmatched instead of creating a product named "" when newProductName is blank', async () => {
+    opened = createDb();
+    const receiptId = insertReceipt();
+    const lineId = insertLine(receiptId, 1, 'TINE LETTMELK 1L');
+    const llm = new FakeLlmClient([
+      fakeCompletion(
+        JSON.stringify({
+          matches: [
+            {
+              text: 'TINE LETTMELK 1L',
+              existingProduct: null,
+              newProductName: '  ',
+              category: 'Meieri',
+            },
+          ],
+        }),
+      ),
+    ]);
+
+    const result = await matchLines({
+      db: opened.db,
+      sqlite: opened.sqlite,
+      llm,
+      logger: stubLogger(),
+      receiptId,
+    });
+
+    expect(result.warnings).toContain('UNMATCHED_LINES');
+    expect(getLine(lineId)).toMatchObject({ productId: null, matchSource: null });
+    expect(opened.db.select().from(products).all()).toHaveLength(0);
+  });
+
   it('leaves lines unmatched with MATCHING_FAILED when the LLM call fails, and rematch (matchLines again) fixes it once the fake succeeds', async () => {
     opened = createDb();
     const receiptId = insertReceipt();

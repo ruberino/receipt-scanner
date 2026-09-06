@@ -50,6 +50,26 @@ function fakeSuccess(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function fakeMatch(overrides: Record<string, unknown> = {}) {
+  return {
+    text: JSON.stringify({
+      matches: [
+        {
+          text: 'TINE LETTMELK 1L',
+          existingProduct: null,
+          newProductName: 'Lettmelk 1 l',
+          category: 'Meieri',
+        },
+      ],
+      ...overrides,
+    }),
+    finishReason: 'stop',
+    model: 'kimi-k2.6',
+    usage: { promptTokens: 10, completionTokens: 5 },
+    durationMs: 5,
+  };
+}
+
 async function uploadReceipt(app: FastifyInstance, cookie: string): Promise<number> {
   const bytes = await readFixture('receipt-small.jpg');
   const response = await app.inject({
@@ -183,6 +203,69 @@ describe('POST /api/receipts/:id/retry', () => {
       headers: { cookie },
     });
     expect(final.json().status).toBe('done');
+  });
+});
+
+describe('POST /api/receipts/:id/rematch', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'POST', url: '/api/receipts/1/rematch' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown id', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/receipts/999/rematch',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('re-matches an unmatched line, clears MATCHING_FAILED and keeps an unrelated warning', async () => {
+    app = createTestApp({
+      llmClient: new FakeLlmClient([
+        fakeSuccess({ storeName: null }),
+        () => {
+          throw new Error('matching backend down');
+        },
+        fakeMatch(),
+      ]),
+    });
+    const cookie = await loginCookie(app);
+
+    const id = await uploadReceipt(app, cookie);
+    await app.receiptProcessor.drain();
+
+    const afterProcessing = await app.inject({
+      method: 'GET',
+      url: `/api/receipts/${id}`,
+      headers: { cookie },
+    });
+    expect(afterProcessing.json().status).toBe('done');
+    expect(afterProcessing.json().warnings).toEqual(
+      expect.arrayContaining(['MISSING_STORE', 'MATCHING_FAILED']),
+    );
+    expect(afterProcessing.json().lines[0]).toMatchObject({ product: null, matchSource: null });
+
+    const rematchResponse = await app.inject({
+      method: 'POST',
+      url: `/api/receipts/${id}/rematch`,
+      headers: { cookie },
+    });
+
+    expect(rematchResponse.statusCode).toBe(200);
+    const body = rematchResponse.json();
+    expect(body.warnings).not.toContain('MATCHING_FAILED');
+    expect(body.warnings).toContain('MISSING_STORE');
+    expect(body.lines[0]).toMatchObject({ matchSource: 'llm' });
+    expect(body.lines[0].product).toMatchObject({ name: 'Lettmelk 1 l' });
   });
 });
 
