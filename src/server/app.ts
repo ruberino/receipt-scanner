@@ -5,6 +5,9 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 import type { Config } from './config.ts';
+import type { AppDatabase } from './db/client.ts';
+import { openDatabase } from './db/client.ts';
+import { runMigrations } from './db/migrate.ts';
 import {
   AppError,
   NotFoundError,
@@ -13,6 +16,12 @@ import {
   toErrorResponse,
 } from './lib/errors.ts';
 import healthRoutes from './routes/health.ts';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    db: AppDatabase;
+  }
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
@@ -29,7 +38,7 @@ export type LogStream = { write(message: string): void };
 
 export type BuildAppOptions = {
   config: Config;
-  /** Overrides `config.databasePath`; tests pass `:memory:` or a temporary file (wired in T03). */
+  /** Overrides `config.databasePath`; tests pass `:memory:` or a temporary file. */
   databasePath?: string;
   /** Where pino writes; tests capture log lines through it. */
   logStream?: LogStream;
@@ -94,6 +103,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (config.nodeEnv === 'production') {
     app.register(fastifyStatic, { root: clientDistDir });
   }
+
+  const { sqlite, db } = openDatabase(options.databasePath ?? config.databasePath);
+  runMigrations(db);
+  app.decorate('db', db);
+  app.addHook('onClose', async () => {
+    sqlite.close();
+  });
 
   app.register(healthRoutes, { version: readVersion() });
 
