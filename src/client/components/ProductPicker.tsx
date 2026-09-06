@@ -1,22 +1,12 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 import type { Product } from '../../shared/schemas.ts';
 import { normalizeText } from '../../shared/normalize.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
+import { useDebouncedValue } from '../lib/useDebouncedValue.ts';
 import { useProductSearch, useUpdateReceiptLine } from '../api/queries.ts';
 import { useToast } from './Toast.tsx';
 
 const DEBOUNCE_MS = 200;
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(timeout);
-  }, [value, delayMs]);
-
-  return debounced;
-}
 
 type ProductPickerProps = {
   lineId: number;

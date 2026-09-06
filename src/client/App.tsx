@@ -6,19 +6,15 @@ import { useMe } from './api/queries.ts';
 import AppShell from './components/AppShell.tsx';
 import { ToastProvider } from './components/Toast.tsx';
 import LoginPage from './pages/LoginPage.tsx';
+import ProductPage from './pages/ProductPage.tsx';
+import ProductsPage from './pages/ProductsPage.tsx';
 import ReceiptPage from './pages/ReceiptPage.tsx';
 import ReceiptsPage from './pages/ReceiptsPage.tsx';
 import ScanPage from './pages/ScanPage.tsx';
 
-// Placeholders until their own tasks (T17-T18) replace them with the real pages.
+// Placeholder until its own task (T18) replaces it with the real page.
 function ShoppingListPage() {
   return <h1 className="p-4 text-xl font-bold">Handleliste</h1>;
-}
-function ProductsPage() {
-  return <h1 className="p-4 text-xl font-bold">Varer</h1>;
-}
-function ProductPage() {
-  return <h1 className="p-4 text-xl font-bold">Vare</h1>;
 }
 
 function UnauthorizedBridge(): null {

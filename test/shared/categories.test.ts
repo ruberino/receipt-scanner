@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PRODUCT_CATEGORIES, productCategorySchema } from '../../src/shared/categories.ts';
+import { PRODUCT_CATEGORIES } from '../../src/shared/categories.ts';
+import { productCategorySchema } from '../../src/shared/schemas.ts';
 
 describe('PRODUCT_CATEGORIES', () => {
   it('is exactly the fixed list from architecture.md section 6', () => {

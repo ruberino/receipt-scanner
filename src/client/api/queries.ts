@@ -6,9 +6,11 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
+  PatchProductRequest,
   PatchReceiptLineRequest,
   PatchReceiptRequest,
   Product,
+  ProductDetail,
   ReceiptDetail,
   ReceiptLine,
   ReceiptStatus,
@@ -189,5 +191,72 @@ export function useProductSearch(query: string, enabled: boolean) {
     queryKey: ['products', 'search', query],
     queryFn: () => fetchJson<Product[]>(`/api/products?q=${encodeURIComponent(query)}`),
     enabled: enabled && query.trim().length > 0,
+  });
+}
+
+export function useProducts(params: { q?: string; includeSuppressed?: boolean } = {}) {
+  const trimmedQuery = params.q?.trim() ?? '';
+  const includeSuppressed = params.includeSuppressed ?? false;
+  const search = new URLSearchParams();
+  if (trimmedQuery.length > 0) {
+    search.set('q', trimmedQuery);
+  }
+  if (includeSuppressed) {
+    search.set('includeSuppressed', 'true');
+  }
+  const queryString = search.toString();
+
+  return useQuery({
+    queryKey: ['products', 'list', trimmedQuery, includeSuppressed],
+    queryFn: () =>
+      fetchJson<Product[]>(`/api/products${queryString.length > 0 ? `?${queryString}` : ''}`),
+  });
+}
+
+export function useProductDetail(id: number) {
+  return useQuery({
+    queryKey: ['products', 'detail', id],
+    queryFn: () => fetchJson<ProductDetail>(`/api/products/${id}`),
+  });
+}
+
+export function useUpdateProduct(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: PatchProductRequest) =>
+      fetchJson<Product>(`/api/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+/** Bound to the source product; merges it into whichever id is passed to `.mutate()`. */
+export function useMergeProduct(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (intoProductId: number) =>
+      fetchJson<Product>(`/api/products/${id}/merge`, {
+        method: 'POST',
+        body: JSON.stringify({ intoProductId }),
+      }),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['products', 'detail', id] });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useDeleteProductAlias() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (aliasId: number) =>
+      fetchJson<void>(`/api/product-aliases/${aliasId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
   });
 }

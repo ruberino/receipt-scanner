@@ -1,5 +1,5 @@
 import type { ReceiptLine } from '../../shared/schemas.ts';
-import { formatOre } from '../lib/format.ts';
+import { formatOre, formatQuantity } from '../lib/format.ts';
 import ProductPicker from './ProductPicker.tsx';
 
 const NON_ITEM_LABELS: Record<Exclude<ReceiptLine['kind'], 'item'>, string> = {
@@ -7,11 +7,6 @@ const NON_ITEM_LABELS: Record<Exclude<ReceiptLine['kind'], 'item'>, string> = {
   deposit: 'Pant',
   other: 'Annet',
 };
-
-function formatQuantity(quantity: number, unit: ReceiptLine['unit']): string {
-  const formattedQuantity = String(quantity).replace('.', ',');
-  return unit === null ? formattedQuantity : `${formattedQuantity} ${unit}`;
-}
 
 type ReceiptLineRowProps = {
   line: ReceiptLine;

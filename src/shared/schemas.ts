@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { isIsoDate } from './dates.ts';
-import { productCategorySchema } from './categories.ts';
+import { PRODUCT_CATEGORIES } from './categories.ts';
+
+export const productCategorySchema = z.enum(PRODUCT_CATEGORIES);
 
 export const loginSchema = z
   .object({

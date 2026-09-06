@@ -33,3 +33,9 @@ export function formatRelativeDate(date: string, today: string = todayLocalIso()
   }
   return SHORT_DATE_FORMATTER.format(toUtcDate(date));
 }
+
+/** `formatQuantity(1.5, 'kg')` → `1,5 kg`; `formatQuantity(2, null)` → `2`. */
+export function formatQuantity(quantity: number, unit: string | null): string {
+  const formattedQuantity = String(quantity).replace('.', ',');
+  return unit === null ? formattedQuantity : `${formattedQuantity} ${unit}`;
+}
