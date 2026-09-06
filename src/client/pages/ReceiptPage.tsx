@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { ReceiptDetail } from '../../shared/schemas.ts';
-import { ApiRequestError } from '../api/client.ts';
+import { parseNok } from '../../shared/money.ts';
+import { apiErrorMessage } from '../lib/errorMessage.ts';
 import {
   useDeleteReceipt,
   useReceipt,
@@ -65,31 +66,40 @@ function WarningChip({ code, receipt }: { code: string; receipt: ReceiptDetail }
   return <span className={chipClassName}>{label}</span>;
 }
 
+function formatKronerText(totalOre: number | null): string {
+  return ((totalOre ?? 0) / 100).toFixed(2).replace('.', ',');
+}
+
 function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
   const [storeName, setStoreName] = useState(receipt.storeName ?? '');
   const [purchasedAt, setPurchasedAt] = useState(receipt.purchasedAt ?? '');
-  const [totalKroner, setTotalKroner] = useState(
-    receipt.totalOre !== null ? receipt.totalOre / 100 : 0,
-  );
+  const [totalText, setTotalText] = useState(formatKronerText(receipt.totalOre));
+  const [totalError, setTotalError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const updateReceipt = useUpdateReceipt(receipt.id);
   const { showToast } = useToast();
 
   function handleSave() {
     setError(null);
+    setTotalError(null);
+
+    let totalOre: number;
+    try {
+      totalOre = parseNok(totalText);
+    } catch {
+      setTotalError('Ugyldig totalsum');
+      return;
+    }
+
     updateReceipt.mutate(
       {
         storeName: storeName.trim() === '' ? null : storeName.trim(),
         purchasedAt,
-        totalOre: Math.round(totalKroner * 100),
+        totalOre,
       },
       {
         onSuccess: () => showToast('Lagret'),
-        onError: (mutationError) => {
-          setError(
-            mutationError instanceof ApiRequestError ? mutationError.message : 'Noe gikk galt',
-          );
-        },
+        onError: (mutationError) => setError(apiErrorMessage(mutationError)),
       },
     );
   }
@@ -123,13 +133,17 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
       </label>
       <input
         id="total-kroner"
-        type="number"
-        step="0.01"
-        min="0"
-        value={totalKroner}
-        onChange={(event) => setTotalKroner(Number(event.target.value))}
+        type="text"
+        inputMode="decimal"
+        value={totalText}
+        onChange={(event) => setTotalText(event.target.value)}
         className="min-h-11 rounded border border-gray-400 px-3 py-2"
       />
+      {totalError !== null && (
+        <p role="alert" className="text-red-600">
+          {totalError}
+        </p>
+      )}
 
       <button
         type="button"
@@ -170,7 +184,10 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
   function handleFinish() {
     updateReceipt.mutate(
       { reviewed: true },
-      { onSuccess: () => showToast('Kvitteringen er ferdig gjennomgått') },
+      {
+        onSuccess: () => showToast('Kvitteringen er ferdig gjennomgått'),
+        onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+      },
     );
   }
 
@@ -178,7 +195,16 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
     if (!window.confirm('Slette denne kvitteringen? Dette kan ikke angres.')) {
       return;
     }
-    deleteReceipt.mutate(undefined, { onSuccess: () => navigate('/receipts') });
+    deleteReceipt.mutate(undefined, {
+      onSuccess: () => navigate('/receipts'),
+      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+    });
+  }
+
+  function handleRematch() {
+    rematch.mutate(undefined, {
+      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+    });
   }
 
   return (
@@ -186,7 +212,7 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
       {hasUnmatchedLines && (
         <button
           type="button"
-          onClick={() => rematch.mutate()}
+          onClick={handleRematch}
           disabled={rematch.isPending}
           className="min-h-11 rounded border border-blue-600 px-4 py-2 font-medium text-blue-600 disabled:opacity-50"
         >
@@ -253,7 +279,7 @@ export default function ReceiptPage() {
 
   return (
     <div className="flex flex-col">
-      <ReceiptHeader receipt={data} />
+      <ReceiptHeader key={data.id} receipt={data} />
       <div className="px-4">
         {data.lines.map((line) => (
           <ReceiptLineRow key={line.id} line={line} receiptId={data.id} />

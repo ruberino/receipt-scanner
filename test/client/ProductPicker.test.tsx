@@ -3,6 +3,7 @@ import { act } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Product } from '../../src/shared/schemas.ts';
+import { ApiRequestError } from '../../src/client/api/client.ts';
 import ProductPicker from '../../src/client/components/ProductPicker.tsx';
 import { ToastProvider } from '../../src/client/components/Toast.tsx';
 
@@ -62,17 +63,30 @@ describe('ProductPicker', () => {
 
     fireEvent.change(input, { target: { value: 'Mel' } });
 
-    expect(useProductSearch).toHaveBeenLastCalledWith('');
+    expect(useProductSearch).toHaveBeenLastCalledWith('', true);
 
     act(() => {
       vi.advanceTimersByTime(199);
     });
-    expect(useProductSearch).toHaveBeenLastCalledWith('');
+    expect(useProductSearch).toHaveBeenLastCalledWith('', true);
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(useProductSearch).toHaveBeenLastCalledWith('Mel');
+    expect(useProductSearch).toHaveBeenLastCalledWith('Mel', true);
+  });
+
+  it('only searches while the dropdown is open', () => {
+    renderPicker();
+    const input = screen.getByRole('combobox');
+
+    expect(useProductSearch).toHaveBeenLastCalledWith('', false);
+
+    fireEvent.focus(input);
+    expect(useProductSearch).toHaveBeenLastCalledWith('', true);
+
+    fireEvent.blur(input);
+    expect(useProductSearch).toHaveBeenLastCalledWith('', false);
   });
 
   it('shows the create option only when no exact normalized match exists', () => {
@@ -134,5 +148,30 @@ describe('ProductPicker', () => {
       { lineId: 1, newProductName: 'Helt ny vare' },
       expect.anything(),
     );
+  });
+
+  it('shows a toast and resets the input to the previous name when the selection is rejected', () => {
+    mutate.mockImplementation((_body, options) => {
+      options?.onError?.(
+        new ApiRequestError(409, {
+          code: 'CONFLICT',
+          message: 'Kvitteringen er ikke ferdig behandlet',
+          requestId: 'x',
+        }),
+      );
+    });
+    mockSearchResults([product(5, 'Kaffe')]);
+    renderPicker({ id: 1, name: 'Lettmelk 1 l' });
+    const input = screen.getByRole('combobox');
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'Kaf' } });
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Kaffe' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Kvitteringen er ikke ferdig behandlet');
+    expect(input).toHaveValue('Lettmelk 1 l');
   });
 });

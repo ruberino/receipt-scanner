@@ -27,7 +27,12 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
         <p className="text-sm text-gray-600">{line.rawText}</p>
         <p className="text-xs text-gray-500">{formatQuantity(line.quantity, line.unit)}</p>
         {line.kind === 'item' ? (
-          <ProductPicker lineId={line.id} receiptId={receiptId} currentProduct={line.product} />
+          <ProductPicker
+            key={line.product?.id ?? 'none'}
+            lineId={line.id}
+            receiptId={receiptId}
+            currentProduct={line.product}
+          />
         ) : (
           <p className="text-sm italic text-gray-500">{NON_ITEM_LABELS[line.kind]}</p>
         )}

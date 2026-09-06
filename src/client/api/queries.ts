@@ -140,10 +140,10 @@ export function useDeleteReceipt(id: number) {
   });
 }
 
-export function useProductSearch(query: string) {
+export function useProductSearch(query: string, enabled: boolean) {
   return useQuery({
     queryKey: ['products', 'search', query],
     queryFn: () => fetchJson<Product[]>(`/api/products?q=${encodeURIComponent(query)}`),
-    enabled: query.trim().length > 0,
+    enabled: enabled && query.trim().length > 0,
   });
 }

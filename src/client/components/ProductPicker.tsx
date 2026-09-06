@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import type { Product } from '../../shared/schemas.ts';
 import { normalizeText } from '../../shared/normalize.ts';
+import { apiErrorMessage } from '../lib/errorMessage.ts';
 import { useProductSearch, useUpdateReceiptLine } from '../api/queries.ts';
 import { useToast } from './Toast.tsx';
 
@@ -27,9 +28,13 @@ export default function ProductPicker({ lineId, receiptId, currentProduct }: Pro
   const [query, setQuery] = useState(currentProduct?.name ?? '');
   const [isOpen, setIsOpen] = useState(false);
   const debouncedQuery = useDebouncedValue(query, DEBOUNCE_MS);
-  const { data: results } = useProductSearch(debouncedQuery);
+  const { data: results } = useProductSearch(debouncedQuery, isOpen);
   const updateLine = useUpdateReceiptLine(receiptId);
   const { showToast } = useToast();
+
+  function resetQuery() {
+    setQuery(currentProduct?.name ?? '');
+  }
 
   const trimmedQuery = query.trim();
   const normalizedQuery = normalizeText(trimmedQuery);
@@ -43,7 +48,13 @@ export default function ProductPicker({ lineId, receiptId, currentProduct }: Pro
     setIsOpen(false);
     updateLine.mutate(
       { lineId, productId: product.id },
-      { onSuccess: () => showToast('Varen er oppdatert') },
+      {
+        onSuccess: () => showToast('Varen er oppdatert'),
+        onError: (mutationError) => {
+          showToast(apiErrorMessage(mutationError));
+          resetQuery();
+        },
+      },
     );
   }
 
@@ -52,7 +63,13 @@ export default function ProductPicker({ lineId, receiptId, currentProduct }: Pro
     setIsOpen(false);
     updateLine.mutate(
       { lineId, newProductName: name },
-      { onSuccess: () => showToast('Varen er oppdatert') },
+      {
+        onSuccess: () => showToast('Varen er oppdatert'),
+        onError: (mutationError) => {
+          showToast(apiErrorMessage(mutationError));
+          resetQuery();
+        },
+      },
     );
   }
 

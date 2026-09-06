@@ -72,16 +72,20 @@ function mockReceipt(receipt: ReceiptDetail) {
   } as unknown as ReturnType<typeof useReceipt>);
 }
 
-function renderReceiptPage() {
-  render(
+function receiptPageTree() {
+  return (
     <ToastProvider>
       <MemoryRouter initialEntries={['/receipts/1']}>
         <Routes>
           <Route path="/receipts/:id" element={<ReceiptPage />} />
         </Routes>
       </MemoryRouter>
-    </ToastProvider>,
+    </ToastProvider>
   );
+}
+
+function renderReceiptPage() {
+  return render(receiptPageTree());
 }
 
 describe('ReceiptPage — done state', () => {
@@ -148,6 +152,72 @@ describe('ReceiptPage — done state', () => {
     expect(link).toHaveAttribute('href', '/receipts/42');
   });
 
+  it('renders Norwegian text for every one of the seven warning codes, never the raw code', () => {
+    const allCodes = [
+      'TOTAL_MISMATCH',
+      'MISSING_STORE',
+      'MISSING_DATE',
+      'FUTURE_DATE',
+      'UNMATCHED_LINES',
+      'MATCHING_FAILED',
+      'POSSIBLE_DUPLICATE',
+    ];
+    mockReceipt(baseReceipt({ warnings: allCodes, possibleDuplicateOf: 7 }));
+    renderReceiptPage();
+
+    for (const code of allCodes) {
+      expect(screen.queryByText(code)).not.toBeInTheDocument();
+    }
+    expect(screen.getByText('Summen av linjene stemmer ikke med totalen')).toBeInTheDocument();
+    expect(screen.getByText('Mangler butikknavn')).toBeInTheDocument();
+    expect(screen.getByText('Mangler dato')).toBeInTheDocument();
+    expect(screen.getByText('Datoen er i fremtiden')).toBeInTheDocument();
+    expect(screen.getByText('Noen varer er ikke gjenkjent')).toBeInTheDocument();
+    expect(screen.getByText('Automatisk varegjenkjenning feilet')).toBeInTheDocument();
+    expect(
+      screen.getByText('Ligner på kvittering #7, er den skannet to ganger?'),
+    ).toBeInTheDocument();
+  });
+
+  it('keys the header on the receipt id, so a cached-receipt swap does not keep stale values', () => {
+    mockReceipt(baseReceipt({ id: 1, storeName: 'KIWI Torshov' }));
+    const { rerender } = renderReceiptPage();
+    expect(screen.getByLabelText('Butikk')).toHaveValue('KIWI Torshov');
+
+    mockReceipt(baseReceipt({ id: 2, storeName: 'REMA 1000' }));
+    rerender(receiptPageTree());
+
+    expect(screen.getByLabelText('Butikk')).toHaveValue('REMA 1000');
+  });
+
+  it('parses the total with parseNok and sends integer øre', async () => {
+    mockReceipt(baseReceipt());
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.clear(screen.getByLabelText('Totalsum (kr)'));
+    await user.type(screen.getByLabelText('Totalsum (kr)'), '43,80');
+    await user.click(screen.getByRole('button', { name: 'Lagre' }));
+
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ totalOre: 4380 }),
+      expect.anything(),
+    );
+  });
+
+  it('shows "Ugyldig totalsum" and does not save when the total is not a valid amount', async () => {
+    mockReceipt(baseReceipt());
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.clear(screen.getByLabelText('Totalsum (kr)'));
+    await user.type(screen.getByLabelText('Totalsum (kr)'), 'abc');
+    await user.click(screen.getByRole('button', { name: 'Lagre' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Ugyldig totalsum');
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
   it('saves the header through PATCH and shows the server message on error', async () => {
     mockReceipt(baseReceipt());
     updateMutate.mockImplementation((_body, options) => {
@@ -198,6 +268,27 @@ describe('ReceiptPage — done state', () => {
     await user.click(screen.getByRole('button', { name: 'Ferdig' }));
 
     expect(updateMutate).toHaveBeenCalledWith({ reviewed: true }, expect.anything());
+  });
+
+  it('shows the server message in a toast when "Ferdig" is rejected', async () => {
+    mockReceipt(baseReceipt());
+    updateMutate.mockImplementation((_body, options) => {
+      options?.onError?.(
+        new ApiRequestError(409, {
+          code: 'CONFLICT',
+          message: 'Kvitteringen er ikke ferdig behandlet',
+          requestId: 'x',
+        }),
+      );
+    });
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Ferdig' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent('Kvitteringen er ikke ferdig behandlet');
+    });
   });
 
   it('deletes the receipt after confirmation', async () => {
