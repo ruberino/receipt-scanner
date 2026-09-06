@@ -645,10 +645,10 @@ Steps:
 
 Acceptance criteria:
 
-- Picking three photos uploads all three one after the other, each ending as «Lastet opp»; three receipts have status `uploaded` and the processor has not been called.
-- A photo that already exists shows «Allerede skannet» with a link and the remaining files still upload.
-- «Skann alle (3)» moves the three to `pending` and they reach `done` or `failed` without further input.
-- «Prøv igjen» on a `failed` receipt and «Skann» on an `uploaded` one both call `POST /api/receipts/:id/scan`; `done`, `pending` and `processing` answer `409`.
+- Picking three photos uploads all three one after the other, each ending as "Lastet opp"; three receipts have status `uploaded` and the processor has not been called.
+- A photo that already exists shows "Allerede skannet" with a link and the remaining files still upload.
+- "Skann alle (3)" moves the three to `pending` and they reach `done` or `failed` without further input.
+- "Prøv igjen" on a `failed` receipt and "Skann" on an `uploaded` one both call `POST /api/receipts/:id/scan`; `done`, `pending` and `processing` answer `409`.
 - A server restart does not scan `uploaded` receipts.
 
 Tests: scan route (401, `uploaded` → 202 `pending`, `failed` → 202, `done` → 409), upload returns 201 without enqueue, requeue ignores `uploaded`, ScanPage with three mocked files (order, per-file state, one 409), `Skann alle` calls scan per id and navigates, ReceiptPage `uploaded` state, badge label.
