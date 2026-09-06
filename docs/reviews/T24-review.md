@@ -64,3 +64,11 @@ The list is where the uploaded receipts become visible, and Ruben tests from his
 
 F1 as its own `fix:` commit with the failing-then-passing test in the body, F2 to F4 as one or two commits, all on the T24 branch.
 Run the five scripts, then send the hashes; do not merge before the go-ahead on F1 is recorded here.
+
+## Go-ahead, 2026-09-06
+
+F1 landed as `e47903f` and F2 to F4 as `086c941`.
+The probe that found F1 was run again at `086c941`: 1 receipt, 1 line and 1 image before and after the migrations, `foreign_keys` back on afterwards, and a receipt with status `uploaded` accepted.
+All five scripts exit 0 in a clean worktree at `086c941`, 379 tests, with Vitest limited to two workers because the machine ran out of memory at the default fan-out.
+The wider ADR-0006 edit is correct; the migrations sentence at the end of the section 6 definitions list is the right place.
+Approved for fast-forward merge; T19 is next.
