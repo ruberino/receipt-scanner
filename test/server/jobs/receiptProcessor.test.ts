@@ -214,10 +214,11 @@ describe('receiptProcessor', () => {
     expect(getReceipt(second)?.status).toBe('done');
   });
 
-  it('requeues pending and processing receipts on requeueUnfinished, in id order, and skips done/failed ones', async () => {
+  it('requeues pending and processing receipts on requeueUnfinished, in id order, and skips uploaded/done/failed ones', async () => {
     opened = createDb();
     const pending = insertPendingReceipt();
     const processing = insertPendingReceipt({ status: 'processing' });
+    insertPendingReceipt({ status: 'uploaded' });
     insertPendingReceipt({ status: 'done' });
     insertPendingReceipt({ status: 'failed' });
     const llm = new FakeLlmClient([fakeExtraction(), fakeMatch(), fakeExtraction(), fakeMatch()]);

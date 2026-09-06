@@ -10,7 +10,7 @@ export const loginSchema = z
 
 export type LoginRequest = z.infer<typeof loginSchema>;
 
-export const receiptStatusSchema = z.enum(['pending', 'processing', 'done', 'failed']);
+export const receiptStatusSchema = z.enum(['uploaded', 'pending', 'processing', 'done', 'failed']);
 export type ReceiptStatus = z.infer<typeof receiptStatusSchema>;
 
 export const receiptSummarySchema = z.object({

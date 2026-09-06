@@ -13,7 +13,7 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
   return {
     ...actual,
     useReceipt: vi.fn(),
-    useRetryReceipt: vi.fn(),
+    useScanReceipt: vi.fn(),
     useUpdateReceipt: vi.fn(),
     useRematch: vi.fn(),
     useDeleteReceipt: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
 
 const {
   useReceipt,
-  useRetryReceipt,
+  useScanReceipt,
   useUpdateReceipt,
   useRematch,
   useDeleteReceipt,
@@ -94,10 +94,10 @@ describe('ReceiptPage — done state', () => {
   let deleteMutate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    vi.mocked(useRetryReceipt).mockReturnValue({
+    vi.mocked(useScanReceipt).mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
-    } as unknown as ReturnType<typeof useRetryReceipt>);
+    } as unknown as ReturnType<typeof useScanReceipt>);
     updateMutate = vi.fn();
     vi.mocked(useUpdateReceipt).mockReturnValue({
       mutate: updateMutate,

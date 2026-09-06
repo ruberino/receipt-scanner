@@ -44,7 +44,7 @@ describe('POST /api/receipts', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('accepts a small JPEG and returns 202, and the image endpoint returns the normalised JPEG', async () => {
+  it('accepts a small JPEG and returns 201, and the image endpoint returns the normalised JPEG', async () => {
     app = createTestApp();
     const cookie = await loginCookie(app);
     const bytes = await readFixture('receipt-small.jpg');
@@ -56,7 +56,7 @@ describe('POST /api/receipts', () => {
       headers: { cookie },
     });
 
-    expect(uploadResponse.statusCode).toBe(202);
+    expect(uploadResponse.statusCode).toBe(201);
     const { id } = uploadResponse.json();
     expect(typeof id).toBe('number');
 

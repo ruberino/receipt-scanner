@@ -1,4 +1,7 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase, type OpenedDatabase } from '../../src/server/db/client.ts';
 import { runMigrations } from '../../src/server/db/migrate.ts';
@@ -9,6 +12,10 @@ import {
   receiptLines,
   receipts,
 } from '../../src/server/db/schema.ts';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const oldMigrationsFolder = path.resolve(here, '..', 'fixtures', 'migrations', '0000-only');
+const currentMigrationsFolder = path.resolve(here, '..', '..', 'drizzle');
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -89,6 +96,26 @@ describe('database schema and migrations', () => {
     opened = createDb();
 
     expect(() => insertReceipt(opened, { status: 'weird' })).toThrow(/CHECK constraint failed/);
+  });
+
+  it('accepts the new "uploaded" status', () => {
+    opened = createDb();
+
+    expect(() => insertReceipt(opened, { status: 'uploaded' })).not.toThrow();
+  });
+
+  it('keeps an existing done receipt intact when migrating from 0000 to the uploaded status check (T24)', () => {
+    opened = openDatabase(':memory:');
+    migrate(opened.db, { migrationsFolder: oldMigrationsFolder });
+
+    const receipt = insertReceipt(opened, { status: 'done', storeName: 'KIWI Torshov' });
+
+    migrate(opened.db, { migrationsFolder: currentMigrationsFolder });
+
+    const stored = opened.db.select().from(receipts).where(eq(receipts.id, receipt.id)).get();
+    expect(stored?.status).toBe('done');
+    expect(stored?.storeName).toBe('KIWI Torshov');
+    expect(() => insertReceipt(opened, { status: 'uploaded' })).not.toThrow();
   });
 
   it('rejects an unknown receipt line kind', () => {

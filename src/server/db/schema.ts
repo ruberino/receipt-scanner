@@ -37,7 +37,7 @@ export const receipts = sqliteTable(
   (table) => [
     check(
       'receipts_status_check',
-      sql`${table.status} in ('pending', 'processing', 'done', 'failed')`,
+      sql`${table.status} in ('uploaded', 'pending', 'processing', 'done', 'failed')`,
     ),
   ],
 );

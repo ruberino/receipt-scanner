@@ -134,7 +134,7 @@ export default async function receiptsRoutes(
       receipt = app.sqlite.transaction(() => {
         const inserted = app.db
           .insert(receipts)
-          .values({ status: 'pending', createdAt: now, updatedAt: now })
+          .values({ status: 'uploaded', createdAt: now, updatedAt: now })
           .returning()
           .get();
         app.db
@@ -164,9 +164,7 @@ export default async function receiptsRoutes(
       throw error;
     }
 
-    app.receiptProcessor.enqueue(receipt.id);
-
-    reply.status(202).send({ id: receipt.id });
+    reply.status(201).send({ id: receipt.id });
   });
 
   app.get('/api/receipts', async (request) => {
@@ -284,15 +282,15 @@ export default async function receiptsRoutes(
     reply.status(204).send();
   });
 
-  app.post('/api/receipts/:id/retry', async (request, reply) => {
+  app.post('/api/receipts/:id/scan', async (request, reply) => {
     const params = idParamsSchema.parse(request.params);
 
     const receipt = app.db.select().from(receipts).where(eq(receipts.id, params.id)).get();
     if (!receipt) {
       throw new NotFoundError();
     }
-    if (receipt.status !== 'failed') {
-      throw new ConflictError('Kvitteringen er ikke feilet');
+    if (receipt.status !== 'uploaded' && receipt.status !== 'failed') {
+      throw new ConflictError('Kvitteringen kan ikke skannes nå');
     }
 
     const now = new Date().toISOString();

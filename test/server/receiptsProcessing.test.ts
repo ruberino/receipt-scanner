@@ -81,6 +81,16 @@ async function uploadReceipt(app: FastifyInstance, cookie: string): Promise<numb
   return response.json().id;
 }
 
+async function scanReceipt(app: FastifyInstance, cookie: string, id: number) {
+  return app.inject({ method: 'POST', url: `/api/receipts/${id}/scan`, headers: { cookie } });
+}
+
+async function uploadAndScan(app: FastifyInstance, cookie: string): Promise<number> {
+  const id = await uploadReceipt(app, cookie);
+  await scanReceipt(app, cookie, id);
+  return id;
+}
+
 let app: FastifyInstance | undefined;
 let tmpDir: string | undefined;
 
@@ -91,6 +101,29 @@ afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
     tmpDir = undefined;
   }
+});
+
+describe('POST /api/receipts', () => {
+  it('replies 201 with the id, stores it as uploaded, and does not enqueue processing', async () => {
+    const hangingLlm: LlmClient = { completeJson: () => new Promise(() => {}) };
+    app = createTestApp({ llmClient: hangingLlm });
+    const cookie = await loginCookie(app);
+
+    const bytes = await readFixture('receipt-small.jpg');
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/receipts',
+      payload: multipartForm(bytes, 'receipt-small.jpg', 'image/jpeg'),
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const id = response.json().id;
+
+    const stored = app.db.select().from(receipts).where(eq(receipts.id, id)).get();
+    expect(stored?.status).toBe('uploaded');
+    expect(app.receiptProcessor.queueLength()).toBe(0);
+  });
 });
 
 describe('GET /api/receipts/:id', () => {
@@ -119,7 +152,7 @@ describe('GET /api/receipts/:id', () => {
     app = createTestApp({ llmClient: new FakeLlmClient([fakeSuccess()]) });
     const cookie = await loginCookie(app);
 
-    const id = await uploadReceipt(app, cookie);
+    const id = await uploadAndScan(app, cookie);
     await app.receiptProcessor.drain();
 
     const response = await app.inject({
@@ -145,32 +178,65 @@ describe('GET /api/receipts/:id', () => {
   });
 });
 
-describe('POST /api/receipts/:id/retry', () => {
+describe('POST /api/receipts/:id/scan', () => {
   it('gives 401 without the auth cookie', async () => {
     app = createTestApp();
 
-    const response = await app.inject({ method: 'POST', url: '/api/receipts/1/retry' });
+    const response = await app.inject({ method: 'POST', url: '/api/receipts/1/scan' });
 
     expect(response.statusCode).toBe(401);
   });
 
-  it('gives 409 for a receipt that is not failed', async () => {
-    app = createTestApp({ llmClient: new FakeLlmClient([fakeSuccess()]) });
+  it('gives 404 for an unknown id', async () => {
+    app = createTestApp();
     const cookie = await loginCookie(app);
 
-    const id = await uploadReceipt(app, cookie);
-    await app.receiptProcessor.drain();
+    const response = await scanReceipt(app, cookie, 999);
 
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/receipts/${id}/retry`,
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('moves an uploaded receipt to pending and enqueues it', async () => {
+    app = createTestApp({ llmClient: new FakeLlmClient([fakeSuccess()]) });
+    const cookie = await loginCookie(app);
+    const id = await uploadReceipt(app, cookie);
+
+    const response = await scanReceipt(app, cookie, id);
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json().status).not.toBe('uploaded');
+    await app.receiptProcessor.drain();
+    const final = await app.inject({
+      method: 'GET',
+      url: `/api/receipts/${id}`,
       headers: { cookie },
     });
+    expect(final.json().status).toBe('done');
+  });
+
+  it('gives 409 for a receipt that is done', async () => {
+    app = createTestApp({ llmClient: new FakeLlmClient([fakeSuccess()]) });
+    const cookie = await loginCookie(app);
+    const id = await uploadAndScan(app, cookie);
+    await app.receiptProcessor.drain();
+
+    const response = await scanReceipt(app, cookie, id);
 
     expect(response.statusCode).toBe(409);
   });
 
-  it('gives 202 for a failed receipt, clears the error and reprocesses it to done', async () => {
+  it('gives 409 for a receipt that is currently processing', async () => {
+    const hangingLlm: LlmClient = { completeJson: () => new Promise(() => {}) };
+    app = createTestApp({ llmClient: hangingLlm });
+    const cookie = await loginCookie(app);
+    const id = await uploadAndScan(app, cookie);
+
+    const response = await scanReceipt(app, cookie, id);
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('moves a failed receipt to pending, clears the error and reprocesses it to done', async () => {
     app = createTestApp({
       llmClient: new FakeLlmClient([
         () => {
@@ -181,20 +247,16 @@ describe('POST /api/receipts/:id/retry', () => {
     });
     const cookie = await loginCookie(app);
 
-    const id = await uploadReceipt(app, cookie);
+    const id = await uploadAndScan(app, cookie);
     await app.receiptProcessor.drain();
     expect(
       (await app.inject({ method: 'GET', url: `/api/receipts/${id}`, headers: { cookie } })).json()
         .status,
     ).toBe('failed');
 
-    const retryResponse = await app.inject({
-      method: 'POST',
-      url: `/api/receipts/${id}/retry`,
-      headers: { cookie },
-    });
-    expect(retryResponse.statusCode).toBe(202);
-    expect(retryResponse.json().errorMessage).toBeNull();
+    const scanResponse = await scanReceipt(app, cookie, id);
+    expect(scanResponse.statusCode).toBe(202);
+    expect(scanResponse.json().errorMessage).toBeNull();
 
     await app.receiptProcessor.drain();
     const final = await app.inject({
@@ -240,7 +302,7 @@ describe('POST /api/receipts/:id/rematch', () => {
     });
     const cookie = await loginCookie(app);
 
-    const id = await uploadReceipt(app, cookie);
+    const id = await uploadAndScan(app, cookie);
     await app.receiptProcessor.drain();
 
     const afterProcessing = await app.inject({
@@ -278,7 +340,7 @@ describe('GET /api/health', () => {
     const idle = await app.inject({ method: 'GET', url: '/api/health' });
     expect(idle.json().queueLength).toBe(0);
 
-    await uploadReceipt(app, cookie);
+    await uploadAndScan(app, cookie);
 
     const busy = await app.inject({ method: 'GET', url: '/api/health' });
     expect(busy.json().queueLength).toBe(1);
@@ -293,7 +355,7 @@ describe('crash recovery', () => {
     const hangingLlm: LlmClient = { completeJson: () => new Promise(() => {}) };
     app = createTestApp({ databasePath, llmClient: hangingLlm });
     const cookie = await loginCookie(app);
-    const id = await uploadReceipt(app, cookie);
+    const id = await uploadAndScan(app, cookie);
 
     const stuck = app.db.select().from(receipts).where(eq(receipts.id, id)).get();
     expect(stuck?.status).toBe('processing');
@@ -305,5 +367,23 @@ describe('crash recovery', () => {
 
     const finished = app.db.select().from(receipts).where(eq(receipts.id, id)).get();
     expect(finished?.status).toBe('done');
+  });
+
+  it('does not scan an uploaded receipt on restart', async () => {
+    tmpDir = await mkdtemp(path.join(tmpdir(), 'kvitteringer-'));
+    const databasePath = path.join(tmpDir, 'receipt-scanner.db');
+
+    app = createTestApp({ databasePath, llmClient: new FakeLlmClient([]) });
+    const cookie = await loginCookie(app);
+    const id = await uploadReceipt(app, cookie);
+
+    await app.close();
+
+    app = createTestApp({ databasePath, llmClient: new FakeLlmClient([]) });
+    await app.receiptProcessor.drain();
+
+    const stillUploaded = app.db.select().from(receipts).where(eq(receipts.id, id)).get();
+    expect(stillUploaded?.status).toBe('uploaded');
+    expect(app.receiptProcessor.queueLength()).toBe(0);
   });
 });

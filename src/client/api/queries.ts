@@ -63,6 +63,8 @@ export function useLogout() {
 }
 
 export function useUploadReceipt() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: ({
       file,
@@ -71,6 +73,9 @@ export function useUploadReceipt() {
       file: File | Blob;
       onProgress?: (fraction: number) => void;
     }) => uploadFile('/api/receipts', file, onProgress) as Promise<{ id: number }>,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['receipts'] });
+    },
   });
 }
 
@@ -82,14 +87,21 @@ export function useReceipt(id: number) {
   });
 }
 
-export function useRetryReceipt(id: number) {
+export function useReceipts() {
+  return useQuery({
+    queryKey: ['receipts'],
+    queryFn: () => fetchJson<ReceiptSummary[]>('/api/receipts'),
+  });
+}
+
+/** Unbound so ScanPage's "Skann alle" can call it per id from a dynamic list, not just ReceiptPage's own. */
+export function useScanReceipt() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => fetchJson<ReceiptSummary>(`/api/receipts/${id}/retry`, { method: 'POST' }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['receipt', id] });
-    },
+    mutationFn: (id: number) =>
+      fetchJson<ReceiptSummary>(`/api/receipts/${id}/scan`, { method: 'POST' }),
+    onSuccess: (_data, id) => invalidateReceiptRelated(queryClient, id),
   });
 }
 
