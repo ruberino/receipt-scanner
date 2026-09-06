@@ -31,3 +31,10 @@ Test: clicking the item's name calls `onToggle`; clicking `Fjern` does not.
 ## Done
 
 F1 as one `fix:` commit on the T18 branch, run the five scripts, send the hash, and merge after the go-ahead is recorded here.
+
+## Go-ahead, 2026-09-07
+
+F1 landed as `9420d87`: the checkbox and the text block sit in one `<label>` with `min-h-11` and `flex-1`, `Fjern` stays outside, and the two tests are there.
+All five scripts exit 0 in a clean worktree at `9420d87`, 433 tests.
+Approved for fast-forward merge.
+With T18 every page of the MVP is real; the order from here is T21 (Docker, Litestream, Render, restore drill), T22 (CI), T20 (extraction eval), T23 (phase 2), because a stable deployment matters more to Ruben's phone testing than the eval harness while no prompt change is planned.
