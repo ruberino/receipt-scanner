@@ -16,7 +16,7 @@ import {
   type ProductStats,
 } from '../domain/productStats.ts';
 import { ConflictError, NotFoundError } from '../lib/errors.ts';
-import { normalizeText } from '../lib/normalize.ts';
+import { normalizeText } from '../../shared/normalize.ts';
 
 const NO_STATS: ProductStats = { timesBought: 0, lastBought: null, medianIntervalDays: null };
 

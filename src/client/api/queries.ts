@@ -1,5 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ReceiptDetail, ReceiptStatus, ReceiptSummary } from '../../shared/schemas.ts';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import type {
+  PatchReceiptLineRequest,
+  PatchReceiptRequest,
+  Product,
+  ReceiptDetail,
+  ReceiptLine,
+  ReceiptStatus,
+  ReceiptSummary,
+} from '../../shared/schemas.ts';
 import { fetchJson, uploadFile } from './client.ts';
 
 const POLLING_STATUSES = new Set<ReceiptStatus>(['pending', 'processing']);
@@ -8,6 +16,16 @@ const POLLING_INTERVAL_MS = 2000;
 /** Extracted so polling stopping on `done`/`failed` is directly testable, no timers involved. */
 export function receiptRefetchInterval(status: ReceiptStatus | undefined): number | false {
   return status !== undefined && POLLING_STATUSES.has(status) ? POLLING_INTERVAL_MS : false;
+}
+
+/** A receipt/line correction can change product history and therefore suggestions too. */
+function invalidateReceiptRelated(queryClient: QueryClient, receiptId?: number): void {
+  if (receiptId !== undefined) {
+    void queryClient.invalidateQueries({ queryKey: ['receipt', receiptId] });
+  }
+  void queryClient.invalidateQueries({ queryKey: ['receipts'] });
+  void queryClient.invalidateQueries({ queryKey: ['products'] });
+  void queryClient.invalidateQueries({ queryKey: ['suggestions'] });
 }
 
 type MeResponse = { authenticated: true };
@@ -72,5 +90,60 @@ export function useRetryReceipt(id: number) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['receipt', id] });
     },
+  });
+}
+
+export function useUpdateReceipt(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: PatchReceiptRequest) =>
+      fetchJson<ReceiptDetail>(`/api/receipts/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => invalidateReceiptRelated(queryClient, id),
+  });
+}
+
+export function useUpdateReceiptLine(receiptId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ lineId, ...body }: { lineId: number } & PatchReceiptLineRequest) =>
+      fetchJson<ReceiptLine>(`/api/receipt-lines/${lineId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => invalidateReceiptRelated(queryClient, receiptId),
+  });
+}
+
+export function useRematch(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => fetchJson<ReceiptDetail>(`/api/receipts/${id}/rematch`, { method: 'POST' }),
+    onSuccess: () => invalidateReceiptRelated(queryClient, id),
+  });
+}
+
+export function useDeleteReceipt(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => fetchJson<void>(`/api/receipts/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['receipt', id] });
+      invalidateReceiptRelated(queryClient);
+    },
+  });
+}
+
+export function useProductSearch(query: string) {
+  return useQuery({
+    queryKey: ['products', 'search', query],
+    queryFn: () => fetchJson<Product[]>(`/api/products?q=${encodeURIComponent(query)}`),
+    enabled: query.trim().length > 0,
   });
 }

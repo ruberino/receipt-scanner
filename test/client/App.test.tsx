@@ -58,7 +58,7 @@ describe('App', () => {
     expect(within(nav).getByRole('link', { name: 'Varer' })).toBeInTheDocument();
   });
 
-  it('renders the receipt placeholder for a deep link to /receipts/:id when authenticated', async () => {
+  it('renders the receipt page for a deep link to /receipts/:id when authenticated', async () => {
     vi.mocked(fetch).mockImplementation((input) => {
       const url = typeof input === 'string' ? input : (input as Request).url;
       if (url.includes('/api/receipts/42')) {
@@ -86,7 +86,7 @@ describe('App', () => {
     renderApp('/receipts/42');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Kvittering' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Butikk')).toHaveValue('KIWI');
     });
   });
 

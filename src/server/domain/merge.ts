@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { AppDatabase } from '../db/client.ts';
 import { productAliases, products, receiptLines } from '../db/schema.ts';
 import { NotFoundError, ValidationError } from '../lib/errors.ts';
-import { normalizeText } from '../lib/normalize.ts';
+import { normalizeText } from '../../shared/normalize.ts';
 
 /**
  * Merges `sourceId` into `targetId`: every receipt line and alias pointing at the source is moved

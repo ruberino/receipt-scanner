@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { patchReceiptLineSchema } from '../../shared/schemas.ts';
 import { productAliases, products, receiptLines } from '../db/schema.ts';
 import { NotFoundError, ValidationError } from '../lib/errors.ts';
-import { normalizeText } from '../lib/normalize.ts';
+import { normalizeText } from '../../shared/normalize.ts';
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 

@@ -3,7 +3,7 @@ import { diffDays } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { receipts } from '../db/schema.ts';
 import { ExtractionError } from '../lib/errors.ts';
-import { normalizeText } from '../lib/normalize.ts';
+import { normalizeText } from '../../shared/normalize.ts';
 import type { ExtractionResult } from '../llm/extractReceipt.ts';
 
 export type ExtractionWarning =

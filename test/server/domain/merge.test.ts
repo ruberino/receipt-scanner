@@ -5,7 +5,7 @@ import { runMigrations } from '../../../src/server/db/migrate.ts';
 import { productAliases, products, receiptLines, receipts } from '../../../src/server/db/schema.ts';
 import { mergeProducts } from '../../../src/server/domain/merge.ts';
 import { NotFoundError, ValidationError } from '../../../src/server/lib/errors.ts';
-import { normalizeText } from '../../../src/server/lib/normalize.ts';
+import { normalizeText } from '../../../src/shared/normalize.ts';
 
 const NOW = '2026-09-03T12:00:00.000Z';
 

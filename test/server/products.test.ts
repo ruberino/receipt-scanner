@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { productAliases, products, receiptLines, receipts } from '../../src/server/db/schema.ts';
-import { normalizeText } from '../../src/server/lib/normalize.ts';
+import { normalizeText } from '../../src/shared/normalize.ts';
 import { createTestApp } from '../helpers/createTestApp.ts';
 import { loginCookie } from '../helpers/login.ts';
 

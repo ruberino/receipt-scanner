@@ -4,7 +4,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { PRODUCT_CATEGORIES } from '../../shared/categories.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { productAliases, products, receiptLines } from '../db/schema.ts';
-import { normalizeText } from '../lib/normalize.ts';
+import { normalizeText } from '../../shared/normalize.ts';
 import { buildMatchRequest, parseMatches } from '../llm/matchProducts.ts';
 import type { LlmClient } from '../llm/LlmClient.ts';
 
