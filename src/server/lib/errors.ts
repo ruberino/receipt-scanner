@@ -51,6 +51,12 @@ export class PayloadTooLargeError extends AppError {
   }
 }
 
+export class RateLimitedError extends AppError {
+  constructor(message = 'For mange forsøk. Prøv igjen om et minutt.') {
+    super(429, 'RATE_LIMITED', message);
+  }
+}
+
 export type ExtractionStage = 'extraction' | 'matching';
 
 /** A failed receipt job; `userMessage` is the Norwegian text stored on the receipt and shown in the UI. */
@@ -75,29 +81,31 @@ export type ApiErrorBody = {
   };
 };
 
-const CODE_BY_STATUS: Record<number, ErrorCode> = {
-  400: 'VALIDATION_ERROR',
-  401: 'UNAUTHORIZED',
-  404: 'NOT_FOUND',
-  409: 'CONFLICT',
-  413: 'PAYLOAD_TOO_LARGE',
-  429: 'RATE_LIMITED',
-};
-
-/** Maps a 4xx error raised by Fastify or one of its plugins (bad JSON, rate limit, multipart size) onto an AppError. */
+/** Maps a 4xx error raised by Fastify or one of its plugins (bad JSON, rate limit, multipart size) onto an AppError with a Norwegian message; a status not built into Fastify/our plugins falls back to VALIDATION_ERROR at its own status. */
 export function appErrorFromHttpError(error: unknown): AppError | null {
   if (typeof error !== 'object' || error === null) {
     return null;
   }
-  const { statusCode, message } = error as { statusCode?: unknown; message?: unknown };
-  if (typeof statusCode !== 'number') {
+  const { statusCode } = error as { statusCode?: unknown };
+  if (typeof statusCode !== 'number' || statusCode < 400 || statusCode >= 500) {
     return null;
   }
-  const code = CODE_BY_STATUS[statusCode];
-  if (!code) {
-    return null;
+  switch (statusCode) {
+    case 400:
+      return new ValidationError();
+    case 401:
+      return new UnauthorizedError();
+    case 404:
+      return new NotFoundError();
+    case 409:
+      return new ConflictError('Konflikt');
+    case 413:
+      return new PayloadTooLargeError();
+    case 429:
+      return new RateLimitedError();
+    default:
+      return new AppError(statusCode, 'VALIDATION_ERROR', 'Ugyldig forespørsel');
   }
-  return new AppError(statusCode, code, typeof message === 'string' ? message : code);
 }
 
 export function toErrorResponse(error: unknown, requestId: string): ApiErrorBody {

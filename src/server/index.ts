@@ -13,7 +13,13 @@ try {
   process.exit(1);
 }
 
-const app = buildApp({ config });
+let app: ReturnType<typeof buildApp>;
+try {
+  app = buildApp({ config });
+} catch (error) {
+  bootLogger.error({ err: error }, 'Failed to build the app');
+  process.exit(1);
+}
 
 try {
   const address = await app.listen({ host: config.host, port: config.port });

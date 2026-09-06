@@ -68,6 +68,18 @@ Identical to the sibling `training-log` app, plus the pieces needed for images a
 | Tests | Vitest, React Testing Library, Fastify `inject`, fake LLM client, extraction eval set | Vitest 3 | ADR-0014 |
 | Deploy | Docker image on Render (free plan) | — | ADR-0011 |
 
+The versions in the table above are floors, not targets.
+Pin exact versions in `package.json` and take the newest stable release on npm for every dependency, including a newer major, unless one of these stops it:
+
+- a peer dependency range of another pinned package excludes it;
+- it needs a different Node.js major than the Dockerfile uses, which is an ADR decision, so ask;
+- `lint`, `typecheck`, `test` and `build` cannot pass with configuration changes only, or the upgrade contradicts a task or an ADR, so ask;
+- the release is a pre-release, or its release notes call it unstable.
+
+In those cases take the newest release that does work and record the reason in the commit body, one line per package.
+Dependencies shared with the sibling app `training-log` are pinned to the same version in both repositories.
+Confirmed with Ruben 2026-09-06, superseding the narrower reading of "version floor" used for T01–T03.
+
 ## 4. System overview
 
 ```

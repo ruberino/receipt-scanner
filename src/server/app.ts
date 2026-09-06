@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type Database from 'better-sqlite3';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
@@ -20,6 +22,7 @@ import healthRoutes from './routes/health.ts';
 declare module 'fastify' {
   interface FastifyInstance {
     db: AppDatabase;
+    sqlite: InstanceType<typeof Database>;
   }
 }
 
@@ -42,10 +45,13 @@ export type BuildAppOptions = {
   databasePath?: string;
   /** Where pino writes; tests capture log lines through it. */
   logStream?: LogStream;
+  /** Overrides the directory `dist/client` is served from in production; tests point this at a fixture. */
+  clientDir?: string;
 };
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const { config } = options;
+  const clientDir = options.clientDir ?? clientDistDir;
 
   const app = Fastify({
     logger: {
@@ -54,6 +60,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       ...(options.logStream ? { stream: options.logStream } : {}),
     },
     trustProxy: config.nodeEnv === 'production',
+    // Fastify's default id (req-1, req-2, …) resets every restart; a UUID stays unique across them.
+    genReqId: () => randomUUID(),
   });
 
   app.addHook('onSend', async (request, reply, payload) => {
@@ -64,18 +72,25 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.setErrorHandler((error, request, reply) => {
     const requestId = request.id;
 
-    const appError =
-      error instanceof ZodError
-        ? new ValidationError('Ugyldig forespørsel', error.issues)
-        : error instanceof AppError
-          ? error
-          : appErrorFromHttpError(error);
+    if (error instanceof ZodError) {
+      const validationError = new ValidationError('Ugyldig forespørsel', error.issues);
+      reply.status(validationError.statusCode).send(toErrorResponse(validationError, requestId));
+      return;
+    }
 
-    if (appError) {
-      if (appError.statusCode >= 500) {
-        request.log.error({ err: appError, requestId }, appError.message);
+    if (error instanceof AppError) {
+      if (error.statusCode >= 500) {
+        request.log.error({ err: error, requestId }, error.message);
       }
-      reply.status(appError.statusCode).send(toErrorResponse(appError, requestId));
+      reply.status(error.statusCode).send(toErrorResponse(error, requestId));
+      return;
+    }
+
+    const mapped = appErrorFromHttpError(error);
+    if (mapped) {
+      // Log the original Fastify/plugin error, not the Norwegian-mapped one, so the real cause stays available for triage.
+      request.log.warn({ err: error, requestId }, 'Request rejected');
+      reply.status(mapped.statusCode).send(toErrorResponse(mapped, requestId));
       return;
     }
 
@@ -92,8 +107,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       return;
     }
 
-    if (config.nodeEnv === 'production' && request.method === 'GET') {
-      reply.type('text/html').sendFile('index.html');
+    const accept = request.headers.accept ?? '';
+    if (
+      config.nodeEnv === 'production' &&
+      request.method === 'GET' &&
+      accept.includes('text/html')
+    ) {
+      reply.type('text/html').sendFile('index.html', clientDir);
       return;
     }
 
@@ -101,12 +121,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   if (config.nodeEnv === 'production') {
-    app.register(fastifyStatic, { root: clientDistDir });
+    app.register(fastifyStatic, { root: clientDir });
   }
 
   const { sqlite, db } = openDatabase(options.databasePath ?? config.databasePath);
   runMigrations(db);
   app.decorate('db', db);
+  app.decorate('sqlite', sqlite);
   app.addHook('onClose', async () => {
     sqlite.close();
   });

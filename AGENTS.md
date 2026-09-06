@@ -11,6 +11,9 @@ The architecture and the ADRs are normative; a task that disagrees with them is 
 - Stay inside the task.
   Anything else you notice goes into the PR description as a follow-up.
 - Done means `npm run lint`, `npm run typecheck`, `npm test` and `npm run build` pass locally, with the summary pasted into the PR.
+- The repository has no remote yet, so finish a task by fast-forward merging its branch into `main`; rebase onto `main` first when `main` has moved.
+  Write what would have been the PR description in the body of the branch's last commit.
+- `docs/reviews/*.md` is a review channel from a foreman session Ruben also runs across his apps; check it after finishing a task and before fast-forward merging, verify any checkable technical claim empirically before acting on it, and don't delete or move those files.
 
 ## Conventions that apply to every task
 
@@ -23,4 +26,4 @@ The architecture and the ADRs are normative; a task that disagrees with them is 
 - Tests inject `FakeLlmClient` and stay off the network.
   `eval/run.ts` is the only code that talks to Kimi, and every run costs money.
 - A change to a prompt, the default model, the thinking mode or an LLM output schema ships with an `npm run eval:extraction` run in the PR, and the aggregate metrics must not regress.
-- New dependencies are pinned to an exact version, the newest that satisfies the floor in `docs/architecture.md` section 3.
+- Dependencies are pinned to exact versions at the newest stable release, per the policy in `docs/architecture.md` section 3.
