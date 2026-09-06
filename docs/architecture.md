@@ -614,6 +614,7 @@ Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`
 Same scheme as the sibling app: shared password, `timingSafeEqual`, cookie `kvitteringer_auth` = `hex(HMAC-SHA256(SESSION_SECRET, "kvitteringer-v1"))`, `HttpOnly`, `SameSite=Lax`, one year, `Secure` in production, guard on `/api/*` except login and health, login rate limit 5 per minute per IP.
 Receipt images are served under `/api`, so they are protected.
 Fastify is created with `trustProxy: true` in production, so `request.ip`, and therefore the login rate limit, uses the real client address behind the Render proxy instead of the proxy address shared by everyone.
+The guard runs before routing, so an unauthenticated request to an unknown `/api` path gets `401`, not `404`.
 
 ### Logging and errors (ADR-0012)
 

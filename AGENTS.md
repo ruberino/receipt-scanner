@@ -17,10 +17,11 @@ The architecture and the ADRs are normative; a task that disagrees with them is 
 
 ## Conventions that apply to every task
 
-- UI text is Norwegian bokmål; code, comments, commits and PRs are English.
+- UI text is Norwegian bokmål, including every `message` in an error body, because the client displays it; code, comments, commits and PRs are English.
 - Amounts are integer øre and dates are `YYYY-MM-DD` strings in all server and API code; date and week arithmetic goes through `src/shared/dates.ts`.
 - Log through `request.log` or `app.log` (pino).
   Throw the `AppError` subclasses from `src/server/lib/errors.ts` and let the single error handler map them.
+- Every API test file has one test that its endpoint returns `401` without the cookie.
 - Every LLM call goes through the `LlmClient` interface and logs one `info` line with token usage.
   Images, prompts, API keys and cookie values stay out of the logs; the raw LLM response is stored on the receipt instead.
 - Tests inject `FakeLlmClient` and stay off the network.
