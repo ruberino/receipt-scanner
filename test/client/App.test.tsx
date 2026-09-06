@@ -59,7 +59,29 @@ describe('App', () => {
   });
 
   it('renders the receipt placeholder for a deep link to /receipts/:id when authenticated', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse({ authenticated: true }));
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (url.includes('/api/receipts/42')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 42,
+            status: 'done',
+            storeName: 'KIWI',
+            purchasedAt: '2026-09-01',
+            totalOre: 10000,
+            lineCount: 0,
+            warnings: [],
+            errorMessage: null,
+            possibleDuplicateOf: null,
+            reviewedAt: null,
+            createdAt: '2026-09-01T00:00:00.000Z',
+            imageUrl: '/api/receipts/42/image',
+            lines: [],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ authenticated: true }));
+    });
 
     renderApp('/receipts/42');
 
