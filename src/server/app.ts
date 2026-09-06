@@ -171,7 +171,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   app.register(healthRoutes, { version: readVersion() });
   app.register(authPlugin, { config });
-  app.register(receiptsRoutes);
+  app.register(receiptsRoutes, { now: options.now ?? (() => new Date()) });
   app.register(receiptLinesRoutes);
 
   return app;

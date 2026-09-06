@@ -264,6 +264,63 @@ describe('PATCH /api/receipts/:id', () => {
     expect(changedAgain.json().warnings).not.toContain('POSSIBLE_DUPLICATE');
     expect(changedAgain.json().possibleDuplicateOf).toBeNull();
   });
+
+  it('drops MISSING_STORE once a store name is patched in, but keeps it when patched to null', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const withStore = insertDoneReceipt({ storeName: null, warningsJson: '["MISSING_STORE"]' });
+    insertItemLine(withStore);
+    const staysNull = insertDoneReceipt({ storeName: null, warningsJson: '["MISSING_STORE"]' });
+    insertItemLine(staysNull);
+
+    const fixed = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipts/${withStore}`,
+      payload: { storeName: 'REMA 1000 Grünerløkka' },
+      headers: { cookie },
+    });
+    expect(fixed.json().warnings).not.toContain('MISSING_STORE');
+
+    const keptNull = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipts/${staysNull}`,
+      payload: { storeName: null },
+      headers: { cookie },
+    });
+    expect(keptNull.json().warnings).toContain('MISSING_STORE');
+  });
+
+  it('drops MISSING_DATE for a past date, adds FUTURE_DATE for a future one, and drops it again for today', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const id = insertDoneReceipt({ purchasedAt: '2026-01-01', warningsJson: '["MISSING_DATE"]' });
+    insertItemLine(id);
+
+    const pastDate = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipts/${id}`,
+      payload: { purchasedAt: '2026-09-01' },
+      headers: { cookie },
+    });
+    expect(pastDate.json().warnings).not.toContain('MISSING_DATE');
+    expect(pastDate.json().warnings).not.toContain('FUTURE_DATE');
+
+    const futureDate = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipts/${id}`,
+      payload: { purchasedAt: '2026-09-10' },
+      headers: { cookie },
+    });
+    expect(futureDate.json().warnings).toContain('FUTURE_DATE');
+
+    const backToToday = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipts/${id}`,
+      payload: { purchasedAt: '2026-09-03' },
+      headers: { cookie },
+    });
+    expect(backToToday.json().warnings).not.toContain('FUTURE_DATE');
+  });
 });
 
 describe('DELETE /api/receipts/:id', () => {

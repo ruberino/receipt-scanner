@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { patchReceiptSchema } from '../../shared/schemas.ts';
+import { diffDays, todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { isUniqueViolation } from '../db/client.ts';
 import { products, receiptImages, receiptLines, receipts } from '../db/schema.ts';
@@ -9,6 +10,11 @@ import { findPossibleDuplicate } from '../domain/extraction.ts';
 import { matchLines, type MatchLinesWarning } from '../domain/matching.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
 import { normaliseImage } from '../lib/images.ts';
+
+export type ReceiptsRouteOptions = {
+  /** Same clock the job runner gets, so FUTURE_DATE recomputation is deterministic in tests. */
+  now: () => Date;
+};
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const listQuerySchema = z.object({
@@ -94,7 +100,10 @@ function buildReceiptDetail(app: FastifyInstance, receipt: typeof receipts.$infe
   };
 }
 
-export default async function receiptsRoutes(app: FastifyInstance): Promise<void> {
+export default async function receiptsRoutes(
+  app: FastifyInstance,
+  options: ReceiptsRouteOptions,
+): Promise<void> {
   app.post('/api/receipts', async (request, reply) => {
     const file = await request.file();
     if (!file) {
@@ -209,6 +218,21 @@ export default async function receiptsRoutes(app: FastifyInstance): Promise<void
 
     let warnings = JSON.parse(receipt.warningsJson) as string[];
     let possibleDuplicateOf = receipt.possibleDuplicateOf;
+
+    if (body.storeName !== undefined) {
+      warnings = warnings.filter((w) => w !== 'MISSING_STORE');
+      if (nextStoreName === null) {
+        warnings.push('MISSING_STORE');
+      }
+    }
+
+    if (body.purchasedAt !== undefined) {
+      warnings = warnings.filter((w) => w !== 'MISSING_DATE' && w !== 'FUTURE_DATE');
+      const scanDate = todayInOslo(options.now());
+      if (diffDays(scanDate, body.purchasedAt) > 0) {
+        warnings.push('FUTURE_DATE');
+      }
+    }
 
     if (recomputeChecks) {
       warnings = warnings.filter((w) => w !== 'TOTAL_MISMATCH' && w !== 'POSSIBLE_DUPLICATE');
