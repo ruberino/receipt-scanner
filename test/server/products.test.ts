@@ -140,18 +140,25 @@ describe('GET /api/products', () => {
     expect(body[0].name).toBe('TINE Lettmelk, 1l');
   });
 
-  it('excludes suppressed products by default and includes them with includeSuppressed=true', async () => {
+  it('excludes suppressed products by default, with includeSuppressed=false, and includes them with includeSuppressed=true', async () => {
     app = createTestApp();
     cookie = await loginCookie(app);
     insertProduct('Vanlig produkt');
     insertProduct('Skjult produkt', { suppressed: 1 });
 
-    const withoutSuppressed = await app.inject({
+    const byDefault = await app.inject({
       method: 'GET',
       url: '/api/products',
       headers: { cookie },
     });
-    expect(withoutSuppressed.json()).toHaveLength(1);
+    expect(byDefault.json()).toHaveLength(1);
+
+    const explicitFalse = await app.inject({
+      method: 'GET',
+      url: '/api/products?includeSuppressed=false',
+      headers: { cookie },
+    });
+    expect(explicitFalse.json()).toHaveLength(1);
 
     const withSuppressed = await app.inject({
       method: 'GET',
@@ -159,6 +166,36 @@ describe('GET /api/products', () => {
       headers: { cookie },
     });
     expect(withSuppressed.json()).toHaveLength(2);
+  });
+
+  it('gives 400 for an invalid includeSuppressed value', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/products?includeSuppressed=maybe',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('runs at most two SQL statements to list products with purchases', async () => {
+    const statements: string[] = [];
+    app = createTestApp({ dbVerbose: (message) => statements.push(String(message)) });
+    cookie = await loginCookie(app);
+    for (let i = 0; i < 10; i += 1) {
+      const productId = insertProduct(`Produkt ${i}`);
+      const receiptId = insertReceipt('2026-08-01');
+      insertLine(receiptId, productId);
+    }
+
+    statements.length = 0;
+    const response = await app.inject({ method: 'GET', url: '/api/products', headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(statements.length).toBeLessThanOrEqual(2);
   });
 });
 

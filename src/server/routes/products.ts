@@ -10,14 +10,21 @@ import type { AppDatabase } from '../db/client.ts';
 import { isUniqueViolation } from '../db/client.ts';
 import { productAliases, products, receiptLines, receipts } from '../db/schema.ts';
 import { mergeProducts } from '../domain/merge.ts';
-import { loadProductStats, type ProductStats } from '../domain/productStats.ts';
+import {
+  loadProductStats,
+  loadProductStatsMap,
+  type ProductStats,
+} from '../domain/productStats.ts';
 import { ConflictError, NotFoundError } from '../lib/errors.ts';
 import { normalizeText } from '../lib/normalize.ts';
+
+const NO_STATS: ProductStats = { timesBought: 0, lastBought: null, medianIntervalDays: null };
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const listQuerySchema = z.object({
   q: z.string().trim().min(1).optional(),
-  includeSuppressed: z.coerce.boolean().default(false),
+  // z.coerce.boolean() would turn "?includeSuppressed=false" into true (Boolean('false') is truthy).
+  includeSuppressed: z.enum(['true', 'false']).optional(),
 });
 
 function toProduct(product: typeof products.$inferSelect, stats: ProductStats) {
@@ -44,7 +51,7 @@ export default async function productsRoutes(app: FastifyInstance): Promise<void
       query.q !== undefined
         ? like(products.nameNormalized, `%${normalizeText(query.q)}%`)
         : undefined,
-      query.includeSuppressed ? undefined : eq(products.suppressed, 0),
+      query.includeSuppressed === 'true' ? undefined : eq(products.suppressed, 0),
     ].filter((condition) => condition !== undefined);
 
     const rows = app.db
@@ -53,8 +60,10 @@ export default async function productsRoutes(app: FastifyInstance): Promise<void
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .all();
 
+    const statsByProduct = loadProductStatsMap(app.db);
+
     return rows
-      .map((row) => toProduct(row, loadProductStats(app.db, row.id)))
+      .map((row) => toProduct(row, statsByProduct.get(row.id) ?? NO_STATS))
       .sort((a, b) => b.timesBought - a.timesBought || a.name.localeCompare(b.name, 'nb'));
   });
 

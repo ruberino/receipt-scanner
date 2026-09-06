@@ -61,6 +61,8 @@ export type BuildAppOptions = {
   llmClient?: LlmClient;
   /** Overrides the job runner's clock; tests pin it for deterministic `todayInOslo` results. */
   now?: () => Date;
+  /** better-sqlite3's `verbose` hook, one call per executed SQL statement; tests use it to count queries. */
+  dbVerbose?: (message?: unknown, ...additionalArgs: unknown[]) => void;
 };
 
 export function buildApp(options: BuildAppOptions): FastifyInstance {
@@ -138,7 +140,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     app.register(fastifyStatic, { root: clientDir });
   }
 
-  const { sqlite, db } = openDatabase(options.databasePath ?? config.databasePath);
+  const { sqlite, db } = openDatabase(options.databasePath ?? config.databasePath, {
+    verbose: options.dbVerbose,
+  });
   runMigrations(db);
   app.decorate('db', db);
   app.decorate('sqlite', sqlite);

@@ -11,12 +11,19 @@ export type OpenedDatabase = {
   db: AppDatabase;
 };
 
-export function openDatabase(databasePath: string): OpenedDatabase {
+export type OpenDatabaseOptions = {
+  verbose?: (message?: unknown, ...additionalArgs: unknown[]) => void;
+};
+
+export function openDatabase(
+  databasePath: string,
+  options: OpenDatabaseOptions = {},
+): OpenedDatabase {
   if (databasePath !== ':memory:') {
     mkdirSync(path.dirname(databasePath), { recursive: true });
   }
 
-  const sqlite = new Database(databasePath);
+  const sqlite = new Database(databasePath, { verbose: options.verbose });
 
   if (databasePath !== ':memory:') {
     sqlite.pragma('journal_mode = WAL');

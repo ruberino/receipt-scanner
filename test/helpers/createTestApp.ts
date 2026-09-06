@@ -21,6 +21,8 @@ export type TestAppOptions = {
   llmClient?: LlmClient;
   /** Pins the job runner's clock for deterministic `todayInOslo` results. */
   now?: () => Date;
+  /** better-sqlite3's `verbose` hook, one call per executed SQL statement; tests use it to count queries. */
+  dbVerbose?: (message?: unknown, ...additionalArgs: unknown[]) => void;
 };
 
 export function createTestApp(options: TestAppOptions = {}): FastifyInstance {
@@ -31,6 +33,7 @@ export function createTestApp(options: TestAppOptions = {}): FastifyInstance {
     llmClient: options.llmClient ?? new FakeLlmClient([]),
     ...(options.logStream ? { logStream: options.logStream } : {}),
     ...(options.now ? { now: options.now } : {}),
+    ...(options.dbVerbose ? { dbVerbose: options.dbVerbose } : {}),
   });
 }
 
