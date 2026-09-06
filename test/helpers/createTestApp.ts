@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { buildApp, type LogStream } from '../../src/server/app.ts';
 import { loadConfig } from '../../src/server/config.ts';
+import { FakeLlmClient } from '../../src/server/llm/FakeLlmClient.ts';
+import type { LlmClient } from '../../src/server/llm/LlmClient.ts';
 
 export const TEST_ENV: Record<string, string> = {
   NODE_ENV: 'test',
@@ -15,6 +17,8 @@ export type TestAppOptions = {
   /** Defaults to an in-memory database (from T03); pass a file path to share a database between two apps. */
   databasePath?: string;
   logStream?: LogStream;
+  /** Defaults to a `FakeLlmClient` with an empty script; pass one scripted for the test. */
+  llmClient?: LlmClient;
 };
 
 export function createTestApp(options: TestAppOptions = {}): FastifyInstance {
@@ -22,6 +26,7 @@ export function createTestApp(options: TestAppOptions = {}): FastifyInstance {
   return buildApp({
     config,
     databasePath: options.databasePath ?? ':memory:',
+    llmClient: options.llmClient ?? new FakeLlmClient([]),
     ...(options.logStream ? { logStream: options.logStream } : {}),
   });
 }
