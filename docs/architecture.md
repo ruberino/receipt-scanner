@@ -187,6 +187,8 @@ receipt-scanner/
         Toast.tsx
       styles.css
       public/
+        manifest.webmanifest
+        icons/                 icon-192.png, icon-512.png, apple-touch-icon.png
   drizzle/
   eval/
     receipts/                real receipt photos and expected JSON (private repo)
@@ -654,7 +656,7 @@ The database, including images, is replicated to the household S3 bucket only.
 | Matching | Vitest + in-memory DB + `FakeLlmClient` | Alias hit path, LLM path creating products and aliases, user correction overriding an alias, merge. |
 | Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, scan. |
 | API | Vitest + `app.inject()` | Every endpoint, including multipart upload with a fixture image, duplicate detection, auth. |
-| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` check-off, ScanPage multi-upload. |
+| Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` check-off, ScanPage multi-upload, `ReceiptsPage` rendering and pagination. |
 | Extraction eval | `npm run eval:extraction`, real Kimi | Real receipt photos under `eval/receipts/` with expected JSON; metrics per receipt and aggregate written to `eval/results/`. Run before merging any prompt or model change. Costs real money; never runs in CI. |
 
 Unit and API tests never call the network; `KimiClient` is only exercised by the eval script.

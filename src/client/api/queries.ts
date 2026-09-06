@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type {
   PatchReceiptLineRequest,
   PatchReceiptRequest,
@@ -91,6 +97,32 @@ export function useReceipts() {
   return useQuery({
     queryKey: ['receipts'],
     queryFn: () => fetchJson<ReceiptSummary[]>('/api/receipts'),
+  });
+}
+
+const RECEIPTS_LIST_PAGE_SIZE = 50;
+
+/** Extracted so "keep polling while anything on the list is in flight" is testable without timers. */
+export function receiptsListRefetchInterval(pages: ReceiptSummary[][] | undefined): number | false {
+  const anyInFlight = (pages ?? []).some((page) =>
+    page.some((receipt) => POLLING_STATUSES.has(receipt.status)),
+  );
+  return anyInFlight ? POLLING_INTERVAL_MS : false;
+}
+
+export function useReceiptsList() {
+  return useInfiniteQuery({
+    queryKey: ['receipts', 'list'],
+    queryFn: ({ pageParam }: { pageParam: number | undefined }) =>
+      fetchJson<ReceiptSummary[]>(
+        pageParam === undefined
+          ? `/api/receipts?limit=${RECEIPTS_LIST_PAGE_SIZE}`
+          : `/api/receipts?limit=${RECEIPTS_LIST_PAGE_SIZE}&before=${pageParam}`,
+      ),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.length === RECEIPTS_LIST_PAGE_SIZE ? lastPage[lastPage.length - 1]?.id : undefined,
+    refetchInterval: (query) => receiptsListRefetchInterval(query.state.data?.pages),
   });
 }
 
