@@ -1,16 +1,74 @@
 /** @vitest-environment jsdom */
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../../src/client/App.tsx';
 
+function renderApp(initialEntry: string) {
+  const queryClient = new QueryClient();
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status });
+}
+
+function unauthorizedResponse(): Response {
+  return jsonResponse(
+    { error: { code: 'UNAUTHORIZED', message: 'Ikke innlogget', requestId: 'x' } },
+    401,
+  );
+}
+
 describe('App', () => {
-  it('renders the app name', () => {
-    render(<App />);
-    expect(screen.getByText('Kvitteringer')).toBeInTheDocument();
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
   });
 
-  it('cleans up between tests so a second render does not see the first', () => {
-    render(<App />);
-    expect(screen.getAllByText('Kvitteringer')).toHaveLength(1);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the login page when unauthenticated', async () => {
+    vi.mocked(fetch).mockResolvedValue(unauthorizedResponse());
+
+    renderApp('/');
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Passord')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the guarded shell with four tabs when authenticated', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ authenticated: true }));
+
+    renderApp('/');
+
+    const nav = await screen.findByRole('navigation');
+    expect(within(nav).getByRole('link', { name: 'Handleliste' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Skann' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Kvitteringer' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Varer' })).toBeInTheDocument();
+  });
+
+  it('navigates to /login on a 401 from any query, not just auth/me', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ authenticated: true }));
+    renderApp('/');
+    await screen.findByRole('navigation');
+
+    vi.mocked(fetch).mockResolvedValue(unauthorizedResponse());
+    const { fetchJson } = await import('../../src/client/api/client.ts');
+    await fetchJson('/api/products').catch(() => undefined);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Passord')).toBeInTheDocument();
+    });
   });
 });
