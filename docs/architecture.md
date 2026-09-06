@@ -547,7 +547,7 @@ type ShoppingList = {
 | `POST /api/receipts/:id/scan` | — | `202 ReceiptSummary` | Only when `uploaded` or `failed`, else `409`. |
 | `POST /api/receipts/:id/rematch` | — | `200 ReceiptDetail` | Runs matching for unmatched lines synchronously; may call Kimi. |
 | `DELETE /api/receipts/:id` | — | `204` | Cascades lines and image. |
-| `PATCH /api/receipt-lines/:id` | `{ productId }` or `{ newProductName, category? }` | `200 ReceiptLine` | Upserts a user alias. |
+| `PATCH /api/receipt-lines/:id` | `{ productId }` or `{ newProductName, category? }` | `200 ReceiptLine` | Upserts a user alias. Removes `UNMATCHED_LINES` from the receipt when no item line has `product_id IS NULL`; `MATCHING_FAILED` is left alone. |
 | `GET /api/products?q=&includeSuppressed=` | — | `200 Product[]` | `q` filters on `name_normalized` contains `normalizeText(q)`. Ordered by `timesBought` desc, then name. |
 | `GET /api/products/:id` | — | `200 ProductDetail` | |
 | `POST /api/products` | `{ name, category? }` | `201 Product` | `409` on duplicate normalized name. |

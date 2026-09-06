@@ -9,12 +9,21 @@ const NOW = '2026-09-03T12:00:00.000Z';
 
 let app: FastifyInstance | undefined;
 
-function insertReceipt(): number {
+function insertReceipt(overrides: Partial<typeof receipts.$inferInsert> = {}): number {
   return app!.db
     .insert(receipts)
-    .values({ status: 'done', warningsJson: '[]', createdAt: NOW, updatedAt: NOW })
+    .values({ status: 'done', warningsJson: '[]', createdAt: NOW, updatedAt: NOW, ...overrides })
     .returning()
     .get().id;
+}
+
+async function getReceiptWarnings(cookie: string, receiptId: number): Promise<string[]> {
+  const response = await app!.inject({
+    method: 'GET',
+    url: `/api/receipts/${receiptId}`,
+    headers: { cookie },
+  });
+  return response.json().warnings;
 }
 
 function insertLine(
@@ -235,5 +244,80 @@ describe('PATCH /api/receipt-lines/:id', () => {
 
     expect(response.json().product.id).toBe(productId);
     expect(app!.db.select().from(products).all()).toHaveLength(1);
+  });
+
+  it('removes UNMATCHED_LINES from the receipt once the last unmatched item line is matched (T25)', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+    const receiptId = insertReceipt({ warningsJson: JSON.stringify(['UNMATCHED_LINES']) });
+    const lineId = insertLine(receiptId, 'MYSTERY ITEM');
+    const productId = insertProduct('Mystisk vare');
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipt-lines/${lineId}`,
+      payload: { productId },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(await getReceiptWarnings(cookie, receiptId)).not.toContain('UNMATCHED_LINES');
+  });
+
+  it('leaves UNMATCHED_LINES when another item line on the receipt is still unmatched (T25)', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+    const receiptId = insertReceipt({ warningsJson: JSON.stringify(['UNMATCHED_LINES']) });
+    const lineId = insertLine(receiptId, 'MYSTERY ITEM A', { lineNo: 1 });
+    insertLine(receiptId, 'MYSTERY ITEM B', { lineNo: 2 });
+    const productId = insertProduct('Mystisk vare A');
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/receipt-lines/${lineId}`,
+      payload: { productId },
+      headers: { cookie },
+    });
+
+    expect(await getReceiptWarnings(cookie, receiptId)).toContain('UNMATCHED_LINES');
+  });
+
+  it('leaves MATCHING_FAILED alone when the last unmatched line is matched (T25)', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+    const receiptId = insertReceipt({
+      warningsJson: JSON.stringify(['UNMATCHED_LINES', 'MATCHING_FAILED']),
+    });
+    const lineId = insertLine(receiptId, 'MYSTERY ITEM');
+    const productId = insertProduct('Mystisk vare');
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/receipt-lines/${lineId}`,
+      payload: { productId },
+      headers: { cookie },
+    });
+
+    const warnings = await getReceiptWarnings(cookie, receiptId);
+    expect(warnings).not.toContain('UNMATCHED_LINES');
+    expect(warnings).toContain('MATCHING_FAILED');
+  });
+
+  it('does not count a discount line toward "still unmatched" when recomputing UNMATCHED_LINES (T25)', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+    const receiptId = insertReceipt({ warningsJson: JSON.stringify(['UNMATCHED_LINES']) });
+    insertLine(receiptId, 'RABATT', { kind: 'discount', totalOre: -100, lineNo: 1 });
+    const lineId = insertLine(receiptId, 'MYSTERY ITEM', { lineNo: 2 });
+    const productId = insertProduct('Mystisk vare');
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/receipt-lines/${lineId}`,
+      payload: { productId },
+      headers: { cookie },
+    });
+
+    expect(await getReceiptWarnings(cookie, receiptId)).not.toContain('UNMATCHED_LINES');
   });
 });

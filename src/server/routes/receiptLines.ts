@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { patchReceiptLineSchema } from '../../shared/schemas.ts';
-import { productAliases, products, receiptLines } from '../db/schema.ts';
+import { productAliases, products, receiptLines, receipts } from '../db/schema.ts';
 import { NotFoundError, ValidationError } from '../lib/errors.ts';
 import { normalizeText } from '../../shared/normalize.ts';
 
@@ -83,6 +83,32 @@ export default async function receiptLinesRoutes(app: FastifyInstance): Promise<
         .set({ productId: resolvedProductId, matchSource: 'user' })
         .where(eq(receiptLines.id, params.id))
         .run();
+
+      const stillUnmatched = app.db
+        .select({ id: receiptLines.id })
+        .from(receiptLines)
+        .where(
+          and(
+            eq(receiptLines.receiptId, line.receiptId),
+            eq(receiptLines.kind, 'item'),
+            isNull(receiptLines.productId),
+          ),
+        )
+        .get();
+
+      if (!stillUnmatched) {
+        const receipt = app.db.select().from(receipts).where(eq(receipts.id, line.receiptId)).get();
+        if (receipt) {
+          const warnings = (JSON.parse(receipt.warningsJson) as string[]).filter(
+            (warning) => warning !== 'UNMATCHED_LINES',
+          );
+          app.db
+            .update(receipts)
+            .set({ warningsJson: JSON.stringify(warnings), updatedAt: now })
+            .where(eq(receipts.id, line.receiptId))
+            .run();
+        }
+      }
 
       return resolvedProductId;
     })();
