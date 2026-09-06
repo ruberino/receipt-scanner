@@ -129,6 +129,7 @@ describe('POST /api/shopping-lists', () => {
     const body = response.json();
     expect(body.weekStart).toBe('2026-08-31');
     expect(body.status).toBe('open');
+    expect(body.createdAt).toBe(NOW);
     expect(body.items.map((item: { name: string }) => item.name)).toEqual([
       'Kaffe',
       'Lettmelk 1 l',
@@ -340,6 +341,22 @@ describe('PATCH /api/shopping-list-items/:id', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('gives 400 for position 0 (positions are 1-based)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const itemId = insertItem(listId, 1);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/shopping-list-items/${itemId}`,
+      payload: { position: 0 },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
   it('updates checked, name, quantityText and position', async () => {
     app = createTestApp();
     cookie = await loginCookie(app);
@@ -466,8 +483,7 @@ describe('POST /api/shopping-lists/:id/complete', () => {
       headers: { cookie },
     });
     expect(completed.statusCode).toBe(200);
-    expect(completed.json()).toMatchObject({ status: 'done' });
-    expect(completed.json().completedAt).not.toBeNull();
+    expect(completed.json()).toMatchObject({ status: 'done', completedAt: NOW });
 
     const current = await app.inject({
       method: 'GET',

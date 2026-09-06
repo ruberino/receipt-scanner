@@ -191,7 +191,7 @@ export const patchShoppingListItemSchema = z
     checked: z.boolean(),
     name: z.string().trim().min(1).max(120),
     quantityText: z.string().trim().min(1).max(60).nullable(),
-    position: z.number().int().nonnegative(),
+    position: z.number().int().positive(),
   })
   .partial()
   .strict();

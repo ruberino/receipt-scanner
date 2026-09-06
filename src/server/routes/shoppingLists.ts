@@ -73,7 +73,7 @@ export default async function shoppingListsRoutes(
       return;
     }
 
-    const now = new Date().toISOString();
+    const now = options.now().toISOString();
     const today = todayInOslo(options.now());
     const suggestions = computeSuggestions(loadProductHistories(app.db), today);
 
@@ -135,7 +135,7 @@ export default async function shoppingListsRoutes(
       }
     }
 
-    const now = new Date().toISOString();
+    const now = options.now().toISOString();
     const created = app.db
       .insert(shoppingListItems)
       .values({
@@ -221,7 +221,7 @@ export default async function shoppingListsRoutes(
       throw new ConflictError('Handlelisten er allerede fullført');
     }
 
-    const now = new Date().toISOString();
+    const now = options.now().toISOString();
     const updated = app.db
       .update(shoppingLists)
       .set({ status: 'done', completedAt: now })
