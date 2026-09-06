@@ -18,6 +18,7 @@ This app stores images in the database (ADR-0005), so the replicated file is a f
 - Migrations run in-process after the restore (ADR-0010).
 - A restore drill is part of the deployment task and is repeated after any change to `start.sh` or `litestream.yml`.
 - `GET /api/health` never calls Kimi, so a Kimi outage does not fail the Render health check.
+- `GET /api/health` reports `replication: 'on' | 'off'` from whether `LITESTREAM_BUCKET` is configured, the same as the sibling apps.
 
 ## Consequences
 

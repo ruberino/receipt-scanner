@@ -19,6 +19,12 @@ const envSchema = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10_485_760),
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
   TZ: z.string().min(1).default('Europe/Oslo'),
+  // env_file (docker-compose, Render) sets an empty-but-present LITESTREAM_BUCKET=
+  // as "", not undefined, so an empty string must mean "not configured" too.
+  LITESTREAM_BUCKET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(1).optional(),
+  ),
 });
 
 export type NodeEnv = (typeof NODE_ENVS)[number];
@@ -40,6 +46,7 @@ export type Config = {
   maxUploadBytes: number;
   logLevel: LogLevel;
   tz: string;
+  litestreamBucket: string | undefined;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -67,5 +74,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
     logLevel: parsed.LOG_LEVEL,
     tz: parsed.TZ,
+    litestreamBucket: parsed.LITESTREAM_BUCKET,
   };
 }

@@ -177,7 +177,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
   app.register(fastifyMultipart, { limits: { fileSize: config.maxUploadBytes, files: 1 } });
 
-  app.register(healthRoutes, { version: readVersion() });
+  app.register(healthRoutes, {
+    version: readVersion(),
+    replicationEnabled: config.litestreamBucket !== undefined,
+  });
   app.register(authPlugin, { config });
   app.register(receiptsRoutes, { now: options.now ?? (() => new Date()) });
   app.register(receiptLinesRoutes);

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 export type HealthRouteOptions = {
   version: string;
+  replicationEnabled: boolean;
 };
 
 export default async function healthRoutes(
@@ -13,5 +14,6 @@ export default async function healthRoutes(
     status: 'ok',
     version: options.version,
     queueLength: app.receiptProcessor.queueLength(),
+    replication: options.replicationEnabled ? 'on' : 'off',
   }));
 }

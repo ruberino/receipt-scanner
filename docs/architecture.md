@@ -537,7 +537,7 @@ type ShoppingList = {
 
 | Method and path | Body | Response | Notes |
 | --- | --- | --- | --- |
-| `GET /api/health` | — | `200 { status: 'ok', version, queueLength }` | No auth. Never calls Kimi. |
+| `GET /api/health` | — | `200 { status: 'ok', version, queueLength, replication: 'on' \| 'off' }` | No auth. Never calls Kimi. `replication` reflects whether `LITESTREAM_BUCKET` is configured, not actual replication lag (ADR-0011). |
 | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | as in ADR-0009 | | Cookie `kvitteringer_auth`. |
 | `POST /api/receipts` | multipart `image` | `201 { id }` | `400` bad image, `413 PAYLOAD_TOO_LARGE`, `409` duplicate with `details.existingReceiptId`. |
 | `GET /api/receipts?limit=50&before=<id>` | — | `200 ReceiptSummary[]` | Newest first, cursor pagination on id. |
