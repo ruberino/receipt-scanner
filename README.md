@@ -16,6 +16,7 @@ npm run dev
 ```
 
 This starts the Vite dev server (client) and the Fastify server (API) together; the client proxies `/api` to the server.
+`npm install` also installs a git hook that refuses commits made directly on `main`.
 
 ## Scripts
 
