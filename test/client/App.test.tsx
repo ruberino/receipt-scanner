@@ -58,6 +58,16 @@ describe('App', () => {
     expect(within(nav).getByRole('link', { name: 'Varer' })).toBeInTheDocument();
   });
 
+  it('renders the receipt placeholder for a deep link to /receipts/:id when authenticated', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ authenticated: true }));
+
+    renderApp('/receipts/42');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Kvittering' })).toBeInTheDocument();
+    });
+  });
+
   it('navigates to /login on a 401 from any query, not just auth/me', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ authenticated: true }));
     renderApp('/');

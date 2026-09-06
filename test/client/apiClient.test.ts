@@ -1,6 +1,11 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, fetchJson, setOnUnauthorized } from '../../src/client/api/client.ts';
+import {
+  ApiRequestError,
+  fetchJson,
+  setOnUnauthorized,
+  uploadFile,
+} from '../../src/client/api/client.ts';
 
 describe('fetchJson', () => {
   beforeEach(() => {
@@ -104,5 +109,119 @@ describe('fetchJson', () => {
       ApiRequestError,
     );
     expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+});
+
+class FakeXhr {
+  static instances: FakeXhr[] = [];
+
+  status = 0;
+  responseText = '';
+  withCredentials = false;
+  upload: {
+    onprogress:
+      ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null;
+  } = {
+    onprogress: null,
+  };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  sentBody: unknown;
+
+  constructor() {
+    FakeXhr.instances.push(this);
+  }
+
+  open(): void {}
+
+  send(body: unknown): void {
+    this.sentBody = body;
+  }
+}
+
+describe('uploadFile', () => {
+  beforeEach(() => {
+    FakeXhr.instances = [];
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setOnUnauthorized(null);
+  });
+
+  function lastXhr(): FakeXhr {
+    return FakeXhr.instances.at(-1)!;
+  }
+
+  it('reports progress as loaded / total', async () => {
+    const onProgress = vi.fn();
+    const promise = uploadFile('/api/receipts', new Blob(['x']), onProgress);
+
+    lastXhr().upload.onprogress!({ lengthComputable: true, loaded: 50, total: 200 });
+    expect(onProgress).toHaveBeenCalledWith(0.25);
+
+    lastXhr().status = 202;
+    lastXhr().responseText = JSON.stringify({ id: 1 });
+    lastXhr().onload!();
+    await promise;
+  });
+
+  it('resolves a 202 with a JSON body to the parsed object', async () => {
+    const promise = uploadFile('/api/receipts', new Blob(['x']));
+
+    lastXhr().status = 202;
+    lastXhr().responseText = JSON.stringify({ id: 7 });
+    lastXhr().onload!();
+
+    await expect(promise).resolves.toEqual({ id: 7 });
+  });
+
+  it('rejects a 409 with an ApiRequestError carrying details.existingReceiptId', async () => {
+    const promise = uploadFile('/api/receipts', new Blob(['x']));
+
+    lastXhr().status = 409;
+    lastXhr().responseText = JSON.stringify({
+      error: {
+        code: 'CONFLICT',
+        message: 'Denne kvitteringen er allerede skannet',
+        details: { existingReceiptId: 5 },
+        requestId: 'x',
+      },
+    });
+    lastXhr().onload!();
+
+    const error = await promise.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: 'CONFLICT',
+      details: { existingReceiptId: 5 },
+    });
+  });
+
+  it('calls onUnauthorized on a 401', async () => {
+    const onUnauthorized = vi.fn();
+    setOnUnauthorized(onUnauthorized);
+    const promise = uploadFile('/api/receipts', new Blob(['x']));
+
+    lastXhr().status = 401;
+    lastXhr().responseText = JSON.stringify({
+      error: { code: 'UNAUTHORIZED', message: 'Ikke innlogget', requestId: 'x' },
+    });
+    lastXhr().onload!();
+
+    await expect(promise).rejects.toBeInstanceOf(ApiRequestError);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a network error with status 0 and the generic message', async () => {
+    const promise = uploadFile('/api/receipts', new Blob(['x']));
+
+    lastXhr().onerror!();
+
+    const error = await promise.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiRequestError);
+    expect(error).toMatchObject({ status: 0, code: 'INTERNAL', message: 'Noe gikk galt' });
   });
 });

@@ -17,8 +17,14 @@ function ScanPage() {
 function ReceiptsPage() {
   return <h1 className="p-4 text-xl font-bold">Kvitteringer</h1>;
 }
+function ReceiptPage() {
+  return <h1 className="p-4 text-xl font-bold">Kvittering</h1>;
+}
 function ProductsPage() {
   return <h1 className="p-4 text-xl font-bold">Varer</h1>;
+}
+function ProductPage() {
+  return <h1 className="p-4 text-xl font-bold">Vare</h1>;
 }
 
 function UnauthorizedBridge(): null {
@@ -67,7 +73,9 @@ export default function App() {
           <Route index element={<ShoppingListPage />} />
           <Route path="scan" element={<ScanPage />} />
           <Route path="receipts" element={<ReceiptsPage />} />
+          <Route path="receipts/:id" element={<ReceiptPage />} />
           <Route path="products" element={<ProductsPage />} />
+          <Route path="products/:id" element={<ProductPage />} />
         </Route>
       </Routes>
     </ToastProvider>
