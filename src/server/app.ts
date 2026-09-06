@@ -17,6 +17,7 @@ import {
   appErrorFromHttpError,
   toErrorResponse,
 } from './lib/errors.ts';
+import authPlugin from './plugins/auth.ts';
 import healthRoutes from './routes/health.ts';
 
 declare module 'fastify' {
@@ -133,6 +134,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   app.register(healthRoutes, { version: readVersion() });
+  app.register(authPlugin, { config });
 
   return app;
 }

@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/server/app.ts';
 import { loadConfig } from '../../src/server/config.ts';
 import { TEST_ENV } from '../helpers/createTestApp.ts';
+import { loginCookie } from '../helpers/login.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtureClientDir = path.resolve(here, '..', 'fixtures', 'client');
@@ -61,11 +62,12 @@ describe('static serving and SPA fallback in production', () => {
 
   it('still returns the documented JSON shape for an unknown API route', async () => {
     app = createProductionApp();
+    const cookie = await loginCookie(app);
 
     const response = await app.inject({
       method: 'GET',
       url: '/api/nope',
-      headers: { accept: 'text/html' },
+      headers: { accept: 'text/html', cookie },
     });
 
     expect(response.statusCode).toBe(404);

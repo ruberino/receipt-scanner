@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ConflictError } from '../../src/server/lib/errors.ts';
 import { createLogCapture, createTestApp } from '../helpers/createTestApp.ts';
+import { loginCookie } from '../helpers/login.ts';
 
 let app: FastifyInstance | undefined;
 
@@ -14,8 +15,9 @@ afterEach(async () => {
 describe('error handling', () => {
   it('returns a NOT_FOUND shape for an unknown API route, with a matching x-request-id', async () => {
     app = createTestApp();
+    const cookie = await loginCookie(app);
 
-    const response = await app.inject({ method: 'GET', url: '/api/nope' });
+    const response = await app.inject({ method: 'GET', url: '/api/nope', headers: { cookie } });
 
     expect(response.statusCode).toBe(404);
     const body = response.json();
@@ -44,8 +46,9 @@ describe('error handling', () => {
       throw new Error('boom');
     });
     await app.ready();
+    const cookie = await loginCookie(app);
 
-    const response = await app.inject({ method: 'GET', url: '/api/__boom' });
+    const response = await app.inject({ method: 'GET', url: '/api/__boom', headers: { cookie } });
 
     expect(response.statusCode).toBe(500);
     const body = response.json();
@@ -67,8 +70,13 @@ describe('error handling', () => {
       throw new ConflictError('Finnes allerede', { existingReceiptId: 7 });
     });
     await app.ready();
+    const cookie = await loginCookie(app);
 
-    const response = await app.inject({ method: 'GET', url: '/api/__conflict' });
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/__conflict',
+      headers: { cookie },
+    });
 
     expect(response.statusCode).toBe(409);
     expect(response.json()).toEqual({
@@ -87,8 +95,9 @@ describe('error handling', () => {
       z.object({ name: z.string() }).parse({ name: 42 });
     });
     await app.ready();
+    const cookie = await loginCookie(app);
 
-    const response = await app.inject({ method: 'GET', url: '/api/__zod' });
+    const response = await app.inject({ method: 'GET', url: '/api/__zod', headers: { cookie } });
 
     expect(response.statusCode).toBe(400);
     const body = response.json();
@@ -101,11 +110,12 @@ describe('error handling', () => {
     app = createTestApp({ env: { LOG_LEVEL: 'warn' }, logStream: logs });
     app.post('/api/__echo', async (request) => request.body);
     await app.ready();
+    const cookie = await loginCookie(app);
 
     const response = await app.inject({
       method: 'POST',
       url: '/api/__echo',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', cookie },
       payload: '{not json',
     });
 
@@ -124,11 +134,12 @@ describe('error handling', () => {
     app = createTestApp();
     app.post('/api/__echo', async (request) => request.body);
     await app.ready();
+    const cookie = await loginCookie(app);
 
     const response = await app.inject({
       method: 'POST',
       url: '/api/__echo',
-      headers: { 'content-type': 'application/xml' },
+      headers: { 'content-type': 'application/xml', cookie },
       payload: '<x/>',
     });
 
