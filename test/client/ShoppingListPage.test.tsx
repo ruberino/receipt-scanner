@@ -26,6 +26,7 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useCompleteShoppingList: vi.fn(),
     useReopenShoppingList: vi.fn(),
     useDeleteShoppingList: vi.fn(),
+    useRefreshShoppingList: vi.fn(),
     useToggleShoppingListItem: vi.fn(),
     useUpdateShoppingListItem: vi.fn(),
     useDeleteShoppingListItem: vi.fn(),
@@ -42,6 +43,7 @@ const {
   useCompleteShoppingList,
   useReopenShoppingList,
   useDeleteShoppingList,
+  useRefreshShoppingList,
   useToggleShoppingListItem,
   useUpdateShoppingListItem,
   useDeleteShoppingListItem,
@@ -160,6 +162,7 @@ describe('ShoppingListPage', () => {
   let completeMutate: ReturnType<typeof vi.fn>;
   let reopenMutate: ReturnType<typeof vi.fn>;
   let deleteListMutate: ReturnType<typeof vi.fn>;
+  let refreshMutate: ReturnType<typeof vi.fn>;
   let toggleMutate: ReturnType<typeof vi.fn>;
   let updateItemMutate: ReturnType<typeof vi.fn>;
   let deleteItemMutate: ReturnType<typeof vi.fn>;
@@ -170,6 +173,7 @@ describe('ShoppingListPage', () => {
     completeMutate = vi.fn();
     reopenMutate = vi.fn();
     deleteListMutate = vi.fn();
+    refreshMutate = vi.fn();
     toggleMutate = vi.fn();
     updateItemMutate = vi.fn();
     deleteItemMutate = vi.fn();
@@ -194,6 +198,10 @@ describe('ShoppingListPage', () => {
       mutate: deleteListMutate,
       isPending: false,
     } as unknown as ReturnType<typeof useDeleteShoppingList>);
+    vi.mocked(useRefreshShoppingList).mockReturnValue({
+      mutate: refreshMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshShoppingList>);
     vi.mocked(useToggleShoppingListItem).mockReturnValue({
       mutate: toggleMutate,
       isPending: false,
@@ -832,6 +840,74 @@ describe('ShoppingListPage', () => {
         vi.advanceTimersByTime(6000);
       });
       expect(deleteItemMutate).not.toHaveBeenCalled();
+    });
+
+    describe('refreshing suggestions (T34)', () => {
+      it('shows "1 vare lagt til" when one new item is added', async () => {
+        const currentList = list({ items: [item({ id: 1, name: 'Kaffe' })] });
+        refreshMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.({
+            ...currentList,
+            items: [...currentList.items, item({ id: 2, name: 'Lettmelk 1 l' })],
+          });
+        });
+        mockList(currentList);
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Oppdater forslag' }));
+
+        expect(screen.getByRole('status')).toHaveTextContent('1 vare lagt til');
+      });
+
+      it('shows "3 varer lagt til" when three new items are added', async () => {
+        const currentList = list({ items: [item({ id: 1, name: 'Kaffe' })] });
+        refreshMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.({
+            ...currentList,
+            items: [
+              ...currentList.items,
+              item({ id: 2, name: 'Eple' }),
+              item({ id: 3, name: 'Brød' }),
+              item({ id: 4, name: 'Kylling' }),
+            ],
+          });
+        });
+        mockList(currentList);
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Oppdater forslag' }));
+
+        expect(screen.getByRole('status')).toHaveTextContent('3 varer lagt til');
+      });
+
+      it('shows "Ingen nye forslag" when nothing new is added', async () => {
+        const currentList = list({ items: [item({ id: 1, name: 'Kaffe' })] });
+        refreshMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(currentList);
+        });
+        mockList(currentList);
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Oppdater forslag' }));
+
+        expect(screen.getByRole('status')).toHaveTextContent('Ingen nye forslag');
+      });
+
+      it('shows the error toast when the refresh fails', async () => {
+        refreshMutate.mockImplementation((_body, options) => {
+          options?.onError?.(new Error('nettverksfeil'));
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Oppdater forslag' }));
+
+        expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
+      });
     });
   });
 });

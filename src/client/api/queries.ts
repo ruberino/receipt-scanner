@@ -453,6 +453,21 @@ export function useDeleteShoppingList(listId: number) {
   });
 }
 
+/** Sets the current-list cache directly from the response (T34), so the caller can diff the
+ * previous list's item ids against it to report how many suggestions were added. */
+export function useRefreshShoppingList(listId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<ShoppingList>(`/api/shopping-lists/${listId}/refresh`, { method: 'POST' }),
+    onSuccess: (list) => {
+      queryClient.setQueryData(CURRENT_SHOPPING_LIST_KEY, list);
+      void queryClient.invalidateQueries({ queryKey: ['suggestions'] });
+    },
+  });
+}
+
 /** The latest list regardless of status, so the preview can offer `Gjenåpne listen` when it was
  * completed today (T31); `useShoppingListHistory` is gated behind the collapsed stats section and
  * not always fetched, so this is its own always-on query. */

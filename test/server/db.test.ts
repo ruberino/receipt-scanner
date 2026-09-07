@@ -11,10 +11,20 @@ import {
   receiptImages,
   receiptLines,
   receipts,
+  shoppingListDismissals,
+  shoppingListItems,
+  shoppingLists,
 } from '../../src/server/db/schema.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const oldMigrationsFolder = path.resolve(here, '..', 'fixtures', 'migrations', '0000-only');
+const preDismissalsMigrationsFolder = path.resolve(
+  here,
+  '..',
+  'fixtures',
+  'migrations',
+  '0001-only',
+);
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -75,6 +85,7 @@ describe('database schema and migrations', () => {
       'receipt_images',
       'receipt_lines',
       'receipts',
+      'shopping_list_dismissals',
       'shopping_list_items',
       'shopping_lists',
     ]);
@@ -144,6 +155,46 @@ describe('database schema and migrations', () => {
       opened.db.select().from(receiptImages).where(eq(receiptImages.receiptId, receipt.id)).get(),
     ).toBeDefined();
     expect(() => insertReceipt(opened, { status: 'uploaded' })).not.toThrow();
+  });
+
+  it('keeps an existing open list and its items intact when migrating in shopping_list_dismissals (T34)', () => {
+    opened = openDatabase(':memory:');
+    migrate(opened.db, { migrationsFolder: preDismissalsMigrationsFolder });
+
+    const list = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+    const product = insertProduct(opened, 'Lettmelk');
+    const item = opened.db
+      .insert(shoppingListItems)
+      .values({
+        listId: list.id,
+        productId: product.id,
+        name: 'Lettmelk 1 l',
+        source: 'suggested',
+        checked: 0,
+        position: 1,
+        createdAt: NOW,
+      })
+      .returning()
+      .get();
+
+    runMigrations(opened);
+
+    expect(
+      opened.db.select().from(shoppingLists).where(eq(shoppingLists.id, list.id)).get(),
+    ).toMatchObject({ status: 'open', weekStart: '2026-08-31' });
+    expect(
+      opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, item.id)).get(),
+    ).toMatchObject({ name: 'Lettmelk 1 l', productId: product.id });
+    expect(() =>
+      opened.db
+        .insert(shoppingListDismissals)
+        .values({ listId: list.id, productId: product.id, createdAt: NOW })
+        .run(),
+    ).not.toThrow();
   });
 
   it('rejects an unknown receipt line kind', () => {
@@ -230,6 +281,35 @@ describe('database schema and migrations', () => {
 
     expect(opened.db.select().from(receiptImages).all()).toHaveLength(0);
     expect(opened.db.select().from(receiptLines).all()).toHaveLength(0);
+  });
+
+  it('deleting a list or a product cascades its dismissals (T34)', () => {
+    opened = createDb();
+    const listA = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+    const listB = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-09-07', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+    const product = insertProduct(opened, 'Lettmelk');
+    opened.db
+      .insert(shoppingListDismissals)
+      .values({ listId: listA.id, productId: product.id, createdAt: NOW })
+      .run();
+    opened.db
+      .insert(shoppingListDismissals)
+      .values({ listId: listB.id, productId: product.id, createdAt: NOW })
+      .run();
+
+    opened.db.delete(shoppingLists).where(eq(shoppingLists.id, listA.id)).run();
+    expect(opened.db.select().from(shoppingListDismissals).all()).toHaveLength(1);
+
+    opened.db.delete(products).where(eq(products.id, product.id)).run();
+    expect(opened.db.select().from(shoppingListDismissals).all()).toHaveLength(0);
   });
 
   it('deleting a product sets receipt_lines.product_id to null and removes its aliases', () => {
