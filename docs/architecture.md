@@ -135,7 +135,7 @@ receipt-scanner/
         auth.ts
       lib/
         errors.ts
-        images.ts            normaliseImage(buffer): validate, rotate, resize, encode JPEG, sha256
+        images.ts            normaliseImage(buffer): validate, rotate, resize, encode JPEG, sha256; segmentImage(bytes): tile a tall image
       llm/
         LlmClient.ts         interface + request/result types
         OpenAiCompatibleClient.ts   Kimi and Grok, provider-aware; createLlmClient(config, logger)
@@ -168,7 +168,7 @@ receipt-scanner/
         client.ts
         queries.ts
       lib/
-        downscaleImage.ts    File -> Blob (JPEG, max 2000 px long edge)
+        downscaleImage.ts    File -> Blob (JPEG, short edge capped at 1600 px, no long-edge cap)
         format.ts
       pages/
         LoginPage.tsx
@@ -329,12 +329,14 @@ Definitions:
 
 ### 7.1 Upload
 
-1. The client converts the chosen photo with `downscaleImage`: draw to a canvas with the long edge capped at 2000 px, export JPEG quality 0.85.
+1. The client converts the chosen photo with `downscaleImage`: draw to a canvas with the **short** edge capped at 1600 px (never the long edge, never enlarging), export JPEG quality 0.85.
    This also converts HEIC from iPhones to JPEG, because the browser decodes it.
 2. `POST /api/receipts` (multipart field `image`) accepts `image/jpeg`, `image/png`, `image/webp`, at most `MAX_UPLOAD_BYTES`.
-3. The server runs `normaliseImage`: `sharp` reads metadata, rejects unknown formats with `400 VALIDATION_ERROR`, applies EXIF rotation, resizes so the long edge is at most 2000 px, encodes JPEG quality 85, and computes `sha256` of the result.
+3. The server runs `normaliseImage`: `sharp` reads metadata, rejects unknown formats with `400 VALIDATION_ERROR`, applies EXIF rotation, resizes so the **short** edge is at most 1600 px (there is no long-edge cap, and it never enlarges), encodes JPEG quality 85, and computes `sha256` of the result.
+   A tall receipt strip therefore stays wide enough that the printed digits are legible, at the cost of a taller stored image; see the T28 amendment to ADR-0005 for why the long-edge cap was replaced (a 149×2000 px receipt was unreadable).
 4. If a `receipt_images.sha256` already exists, reply `409 CONFLICT` with `details: { existingReceiptId }`.
 5. Insert `receipts` (`status = 'uploaded'`) and `receipt_images` in one transaction, reply `201 { id }`; nothing is enqueued.
+6. At extraction time (7.3), `segmentImage` (`src/server/lib/images.ts`) cuts a stored image taller than 2000 px into consecutive vertical segments of at most 2000 px, each overlapping the previous one by 120 px, top to bottom; a shorter image is a single segment. The stored bytes themselves are never modified — only the request built from them. Every segment is sent as its own `image_url` part, in order, in the one extraction request (T28).
 
 ### 7.2 Job runner (ADR-0006)
 
@@ -345,17 +347,17 @@ Definitions:
 - On startup, `requeueUnfinished()` enqueues every receipt with status `pending` or `processing`, so a crash mid-job is retried after restart; `uploaded` receipts wait for the user.
 - `POST /api/receipts/:id/scan` sets `pending` and enqueues; allowed when `uploaded` or `failed`, else `409`.
 
-### 7.3 Extraction call (ADR-0003)
+### 7.3 Extraction call (ADR-0003, ADR-0015)
 
-Request to Kimi:
+Request to the active provider (Kimi or Grok):
 
-- `model`: `config.kimiModel` (default `kimi-k2.6`).
-- `messages`: one `system` message with the prompt from `extractReceipt.prompt.ts`; one `user` message with two content parts, `{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,...' } }` and a short text instruction.
+- `model`: the active provider's model (`config.kimiModel`, default `kimi-k2.6`, or `config.xaiModel`, default `grok-4.6`).
+- `messages`: one `system` message with the prompt from `extractReceipt.prompt.ts`; one `user` message with one `{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,...' } }` content part per image segment (one for a receipt at most 2000 px tall, several for a taller one, T28), in order, followed by a short text instruction.
 - `response_format: { type: 'json_object' }`.
 - `max_tokens: 6000`.
-- `thinking: { type: config.kimiThinking }` where the default is `disabled`; this is a Moonshot-specific parameter passed through the SDK as an extra body field.
+- `thinking: { type: config.kimiThinking }`, default `disabled`, sent only when the provider is Kimi (Moonshot-specific, passed through the SDK as an extra body field); never sent for Grok.
 - No `temperature`; Kimi K2.6 uses a fixed temperature per thinking mode and rejects other values.
-- Timeout `config.kimiTimeoutMs` (default 120 000), SDK retries 2.
+- Timeout `config.kimiTimeoutMs` (default 120 000) for whichever provider is active; retries `config.llmMaxRetries` (default 0, explicit rather than the OpenAI SDK's own default of 2, ADR-0015).
 
 Assumption to verify before any code depends on it: that `response_format: { type: 'json_object' }` is accepted on the same request as an `image_url` part.
 The Moonshot documentation describes the two features separately.

@@ -709,3 +709,19 @@ Acceptance criteria:
 - The default is `kimi` and `npm test` passes without either key.
 
 Tests: config validation for both providers, request-body building for both, health `model`, eval client factory picking the provider.
+
+---
+
+## T28 — Keep long receipt images legible
+
+Goal: a 56-line receipt is read from an image where the digits are legible, not from a 149 px wide strip.
+
+Files: `src/server/lib/images.ts`, `src/client/lib/downscaleImage.ts`, `src/server/llm/extractReceipt.ts`, `src/server/llm/prompts/extractReceipt.prompt.ts`, tests.
+
+Steps: see `docs/reviews/T28-plan.md`.
+
+Acceptance criteria:
+
+- A 600×8000 image is stored as 600×8000; a 3000×20000 image is stored as 1600×10667; neither is enlarged.
+- A stored 1600×10667 image is sent as six consecutive segments with 120 px overlap; a 1200×1600 image is sent as one.
+- The four Kiwi receipts in `eval/receipts/` are re-run through the eval once their expected JSON exists, and `totalWithin1krRate` and `meanItemRecall` are recorded in the results file committed with the PR.
