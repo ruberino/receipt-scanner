@@ -835,3 +835,22 @@ Acceptance criteria:
 - A product bought every two weeks and last bought six days ago is not suggested (`dueIn 8`); last bought eight days ago it is (`dueIn 6`).
 - A product bought twice in one week is suggested with the sum of that week's quantities.
 - `npm test` is the only verification; no LLM call is involved.
+
+---
+
+## T32 — A shopping list that reads well in the store
+
+Goal: the list is grouped the way the store is laid out, shows where you are, and lets you fix an item without removing it.
+
+Files: `src/shared/categories.ts`, `src/shared/schemas.ts`, `src/server/routes/shoppingLists.ts`, `src/client/pages/ShoppingListPage.tsx`, `src/client/components/ShoppingListItemRow.tsx`, `src/client/components/SuggestionCard.tsx`, tests.
+
+Steps: see `docs/reviews/T32-plan.md`.
+
+Acceptance criteria:
+
+- Items appear under category headings in `SHOPPING_CATEGORY_ORDER`; a manual item without a product is under `Annet`; groups without items do not appear.
+- The header shows the ISO week of `weekStart` and `x av n kjøpt`, updating as items are checked.
+- Editing a name or quantity sends only the changed fields; an empty name is rejected inline; the item keeps its checked state and category.
+- Every action is possible with 44 px targets at 360 px width; Playwright walk at 360 px and 1280 px with screenshots under `docs/reviews/screenshots/T32/`.
+
+Tests: server test that items carry the product's category and `null` for a manual item; client tests for grouping order and the `Annet` fallback, the header progress, inline edit with changed-fields-only, empty-name rejection, cancel; the `SHOPPING_CATEGORY_ORDER` permutation test.
