@@ -15,8 +15,13 @@ const envSchema = z
     SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long'),
     LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('kimi'),
     // Provider for `purpose: 'propose'` only; defaults to LLM_PROVIDER, so an existing deployment
-    // with one provider is unaffected (ADR-0017).
-    LLM_PROVIDER_PROPOSE: z.enum(LLM_PROVIDERS).optional(),
+    // with one provider is unaffected (ADR-0017). `.env.example` ships this unset as `KEY=`, which
+    // dotenv loads as "", not absent, so an empty string must mean "not configured" too (same
+    // preprocess as LITESTREAM_BUCKET below).
+    LLM_PROVIDER_PROPOSE: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(LLM_PROVIDERS).optional(),
+    ),
     // Explicit rather than the OpenAI SDK's own default (2): an unresponsive call retried twice on
     // top of the full timeout each time can block the queue for several times KIMI_TIMEOUT_MS.
     LLM_MAX_RETRIES: z.coerce.number().int().min(0).default(0),

@@ -143,6 +143,13 @@ describe('loadConfig', () => {
   });
 
   describe('LLM_PROVIDER_PROPOSE (ADR-0017, T38)', () => {
+    it('treats an empty-string LLM_PROVIDER_PROPOSE (env_file with no value, .env.example ships it unset) as not configured (review F1)', () => {
+      expect(loadConfig({ ...validEnv, LLM_PROVIDER_PROPOSE: '' })).toMatchObject({
+        llmProvider: 'kimi',
+        llmProviderPropose: 'kimi',
+      });
+    });
+
     it('defaults llmProviderPropose to LLM_PROVIDER when unset', () => {
       expect(loadConfig(validEnv)).toMatchObject({
         llmProvider: 'kimi',
