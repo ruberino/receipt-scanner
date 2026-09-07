@@ -307,6 +307,7 @@ CREATE TABLE shopping_list_items (
   reason        TEXT,
   checked       INTEGER NOT NULL DEFAULT 0,
   position      INTEGER NOT NULL,
+  category      TEXT,
   created_at    TEXT NOT NULL
 );
 CREATE INDEX shopping_list_items_list ON shopping_list_items (list_id, position);
@@ -351,6 +352,7 @@ Definitions:
 - At most one shopping list has `status = 'open'` at a time; enforced in code.
 - A product dismissed from a list (removed while it had a `product_id`) is never re-added to that same list by a refresh; `shopping_list_dismissals` records it, `(list_id, product_id)`. T34.
 - A proposal (`shopping_list_proposals`) is applied only through `POST .../accept`; the model's answer never inserts rows on its own, and `accepted_json` (once set) makes a second accept on the same proposal a `409`. T37.
+- `shopping_list_items.category` is set from the AI proposal, otherwise null (T37); a matched product's own category still wins on read, so this is only the display fallback for a proposal-accepted item with no product.
 - `PRODUCT_CATEGORIES` is the fixed list: `Frukt og grønt`, `Meieri`, `Kjøtt og fisk`, `Brød og bakevarer`, `Tørrvarer`, `Frossen`, `Drikke`, `Snacks`, `Husholdning`, `Hygiene`, `Annet`.
 - Migrations run with `foreign_keys` off and `PRAGMA foreign_key_check` after, because drizzle's SQLite table recreates would otherwise cascade-delete child rows.
 
@@ -639,8 +641,8 @@ type ShoppingListProposal = {
 | `GET /api/suggestions` | — | `200 Suggestion[]` | Computed on demand; no caching. |
 | `GET /api/shopping-lists/current` | — | `200 ShoppingList` | `404` when no open list. |
 | `POST /api/shopping-lists` | — | `201 ShoppingList` or `200` existing open list | Populated from suggestions. `weekStart = mondayOf(today)`. |
-| `POST /api/shopping-lists/:id/items` | `{ name, productId?, quantityText? }` | `201 item` | `source = 'manual'`, appended last. `category` is the product's when `productId` is set, else `null`; derived on read, not stored. T32. |
-| `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | `category` is unaffected: editing never changes `productId`. T32. |
+| `POST /api/shopping-lists/:id/items` | `{ name, productId?, quantityText? }` | `201 item` | `source = 'manual'`, appended last. `category` is the product's when `productId` is set, else the item's own stored `category` (null for a manual add). T32, T37. |
+| `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | `category` is unaffected: editing never changes `productId` or the item's own `category`. T32. |
 | `DELETE /api/shopping-list-items/:id` | — | `204` | |
 | `POST /api/shopping-lists/:id/complete` | — | `200 ShoppingList` | Sets `done` and `completedAt`. |
 | `POST /api/shopping-lists/:id/refresh` | — | `200 ShoppingList` | Only when `open`, else `409 Listen er ikke åpen`; `404` when missing. Adds every suggestion whose product is on neither the list's items nor its dismissals, `source = 'suggested'`, `position` after the current maximum; existing items are untouched. T34. |
@@ -648,7 +650,7 @@ type ShoppingListProposal = {
 | `DELETE /api/shopping-lists/:id` | — | `204` | Only when `open`; items cascade. `409 En fullført liste kan ikke slettes` when `done`. History is never deleted. T31. |
 | `GET /api/shopping-lists?limit=20` | — | `200 ShoppingListSummary[]` | History, `weekStart` descending, `id` descending tiebreak. `ShoppingListSummary` is `ShoppingList` without `items`, plus `itemCount` (the same relationship `ReceiptSummary` has to `ReceiptDetail`). Phase 2 (T23). |
 | `POST /api/shopping-lists/:id/proposals` | — | `201 ShoppingListProposal` | Only when `open`, else `409 Listen er ikke åpen`; `404` when missing. Builds the context, calls the LLM, stores the row (filtered items, raw response, tokens, duration); logs one `info` line with usage. Synchronous, like `rematch`; may take 20–60 s. T37. |
-| `POST /api/shopping-lists/:id/proposals/:proposalId/accept` | `{ indexes: number[] }` | `200 ShoppingList` | Inserts the chosen items, `source = 'ai'`; records `accepted_json`, possibly empty. `409` when the proposal already has `accepted_json` or the list is not `open`; `404` when the proposal does not belong to the list; an index whose product is meanwhile on the list is skipped. T37. |
+| `POST /api/shopping-lists/:id/proposals/:proposalId/accept` | `{ indexes: number[] }` | `200 ShoppingList` | Inserts the chosen items, `source = 'ai'`, `category` from the proposal item on every insert (a product's own still wins on read); records `accepted_json`, possibly empty. `409` when the proposal already has `accepted_json` or the list is not `open`; `404` when the proposal does not belong to the list; an index whose product is meanwhile on the list is skipped. T37. |
 | `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[], aiProposals: { proposals, proposedItems, acceptedItems } }` | `months` is the `months` most recent calendar months ending with today, oldest first, every month present even at zero; a `done` receipt with no `purchasedAt` is excluded from every month. `topProducts` is the all-time top 10 by `timesBought` (not scoped to `months`, same fields as `GET /api/products`), suppressed included. `aiProposals` is all-time counts over `shopping_list_proposals`, the acceptance-rate inputs (ADR-0016). Phase 2 (T23); `aiProposals` T37. |
 
 ## 10. Frontend

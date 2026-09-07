@@ -87,22 +87,35 @@ export async function runProposal(
   let completion;
   try {
     completion = await llm.completeJson(request);
-  } catch {
-    throw new ProposalFailedError();
+  } catch (error) {
+    logger?.warn({ listId, stage: 'client', err: error }, 'Proposal call failed');
+    throw new ProposalFailedError(undefined, { cause: error });
   }
   if (completion.finishReason === 'length') {
-    throw new ProposalFailedError();
+    const cause = { finishReason: completion.finishReason };
+    logger?.warn(
+      { listId, stage: 'length', err: cause },
+      'Proposal answer was cut off at the token budget',
+    );
+    throw new ProposalFailedError(undefined, { cause });
   }
 
   let parsedJson: Record<string, unknown>;
   try {
     parsedJson = parseJsonObject(completion.text, 'proposal');
-  } catch {
-    throw new ProposalFailedError();
+  } catch (error) {
+    logger?.warn({ listId, stage: 'parse', err: error }, 'Proposal answer was not valid JSON');
+    throw new ProposalFailedError(undefined, { cause: error });
   }
   const parsed = modelResponseSchema.safeParse(parsedJson);
   if (!parsed.success) {
-    throw new ProposalFailedError();
+    // path/code only, never the model's text: a zod issue's own `message` can echo the input.
+    const cause = parsed.error.issues.map((issue) => ({ path: issue.path, code: issue.code }));
+    logger?.warn(
+      { listId, stage: 'schema', err: cause },
+      'Proposal answer did not match the schema',
+    );
+    throw new ProposalFailedError(undefined, { cause });
   }
 
   const productsById = new Map(context.products.map((product) => [product.id, product]));
