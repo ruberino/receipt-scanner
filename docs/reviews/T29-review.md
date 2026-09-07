@@ -3,7 +3,7 @@
 Review of pull request #6, `task/T29-edit-lines`, commits `738eb71` (docs), `d42e29c` (implementation) and `111ea7a` (F1 fix, review file, screenshots), 2026-09-07.
 Verdict at first pass, read from the local branch before the pull request was opened: one required item (F1); everything else in the plan is met.
 Second pass on `111ea7a`: F1 is done; the screenshots showed one small UI item (F2).
-The go-ahead is recorded below once F2 is in.
+Third pass on `2c4199c`: F2 is done; approved, see the go-ahead at the end.
 
 ## What was verified
 
@@ -29,3 +29,10 @@ Tests cover 401 and 404 for both routes, 409, the empty body, both warning recom
 
 - `quantity` and `unitPriceOre` are accepted by the API but not editable in the row, as the plan's client section specified; the picker path stays the only way to set a product.
 - Deleting a line leaves any user alias created for it in place; aliases belong to products, not lines, so this is right.
+
+## Go-ahead, 2026-09-07
+
+F1 and F2 verified at `2c4199c`: the sign check runs against the resulting line whenever `totalOre` or `kind` is in the request, the turned-around test and its passing sibling are in, and only the text column fades on a non-item line, with the `Rediger` button and the amount at full opacity in the retaken screenshot.
+All five scripts exit 0 in a clean worktree at `2c4199c`, 544 tests, Vitest at two workers; CI run 34117435795 is green on both jobs.
+Approved: commit this file on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
+After the merge the foreman updates the demo and deletes the three bogus `Tilbud` discount lines on receipt 12 as the real-data check from the plan (receipt 8 has one, 9 two, 10 four including `Totale besparelser`, 11 three); every one of those receipts then loses `TOTAL_MISMATCH`.
