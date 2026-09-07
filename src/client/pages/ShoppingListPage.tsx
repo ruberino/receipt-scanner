@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ShoppingList, ShoppingListItem } from '../../shared/schemas.ts';
-import { todayInOslo } from '../../shared/dates.ts';
+import { isoWeekKey, todayInOslo } from '../../shared/dates.ts';
+import { SHOPPING_CATEGORY_ORDER } from '../../shared/categories.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
 import { formatTimeInOslo } from '../lib/format.ts';
 import { useDebouncedValue } from '../lib/useDebouncedValue.ts';
@@ -26,6 +27,11 @@ const REMOVE_UNDO_MS = 6000;
 
 function completedTodayInOslo(completedAt: string | null): boolean {
   return completedAt !== null && todayInOslo(new Date(completedAt)) === todayInOslo();
+}
+
+/** `isoWeekKey` works for any date within a week, not only its Monday (T32). */
+function isoWeekNumber(date: string): number {
+  return Number(isoWeekKey(date).split('-W')[1]);
 }
 
 function SuggestionsPreview() {
@@ -56,6 +62,8 @@ function SuggestionsPreview() {
 
   return (
     <div className="flex flex-col gap-4 p-4">
+      <h1 className="text-lg font-semibold">Forslag til uke {isoWeekNumber(todayInOslo())}</h1>
+
       {completedToday && latestList.completedAt !== null && (
         <div className="flex flex-col gap-2 rounded border border-gray-300 p-4">
           <p className="text-gray-600">
@@ -223,6 +231,15 @@ function OpenListView({ list }: { list: ShoppingList }) {
   const uncheckedItems = items.filter((item) => !item.checked);
   const checkedItems = items.filter((item) => item.checked);
 
+  // Grouped in store-walk order (T32); a group with no items in it is not rendered. `position` is
+  // kept on the item but no longer drives the on-screen order.
+  const groupedUncheckedItems = SHOPPING_CATEGORY_ORDER.map((category) => ({
+    category,
+    items: uncheckedItems
+      .filter((item) => (item.category ?? 'Annet') === category)
+      .sort((a, b) => a.name.localeCompare(b.name, 'nb')),
+  })).filter((group) => group.items.length > 0);
+
   function sendPendingRemoval() {
     const pending = pendingRemovalRef.current;
     if (pending === null) {
@@ -317,19 +334,33 @@ function OpenListView({ list }: { list: ShoppingList }) {
 
   return (
     <div className="flex flex-col">
+      <div className="p-4">
+        <h1 className="text-lg font-semibold">Handleliste uke {isoWeekNumber(list.weekStart)}</h1>
+        <p className="text-sm text-gray-600">
+          {checkedItems.length} av {items.length} kjøpt
+        </p>
+      </div>
+
       {uncheckedItems.length === 0 && checkedItems.length === 0 ? (
         <p className="p-4 text-gray-600">Handlelisten er tom.</p>
       ) : (
-        <ul>
-          {uncheckedItems.map((item) => (
-            <ShoppingListItemRow
-              key={item.id}
-              item={item}
-              onToggle={() => handleToggle(item)}
-              onRemove={() => handleRemove(item)}
-            />
-          ))}
-        </ul>
+        groupedUncheckedItems.map(({ category, items: categoryItems }) => (
+          <div key={category}>
+            <h2 className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              {category}
+            </h2>
+            <ul>
+              {categoryItems.map((item) => (
+                <ShoppingListItemRow
+                  key={item.id}
+                  item={item}
+                  onToggle={() => handleToggle(item)}
+                  onRemove={() => handleRemove(item)}
+                />
+              ))}
+            </ul>
+          </div>
+        ))
       )}
 
       {checkedItems.length > 0 && (
@@ -382,9 +413,9 @@ export default function ShoppingListPage() {
     return <p className="p-4">Noe gikk galt</p>;
   }
 
-  if (list === null) {
-    return <SuggestionsPreview />;
-  }
-
-  return <OpenListView list={list} />;
+  return (
+    <div className="mx-auto w-full max-w-2xl">
+      {list === null ? <SuggestionsPreview /> : <OpenListView list={list} />}
+    </div>
+  );
 }

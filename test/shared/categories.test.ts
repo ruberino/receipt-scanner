@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PRODUCT_CATEGORIES } from '../../src/shared/categories.ts';
+import { PRODUCT_CATEGORIES, SHOPPING_CATEGORY_ORDER } from '../../src/shared/categories.ts';
 import { productCategorySchema } from '../../src/shared/schemas.ts';
 
 describe('PRODUCT_CATEGORIES', () => {
@@ -21,6 +21,12 @@ describe('PRODUCT_CATEGORIES', () => {
 
   it('has no duplicates', () => {
     expect(new Set(PRODUCT_CATEGORIES).size).toBe(PRODUCT_CATEGORIES.length);
+  });
+});
+
+describe('SHOPPING_CATEGORY_ORDER (T32)', () => {
+  it('is a permutation of PRODUCT_CATEGORIES: same categories, none missing, none repeated', () => {
+    expect([...SHOPPING_CATEGORY_ORDER].sort()).toEqual([...PRODUCT_CATEGORIES].sort());
   });
 });
 

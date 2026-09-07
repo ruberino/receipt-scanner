@@ -11,6 +11,7 @@ import type {
   PatchReceiptLineFieldsRequest,
   PatchReceiptLineRequest,
   PatchReceiptRequest,
+  PatchShoppingListItemRequest,
   Product,
   ProductDetail,
   ReceiptDetail,
@@ -360,6 +361,23 @@ export function useToggleShoppingListItem() {
       fetchJson<ShoppingListItem>(`/api/shopping-list-items/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ checked }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: CURRENT_SHOPPING_LIST_KEY });
+    },
+  });
+}
+
+/** Name/quantity edits (T32); `useToggleShoppingListItem` stays separate for its own instant-UI
+ * requirement above. */
+export function useUpdateShoppingListItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number } & PatchShoppingListItemRequest) =>
+      fetchJson<ShoppingListItem>(`/api/shopping-list-items/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: CURRENT_SHOPPING_LIST_KEY });
