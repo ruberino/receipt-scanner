@@ -1,8 +1,8 @@
 # Extraction eval harness
 
-Measures extraction quality against real receipts before any prompt, model, thinking-mode or
-schema change (ADR-0014).
-Never runs from `npm test` or CI, and never runs automatically — it calls the real Kimi API and
+Measures extraction quality against real receipts before any prompt, model, provider or
+thinking-mode change (ADR-0014).
+Never runs from `npm test` or CI, and never runs automatically — it calls the real LLM API and
 costs money.
 
 ## Running it
@@ -11,10 +11,13 @@ costs money.
 npm run eval:extraction
 ```
 
-Requires a real `MOONSHOT_API_KEY` in `.env`.
+Builds its LLM client from the same `loadConfig()` the server uses (ADR-0015), so it runs whichever
+provider `.env` selects: `LLM_PROVIDER=kimi` (the default) requires a real `MOONSHOT_API_KEY`,
+`LLM_PROVIDER=grok` requires a real `XAI_API_KEY`.
 It reads every photo under `eval/receipts/` that has a matching `<photo>.expected.json`, runs the
 real extraction on each, prints a table and an aggregate, and writes
-`eval/results/<date>-v<promptVersion>-<model>.json`.
+`eval/results/<date>-v<promptVersion>-<model>.json` — the model name in the filename, so comparing
+Kimi against Grok is a diff of two results files (run once with each `LLM_PROVIDER`).
 
 A photo with no matching `.expected.json` is skipped, not an error, so a folder half-annotated
 with ground truth still runs on the photos that are ready.
@@ -60,8 +63,8 @@ item wrong, that's exactly what the eval is for — and rename it to
 A `.expected.draft.json` file is never treated as ground truth: the main run only looks for the
 exact `.expected.json` suffix, so an un-reviewed draft sitting next to a photo is silently
 ignored rather than scored as if a human had confirmed it.
-Bootstrapping still calls the real Kimi API and costs money, the same as `eval:extraction` — it's
-the only other code besides `eval/run.ts`'s main run that talks to Kimi.
+Bootstrapping still calls the real LLM API and costs money, the same as `eval:extraction` — it's
+the only other code besides `eval/run.ts`'s main run that talks to Kimi or Grok.
 
 ## Metrics
 
@@ -84,8 +87,8 @@ of `itemRecall` and `priceAccuracy`, and the mean of `|lineCountDiff|`.
 
 ## The rule
 
-Any change to the extraction prompt, the default model, the thinking mode or the extraction output
-schema ships with an eval run in the same PR, and the aggregate `totalWithin1krRate` and
+Any change to the extraction prompt, the default provider or model, the thinking mode or the
+extraction output schema ships with an eval run in the same PR, and the aggregate `totalWithin1krRate` and
 `meanItemRecall` must not regress against the last committed results file.
 Target: at least 90% on both.
 

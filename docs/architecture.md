@@ -63,7 +63,7 @@ Identical to the sibling `training-log` app, plus the pieces needed for images a
 | Frontend | React, Vite, React Router, TanStack Query, Tailwind CSS | React 19, Vite 7, Router 7, Query 5, Tailwind 4 | ADR-0002 |
 | Backend | Fastify with `@fastify/cookie`, `@fastify/static`, `@fastify/rate-limit`, `@fastify/multipart` | Fastify 5 | ADR-0002 |
 | Images | `sharp` for validation, EXIF rotation, resize and JPEG re-encode | 0.33+ | ADR-0005 |
-| LLM | Kimi via `openai` npm SDK against `https://api.moonshot.ai/v1`, model `kimi-k2.6`, JSON mode | openai 5.x | ADR-0003 |
+| LLM | Kimi K2.6 or Grok via the OpenAI SDK, JSON mode, provider selectable per installation | openai 5.x | ADR-0003, ADR-0015 |
 | Validation | zod, schemas shared between client and server | 4.x | ADR-0013 |
 | Database | SQLite via `better-sqlite3`, Drizzle ORM, `drizzle-kit` migrations | Drizzle 0.4x | ADR-0010 |
 | Backup | Litestream replication to S3-compatible storage | 0.3.x | ADR-0011 |
@@ -138,7 +138,7 @@ receipt-scanner/
         images.ts            normaliseImage(buffer): validate, rotate, resize, encode JPEG, sha256
       llm/
         LlmClient.ts         interface + request/result types
-        KimiClient.ts        OpenAI SDK implementation
+        OpenAiCompatibleClient.ts   Kimi and Grok, provider-aware; createLlmClient(config, logger)
         FakeLlmClient.ts     scripted test double
         extractReceipt.ts    buildExtractionRequest(), parseExtraction()
         matchProducts.ts     buildMatchRequest(), parseMatches()
@@ -211,7 +211,7 @@ Rules for the layout:
 
 - `src/shared` has no Node or DOM imports.
 - `src/server/domain/*` contains pure functions or functions that take a Drizzle `db` handle; it never imports Fastify.
-- Only `src/server/llm/KimiClient.ts` imports the `openai` package.
+- Only `src/server/llm/OpenAiCompatibleClient.ts` imports the `openai` package.
   Everything else depends on the `LlmClient` interface.
 
 ## 6. Domain model
@@ -538,7 +538,7 @@ type ShoppingList = {
 
 | Method and path | Body | Response | Notes |
 | --- | --- | --- | --- |
-| `GET /api/health` | — | `200 { status: 'ok', version, queueLength, replication: 'on' \| 'off' }` | No auth. Never calls Kimi. `replication` reflects whether `LITESTREAM_BUCKET` is configured, not actual replication lag (ADR-0011). |
+| `GET /api/health` | — | `200 { status: 'ok', version, queueLength, replication: 'on' \| 'off', model }` | No auth. Never calls the LLM. `replication` reflects whether `LITESTREAM_BUCKET` is configured, not actual replication lag (ADR-0011). `model` is the active provider's model name (ADR-0015), so an operator can see which one is live. |
 | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | as in ADR-0009 | | Cookie `kvitteringer_auth`. |
 | `POST /api/receipts` | multipart `image` | `201 { id }` | `400` bad image, `413 PAYLOAD_TOO_LARGE`, `409` duplicate with `details.existingReceiptId`. |
 | `GET /api/receipts?limit=50&before=<id>` | — | `200 ReceiptSummary[]` | Newest first, cursor pagination on id. |
@@ -609,11 +609,15 @@ Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`
 | `DATABASE_PATH` | no | `./data/receipt-scanner.db` | Dockerfile sets `/data/receipt-scanner.db`. |
 | `APP_PASSWORD` | yes | — | Min 8 chars. |
 | `SESSION_SECRET` | yes | — | Min 32 chars. |
-| `MOONSHOT_API_KEY` | yes | — | Kimi API key. |
+| `LLM_PROVIDER` | no | `kimi` | `kimi` or `grok` (ADR-0015). |
+| `MOONSHOT_API_KEY` | if `LLM_PROVIDER=kimi` | — | Kimi API key. |
 | `KIMI_MODEL` | no | `kimi-k2.6` | Must support image input and JSON mode. |
 | `KIMI_BASE_URL` | no | `https://api.moonshot.ai/v1` | |
-| `KIMI_THINKING` | no | `disabled` | `enabled` or `disabled`. |
-| `KIMI_TIMEOUT_MS` | no | `120000` | |
+| `KIMI_THINKING` | no | `disabled` | `enabled` or `disabled`; sent only when `LLM_PROVIDER=kimi`. |
+| `KIMI_TIMEOUT_MS` | no | `120000` | Request timeout for whichever provider is active. |
+| `XAI_API_KEY` | if `LLM_PROVIDER=grok` | — | Grok (xAI) API key. |
+| `XAI_MODEL` | no | `grok-4.6` | Must support image input and `response_format: json_object` (ADR-0015). |
+| `XAI_BASE_URL` | no | `https://api.x.ai/v1` | |
 | `MAX_UPLOAD_BYTES` | no | `10485760` | 10 MB. |
 | `LOG_LEVEL` | no | `info` | |
 | `TZ` | no | `Europe/Oslo` | The server computes `today` with this zone. |
@@ -658,9 +662,9 @@ The database, including images, is replicated to the household S3 bucket only.
 | Job runner | Vitest + in-memory DB + `FakeLlmClient` | Status transitions, failure messages, `requeueUnfinished`, scan. |
 | API | Vitest + `app.inject()` | Every endpoint, including multipart upload with a fixture image, duplicate detection, auth. |
 | Client | Vitest + RTL | `downscaleImage` (mock canvas), `ProductPicker`, `ReceiptPage` states, `ShoppingListPage` suggestions preview, check-off (optimistic, reverts on failure), add item, complete, ScanPage multi-upload, `ReceiptsPage` rendering and pagination, `ProductsPage` search/filter, `ProductPage` rename/suppress/merge/alias delete, `ReceiptsPage`'s stats/history section (closed by default, both hooks disabled until opened). |
-| Extraction eval | `npm run eval:extraction`, real Kimi | Real receipt photos under `eval/receipts/` with expected JSON; metrics per receipt and aggregate written to `eval/results/`. Run before merging any prompt or model change. Costs real money; never runs in CI. |
+| Extraction eval | `npm run eval:extraction`, real Kimi or Grok per `LLM_PROVIDER` | Real receipt photos under `eval/receipts/` with expected JSON; metrics per receipt and aggregate written to `eval/results/`. Run before merging any prompt, model or provider change. Costs real money; never runs in CI. |
 
-Unit and API tests never call the network; `KimiClient` is only exercised by the eval script.
+Unit and API tests never call the network; `OpenAiCompatibleClient` is only exercised by the eval script.
 Any wrong extraction or wrong match seen in real use is added to the eval set or to the fixtures before it is fixed.
 
 ## 13. Build, run, deploy

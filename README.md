@@ -22,18 +22,18 @@ This starts the Vite dev server (client) and the Fastify server (API) together; 
 
 ## Scripts
 
-| Command                             | What it does                                                                                    |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `npm run dev`                       | Client and server in watch mode.                                                                |
-| `npm run build`                     | Production client bundle to `dist/client`.                                                      |
-| `npm start`                         | Runs the server with `tsx` (production entry point).                                            |
-| `npm run lint`                      | ESLint over the whole project.                                                                  |
-| `npm run typecheck`                 | `tsc --noEmit` for the client and server tsconfigs.                                             |
-| `npm test`                          | Vitest unit and API tests (no network, no cost).                                                |
-| `npm run format`                    | Prettier over the project (`format:check` only reports); `docs/` is excluded on purpose.        |
-| `npm run db:generate`               | Generates a Drizzle migration under `drizzle/` from `src/server/db/schema.ts`.                  |
-| `npm run eval:extraction`           | Runs real receipts through Kimi and scores extraction quality (costs money, never run in CI).   |
-| `npm run eval:bootstrap -- <photo>` | Drafts an `.expected.json` for one receipt photo from a real extraction (see `eval/README.md`). |
+| Command                             | What it does                                                                                                         |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                       | Client and server in watch mode.                                                                                     |
+| `npm run build`                     | Production client bundle to `dist/client`.                                                                           |
+| `npm start`                         | Runs the server with `tsx` (production entry point).                                                                 |
+| `npm run lint`                      | ESLint over the whole project.                                                                                       |
+| `npm run typecheck`                 | `tsc --noEmit` for the client and server tsconfigs.                                                                  |
+| `npm test`                          | Vitest unit and API tests (no network, no cost).                                                                     |
+| `npm run format`                    | Prettier over the project (`format:check` only reports); `docs/` is excluded on purpose.                             |
+| `npm run db:generate`               | Generates a Drizzle migration under `drizzle/` from `src/server/db/schema.ts`.                                       |
+| `npm run eval:extraction`           | Runs real receipts through the configured LLM provider and scores extraction quality (costs money, never run in CI). |
+| `npm run eval:bootstrap -- <photo>` | Drafts an `.expected.json` for one receipt photo from a real extraction (see `eval/README.md`).                      |
 
 ## Deploy
 
@@ -71,7 +71,7 @@ See `docs/reviews/T21-drill.md` for the last recorded run.
 ### Render
 
 `render.yaml` declares one `web` service, `runtime: docker`, `plan: free`, `healthCheckPath: /api/health`.
-Creating the service and setting `APP_PASSWORD`, `SESSION_SECRET`, `MOONSHOT_API_KEY` and the four `LITESTREAM_*` secrets is a manual step in the Render dashboard; the blueprint marks them `sync: false` for exactly that reason.
+Creating the service and setting `APP_PASSWORD`, `SESSION_SECRET`, `MOONSHOT_API_KEY`, `XAI_API_KEY` and the four `LITESTREAM_*` secrets is a manual step in the Render dashboard; the blueprint marks them `sync: false` for exactly that reason. Only the active `LLM_PROVIDER`'s key needs a real value (ADR-0015).
 
 ## Dependency notes
 
