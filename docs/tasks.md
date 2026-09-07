@@ -895,3 +895,23 @@ Acceptance criteria:
 - 44 px targets at 360 px width; Playwright walk with screenshots (pending, proposal, after accept) under `docs/reviews/screenshots/T37/`.
 
 Tests: calendar dates; context builder (26-week scope, flags, size guard); prompt parse fixtures (valid, unknown product dropped, duplicate collapsed, on-list filtered, invalid category dropped, `finishReason` length); routes with `FakeLlmClient` (201, 409 not open, 404, 401, accept, double accept, empty accept); stats field; migration survival; client (pending timer, pre-checked rows, uncheck, add selected, cancel, error toast).
+
+---
+
+## T38 — One LLM provider per purpose
+
+Goal: Grok keeps reading receipts (extraction and matching); Kimi makes the AI list proposal, chosen from the real-data check (T37) where Kimi was far faster and just as usable for this purpose.
+
+Files: `src/server/config.ts`, `src/server/llm/OpenAiCompatibleClient.ts`, `src/server/llm/PurposeRoutingLlmClient.ts` (new), `src/server/routes/health.ts`, `src/server/app.ts`, `render.yaml`, `.env.example`, `docs/adr/0017-*.md`, `eval/README.md`, tests.
+
+Steps: see `docs/reviews/T38-plan.md`.
+
+Acceptance criteria:
+
+- With `LLM_PROVIDER=grok`, `LLM_PROVIDER_PROPOSE=kimi` and both keys, a scan goes to the Grok model and `Foreslå med AI` to the Kimi model with `thinking` from `KIMI_THINKING`; `shopping_list_proposals.model` records the Kimi model while `receipts.model` records the Grok model.
+- With `LLM_PROVIDER_PROPOSE` unset, every purpose uses `LLM_PROVIDER` and the app needs only that provider's key, exactly as before.
+- Start-up fails with a message naming the missing key and the variable that selected the provider when the two purposes differ and one key is absent.
+- `GET /api/health` returns `model` and `proposalModel`.
+- `git diff --stat` shows no change under `src/client/`, in `extractReceipt.ts`, `matchProducts.ts`, `proposeList.ts`, the receipt processor or `eval/run.ts`.
+
+Tests: config (default, missing-key messages naming the right variable, both keys present, invalid value); routing (`extract`/`match` to the fallback, `propose` to its override, one shared client when both purposes agree); `createLlmClient` for both provider combinations; `activeModels` for both combinations; health with equal and differing providers.

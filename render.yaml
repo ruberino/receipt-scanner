@@ -11,6 +11,8 @@ services:
       - key: SESSION_SECRET
         sync: false
       - key: LLM_PROVIDER
+        value: grok
+      - key: LLM_PROVIDER_PROPOSE
         value: kimi
       - key: MOONSHOT_API_KEY
         sync: false

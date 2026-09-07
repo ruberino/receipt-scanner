@@ -63,7 +63,7 @@ Identical to the sibling `training-log` app, plus the pieces needed for images a
 | Frontend | React, Vite, React Router, TanStack Query, Tailwind CSS | React 19, Vite 7, Router 7, Query 5, Tailwind 4 | ADR-0002 |
 | Backend | Fastify with `@fastify/cookie`, `@fastify/static`, `@fastify/rate-limit`, `@fastify/multipart` | Fastify 5 | ADR-0002 |
 | Images | `sharp` for validation, EXIF rotation, resize and JPEG re-encode | 0.33+ | ADR-0005 |
-| LLM | Kimi K2.6 or Grok via the OpenAI SDK, JSON mode, provider selectable per installation, for extraction, matching and list proposals | openai 5.x | ADR-0003, ADR-0015, ADR-0016 |
+| LLM | Kimi K2.6 or Grok via the OpenAI SDK, JSON mode, provider selectable per purpose (extraction/matching, and separately the list proposal) | openai 5.x | ADR-0003, ADR-0015, ADR-0016, ADR-0017 |
 | Validation | zod, schemas shared between client and server | 4.x | ADR-0013 |
 | Database | SQLite via `better-sqlite3`, Drizzle ORM, `drizzle-kit` migrations | Drizzle 0.4x | ADR-0010 |
 | Backup | Litestream replication to S3-compatible storage | 0.3.x | ADR-0011 |
@@ -139,7 +139,8 @@ receipt-scanner/
         images.ts            normaliseImage(buffer): validate, rotate, resize, encode JPEG, sha256; segmentImage(bytes): tile a tall image
       llm/
         LlmClient.ts         interface + request/result types
-        OpenAiCompatibleClient.ts   Kimi and Grok, provider-aware; createLlmClient(config, logger)
+        OpenAiCompatibleClient.ts   Kimi and Grok, provider-aware; createLlmClient(config, logger) routes per purpose (ADR-0017)
+        PurposeRoutingLlmClient.ts  routes completeJson(request) to the LlmClient registered for request.purpose, or a fallback (ADR-0017)
         FakeLlmClient.ts     scripted test double
         extractReceipt.ts    buildExtractionRequest(), parseExtraction()
         matchProducts.ts     buildMatchRequest(), parseMatches()
@@ -379,11 +380,11 @@ Definitions:
 - On startup, `requeueUnfinished()` enqueues every receipt with status `pending` or `processing`, so a crash mid-job is retried after restart; `uploaded` receipts wait for the user.
 - `POST /api/receipts/:id/scan` sets `pending` and enqueues; allowed when `uploaded` or `failed`, else `409`.
 
-### 7.3 Extraction call (ADR-0003, ADR-0015)
+### 7.3 Extraction call (ADR-0003, ADR-0015, ADR-0017)
 
-Request to the active provider (Kimi or Grok):
+Request to the extraction provider (`LLM_PROVIDER`); matching (7.5) uses the same provider, since it runs in the same pipeline on the same receipt:
 
-- `model`: the active provider's model (`config.kimiModel`, default `kimi-k2.6`, or `config.xaiModel`, default `grok-4.6`).
+- `model`: the extraction provider's model (`config.kimiModel`, default `kimi-k2.6`, or `config.xaiModel`, default `grok-4.6`).
 - `messages`: one `system` message with the prompt from `extractReceipt.prompt.ts`; one `user` message with one `{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,...' } }` content part per image segment (one for a receipt at most 2000 px tall, several for a taller one, T28), in order, followed by a short text instruction.
 - `response_format: { type: 'json_object' }`.
 - `max_tokens: 6000`.
@@ -494,11 +495,11 @@ Naming guidance in the prompt: Norwegian, singular, generic but specific enough 
 - `POST /api/products/:id/merge { intoProductId }` moves all lines and aliases from the source to the target, adds the source name as an alias of the target, and deletes the source.
 - `PATCH /api/products/:id` renames (uniqueness on `name_normalized`), sets category, or toggles `suppressed`.
 
-### 7.7 Proposal call (ADR-0016)
+### 7.7 Proposal call (ADR-0016, ADR-0017)
 
-Request to the active provider (Kimi or Grok), text only, no image:
+Request to the proposal provider (`LLM_PROVIDER_PROPOSE`, default `LLM_PROVIDER`), text only, no image:
 
-- `model`: the active provider's model, same as extraction and matching.
+- `model`: the proposal provider's model; equals the extraction provider's model unless `LLM_PROVIDER_PROPOSE` is set to a different provider.
 - `messages`: one `system` message with the prompt from `proposeList.prompt.ts`; one `user` message with the serialised context from `buildProposalContext` (`src/server/domain/proposalContext.ts`) as JSON text.
 - `response_format: { type: 'json_object' }`.
 - `max_tokens: 4000`.
@@ -620,7 +621,7 @@ type ShoppingListProposal = {
 
 | Method and path | Body | Response | Notes |
 | --- | --- | --- | --- |
-| `GET /api/health` | — | `200 { status: 'ok', version, queueLength, replication: 'on' \| 'off', model }` | No auth. Never calls the LLM. `replication` reflects whether `LITESTREAM_BUCKET` is configured, not actual replication lag (ADR-0011). `model` is the active provider's model name (ADR-0015), so an operator can see which one is live. |
+| `GET /api/health` | — | `200 { status: 'ok', version, queueLength, replication: 'on' \| 'off', model, proposalModel }` | No auth. Never calls the LLM. `replication` reflects whether `LITESTREAM_BUCKET` is configured, not actual replication lag (ADR-0011). `model` is the extraction/matching provider's model name, `proposalModel` the proposal provider's (equal unless `LLM_PROVIDER_PROPOSE` is set), so an operator can see both without reading logs (ADR-0015, ADR-0017). |
 | `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` | as in ADR-0009 | | Cookie `kvitteringer_auth`. |
 | `POST /api/receipts` | multipart `image` | `201 { id }` | `400` bad image, `413 PAYLOAD_TOO_LARGE`, `409` duplicate with `details.existingReceiptId`. |
 | `GET /api/receipts?limit=50&before=<id>` | — | `200 ReceiptSummary[]` | Newest first, cursor pagination on id. |
@@ -698,14 +699,15 @@ Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`
 | `DATABASE_PATH` | no | `./data/receipt-scanner.db` | Dockerfile sets `/data/receipt-scanner.db`. |
 | `APP_PASSWORD` | yes | — | Min 8 chars. |
 | `SESSION_SECRET` | yes | — | Min 32 chars. |
-| `LLM_PROVIDER` | no | `kimi` | `kimi` or `grok` (ADR-0015). |
+| `LLM_PROVIDER` | no | `kimi` | `kimi` or `grok`; provider for extraction and matching (ADR-0015). |
+| `LLM_PROVIDER_PROPOSE` | no | `LLM_PROVIDER` | `kimi` or `grok`; provider for the AI list proposal only (ADR-0017). |
 | `LLM_MAX_RETRIES` | no | `0` | Retries for a failed call, whichever provider is active; explicit rather than the OpenAI SDK's default of 2, which could block the queue for several times the timeout on one bad call. |
-| `MOONSHOT_API_KEY` | if `LLM_PROVIDER=kimi` | — | Kimi API key. |
+| `MOONSHOT_API_KEY` | if `kimi` is selected by `LLM_PROVIDER` or `LLM_PROVIDER_PROPOSE` | — | Kimi API key. |
 | `KIMI_MODEL` | no | `kimi-k2.6` | Must support image input and JSON mode. |
 | `KIMI_BASE_URL` | no | `https://api.moonshot.ai/v1` | |
-| `KIMI_THINKING` | no | `disabled` | `enabled` or `disabled`; sent only when `LLM_PROVIDER=kimi`. |
+| `KIMI_THINKING` | no | `disabled` | `enabled` or `disabled`; sent only when the request's provider is Kimi. |
 | `KIMI_TIMEOUT_MS` | no | `120000` | Request timeout for whichever provider is active. |
-| `XAI_API_KEY` | if `LLM_PROVIDER=grok` | — | Grok (xAI) API key. |
+| `XAI_API_KEY` | if `grok` is selected by `LLM_PROVIDER` or `LLM_PROVIDER_PROPOSE` | — | Grok (xAI) API key. |
 | `XAI_MODEL` | no | `grok-4.6` | Must support image input and `response_format: json_object` (ADR-0015). |
 | `XAI_BASE_URL` | no | `https://api.x.ai/v1` | |
 | `MAX_UPLOAD_BYTES` | no | `10485760` | 10 MB. |
@@ -737,8 +739,9 @@ The guard runs before routing, so an unauthenticated request to an unknown `/api
 
 ### Privacy
 
-Receipt images and extracted text are sent to Moonshot AI for processing (ADR-0003).
-`Foreslå med AI` sends the household's purchase history as text to the same active provider for one call per tap (ADR-0016); no images.
+Receipt images and extracted text are sent to the extraction provider for processing (ADR-0003, ADR-0015).
+`Foreslå med AI` sends the household's purchase history as text to the proposal provider for one call per tap (ADR-0016); no images.
+The two calls can go to different providers (ADR-0017): both are still bound by the same acceptance here, no external service beyond whichever provider each purpose is configured to use.
 Receipts can contain store location, loyalty card ids and the last digits of a payment card.
 This is accepted for a personal household tool; do not scan documents with full card numbers or national ids.
 The database, including images, is replicated to the household S3 bucket only.
