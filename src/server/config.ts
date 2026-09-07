@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// T22 CI red-check drill: deliberate unused variable, reverted in the next commit.
+const ciRedCheckDrill = 'unused';
+
 const NODE_ENVS = ['development', 'production', 'test'] as const;
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 const KIMI_THINKING_MODES = ['enabled', 'disabled'] as const;
