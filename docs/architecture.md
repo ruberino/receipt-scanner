@@ -510,7 +510,7 @@ The context (`buildProposalContext({ histories, list, dismissedProductIds, previ
 - A size guard: a serialised context over 40,000 characters drops purchases older than 12 weeks first, then caps products at 250 by most recent purchase; one `warn` log line records the counts.
 
 The prompt asks for 5 to 15 additions for one weekly trip covering the coming seven days (the same frame as T36), weighing the last 8 weeks most, varying dinner items against the last 2 weeks of dinner-bearing purchases, and using the date and calendar events for seasonal and calendar-driven goods; season itself (grilling, strawberries, fårikål, lutefisk and the like) is left to the model's own knowledge of the date, not enumerated in the prompt.
-It must never propose something `onList`, `dismissed`, `rejected`, or bought in the last 3 days.
+It must never propose something `onList`, `dismissed`, `rejected`, or bought today or yesterday (the same rule as the engine's step 3, T36).
 
 Expected output, one JSON object:
 
@@ -524,7 +524,7 @@ Expected output, one JSON object:
 }
 ```
 
-`runProposal(llm, context)` (`src/server/llm/proposeList.ts`) parses this with zod, then: drops an item whose `productId` is not in the context or whose `category` is not in `PRODUCT_CATEGORIES` (one `warn` log naming the count, never the text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought in the last 3 days as a defence against the model ignoring the prompt's own rule, and returns at most 15 items.
+`runProposal(llm, context)` (`src/server/llm/proposeList.ts`) parses this with zod, then: drops an item whose `productId` is not in the context or whose `category` is not in `PRODUCT_CATEGORIES` (one `warn` log naming the count, never the text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought today or yesterday (the same rule as the engine's step 3, T36) as a defence against the model ignoring the prompt's own rule, and returns at most 15 items.
 `OpenAiCompatibleClient`'s `stageFor` maps the `propose` purpose to a new `ExtractionStage` value, `'proposal'`; a failure surfaces as an `AppError` with the Norwegian message "Kunne ikke lage forslag, prøv igjen".
 
 ## 8. Suggestion engine (`domain/suggestions.ts`, ADR-0008)

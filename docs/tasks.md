@@ -886,7 +886,7 @@ Steps: see `docs/reviews/T37-plan.md`.
 
 Acceptance criteria:
 
-- `Foreslå med AI` on an open list produces a proposal of 5 to 15 items with Norwegian reasons and kinds, none of which is on the list, dismissed, rejected earlier on this list, or bought in the last 3 days.
+- `Foreslå med AI` on an open list produces a proposal of 5 to 15 items with Norwegian reasons and kinds, none of which is on the list, dismissed, rejected earlier on this list, or bought today or yesterday (the engine's step 3 rule, T36).
 - Products with no purchase in the last 26 weeks are not in the context sent to the model.
 - On 2026-10-15 the calendar context contains Halloween; on 2026-09-07 it does not; Easter 2026 falls on 5 April.
 - Accepting three of seven items adds exactly those three as `source = 'ai'` with their reasons, records the accepted indexes, and a second accept gives `409`.
