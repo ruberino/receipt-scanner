@@ -121,7 +121,7 @@ receipt-scanner/
       schemas.ts             zod schemas for API payloads and inferred types
       dates.ts               civil date helpers: isIsoDate, diffDays, mondayOf, isoWeekKey, todayInOslo
       money.ts               formatOre(ore) -> "43,80 kr", parseNok(string|number) -> ore
-      categories.ts          PRODUCT_CATEGORIES constant
+      categories.ts          PRODUCT_CATEGORIES constant, SHOPPING_CATEGORY_ORDER (store-walk order, T32)
       normalize.ts           normalizeText(), shared with the client for ProductPicker's exact-match check
     server/
       index.ts
@@ -538,7 +538,8 @@ type Suggestion = { productId: number; name: string; category: string | null; re
 type ShoppingList = {
   id: number; weekStart: string; status: 'open' | 'done'; createdAt: string; completedAt: string | null;
   items: { id: number; productId: number | null; name: string; quantityText: string | null;
-           source: 'suggested' | 'manual'; reason: string | null; checked: boolean; position: number }[];
+           source: 'suggested' | 'manual'; reason: string | null; checked: boolean; position: number;
+           category: string | null }[];
 };
 ```
 
@@ -567,8 +568,8 @@ type ShoppingList = {
 | `GET /api/suggestions` | — | `200 Suggestion[]` | Computed on demand; no caching. |
 | `GET /api/shopping-lists/current` | — | `200 ShoppingList` | `404` when no open list. |
 | `POST /api/shopping-lists` | — | `201 ShoppingList` or `200` existing open list | Populated from suggestions. `weekStart = mondayOf(today)`. |
-| `POST /api/shopping-lists/:id/items` | `{ name, productId?, quantityText? }` | `201 item` | `source = 'manual'`, appended last. |
-| `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | |
+| `POST /api/shopping-lists/:id/items` | `{ name, productId?, quantityText? }` | `201 item` | `source = 'manual'`, appended last. `category` is the product's when `productId` is set, else `null`; derived on read, not stored. T32. |
+| `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | `category` is unaffected: editing never changes `productId`. T32. |
 | `DELETE /api/shopping-list-items/:id` | — | `204` | |
 | `POST /api/shopping-lists/:id/complete` | — | `200 ShoppingList` | Sets `done` and `completedAt`. |
 | `POST /api/shopping-lists/:id/reopen` | — | `200 ShoppingList` | Only when `done`, `completedAt` falls on today's date in Europe/Oslo (`todayInOslo`), and no list is `open`; sets `open` and clears `completedAt`. `409 Listen kan ikke gjenåpnes` otherwise. T31. |
@@ -583,7 +584,7 @@ type ShoppingList = {
 | Route | Page | Content |
 | --- | --- | --- |
 | `/login` | LoginPage | Password field. |
-| `/` | ShoppingListPage | The open list with check-off, a visible `Kjøpt (n)` section, add item, remove item with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. T31. |
+| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; tap an item's text to edit name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
 | `/receipts` | ReceiptsPage | List with store, date as `4. sep. · 3 dager siden`, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
 | `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), the receipt image in a sticky, scrollable panel: toggled with `Vis bilde` on a phone, always beside the lines on desktop, tap opens the full image (T35), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. |
