@@ -440,12 +440,22 @@ describe('ShoppingListPage', () => {
       expect(toggleMutate).toHaveBeenCalledWith({ id: 1, checked: true }, expect.anything());
     });
 
-    it('opens inline editing when the name is tapped, not the checkbox toggle (T32; replaces T18 F1)', async () => {
+    it('toggles when the name is tapped, not only the checkbox itself (T18 F1)', async () => {
       mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l', checked: false })] }));
       renderPage();
       const user = userEvent.setup();
 
       await user.click(screen.getByText('Lettmelk 1 l'));
+
+      expect(toggleMutate).toHaveBeenCalledWith({ id: 1, checked: true }, expect.anything());
+    });
+
+    it('opens inline editing from the pencil button, not by tapping the name (T32 review F1)', async () => {
+      mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l', checked: false })] }));
+      renderPage();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByLabelText('Rediger Lettmelk 1 l'));
 
       expect(toggleMutate).not.toHaveBeenCalled();
       expect(screen.getByLabelText('Navn')).toHaveValue('Lettmelk 1 l');
@@ -493,7 +503,7 @@ describe('ShoppingListPage', () => {
         renderPage();
         const user = userEvent.setup();
 
-        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.click(screen.getByLabelText('Rediger Lettmelk 1 l'));
         await user.clear(screen.getByLabelText('Navn'));
         await user.type(screen.getByLabelText('Navn'), 'Lettmelk 1,5 l');
         await user.click(screen.getByRole('button', { name: 'Lagre' }));
@@ -509,7 +519,7 @@ describe('ShoppingListPage', () => {
         renderPage();
         const user = userEvent.setup();
 
-        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.click(screen.getByLabelText('Rediger Lettmelk 1 l'));
         await user.clear(screen.getByLabelText('Navn'));
         await user.click(screen.getByRole('button', { name: 'Lagre' }));
 
@@ -522,7 +532,7 @@ describe('ShoppingListPage', () => {
         renderPage();
         const user = userEvent.setup();
 
-        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.click(screen.getByLabelText('Rediger Lettmelk 1 l'));
         await user.clear(screen.getByLabelText('Antall'));
         await user.click(screen.getByRole('button', { name: 'Lagre' }));
 
@@ -537,7 +547,7 @@ describe('ShoppingListPage', () => {
         renderPage();
         const user = userEvent.setup();
 
-        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.click(screen.getByLabelText('Rediger Lettmelk 1 l'));
         await user.clear(screen.getByLabelText('Navn'));
         await user.type(screen.getByLabelText('Navn'), 'Noe annet');
         await user.click(screen.getByRole('button', { name: 'Avbryt' }));
