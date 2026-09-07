@@ -16,6 +16,11 @@ The remote now exists (`ruberino/receipt-scanner`), and PR #1 (`docs/pr-workflow
 Three runs on that PR: green on the docs-only commit `8288b86` ([run 34093673944](https://github.com/ruberino/receipt-scanner/actions/runs/34093673944)), red on a deliberate unused variable in commit `7b93f56` ([run 34093887565](https://github.com/ruberino/receipt-scanner/actions/runs/34093887565), `checks` failed on the lint error, `docker-build` passed as expected), and green again after the revert in commit `f620543` ([run 34094015129](https://github.com/ruberino/receipt-scanner/actions/runs/34094015129)).
 CI gates the branch as designed.
 
+## Go-ahead for pull request #1, 2026-09-07
+
+The first push of `main` also ran green (run 34084508261), the workflow bullet matches the sibling's wording, the review-channel bullet now says "before merging", and the three runs above are the T22 evidence.
+Approved: commit this file on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, then `git pull --ff-only`.
+
 ## Done
 
 Fast-forward merge now and send the hash.
