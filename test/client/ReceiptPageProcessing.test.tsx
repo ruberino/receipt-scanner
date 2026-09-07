@@ -21,7 +21,7 @@ const { useReceipt, useScanReceipt, useDeleteReceipt, receiptRefetchInterval } =
   await import('../../src/client/api/queries.ts');
 
 function renderReceiptPage(id = 42) {
-  render(
+  return render(
     <ToastProvider>
       <MemoryRouter initialEntries={[`/receipts/${id}`]}>
         <Routes>
@@ -46,6 +46,7 @@ describe('ReceiptPage — uploaded, processing and failed states', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('shows the thumbnail and "Skann"/"Slett kvittering" while uploaded', async () => {
@@ -72,10 +73,15 @@ describe('ReceiptPage — uploaded, processing and failed states', () => {
     expect(screen.getByRole('button', { name: 'Slett kvittering' })).toBeInTheDocument();
   });
 
-  it('shows the thumbnail, a spinner and the elapsed seconds while pending/processing', () => {
+  it('shows the thumbnail, a spinner and the elapsed seconds since updatedAt while processing, ticking (T30)', () => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:10.000Z'));
     vi.mocked(useReceipt).mockReturnValue({
-      data: { status: 'processing', imageUrl: '/api/receipts/42/image' },
+      data: {
+        status: 'processing',
+        imageUrl: '/api/receipts/42/image',
+        updatedAt: '2026-09-03T12:00:00.000Z',
+      },
       isPending: false,
       isError: false,
     } as unknown as ReturnType<typeof useReceipt>);
@@ -87,12 +93,69 @@ describe('ReceiptPage — uploaded, processing and failed states', () => {
       '/api/receipts/42/image',
     );
     expect(screen.getByRole('status', { name: 'Laster' })).toBeInTheDocument();
-    expect(screen.getByText('Leser kvittering… (0 s)')).toBeInTheDocument();
+    expect(screen.getByText('Leser kvittering… (10 s)')).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(3000);
     });
-    expect(screen.getByText('Leser kvittering… (3 s)')).toBeInTheDocument();
+    expect(screen.getByText('Leser kvittering… (13 s)')).toBeInTheDocument();
+  });
+
+  it('shows "I kø… (x s)" while pending, counted the same way (T30)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:05.000Z'));
+    vi.mocked(useReceipt).mockReturnValue({
+      data: {
+        status: 'pending',
+        imageUrl: '/api/receipts/42/image',
+        updatedAt: '2026-09-03T12:00:00.000Z',
+      },
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReceipt>);
+
+    renderReceiptPage();
+
+    expect(screen.getByText('I kø… (5 s)')).toBeInTheDocument();
+  });
+
+  it('shows the same elapsed time after a remount, since it is derived from updatedAt, not mount time (T30)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:20.000Z'));
+    vi.mocked(useReceipt).mockReturnValue({
+      data: {
+        status: 'processing',
+        imageUrl: '/api/receipts/42/image',
+        updatedAt: '2026-09-03T12:00:00.000Z',
+      },
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReceipt>);
+
+    const { unmount } = renderReceiptPage();
+    expect(screen.getByText('Leser kvittering… (20 s)')).toBeInTheDocument();
+    unmount();
+
+    renderReceiptPage();
+    expect(screen.getByText('Leser kvittering… (20 s)')).toBeInTheDocument();
+  });
+
+  it('never shows a negative elapsed time when the clock is slightly behind updatedAt', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:00.000Z'));
+    vi.mocked(useReceipt).mockReturnValue({
+      data: {
+        status: 'processing',
+        imageUrl: '/api/receipts/42/image',
+        updatedAt: '2026-09-03T12:00:05.000Z',
+      },
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReceipt>);
+
+    renderReceiptPage();
+
+    expect(screen.getByText('Leser kvittering… (0 s)')).toBeInTheDocument();
   });
 
   it('shows the error message and a working "Prøv igjen" button (calling scan) when failed', async () => {
@@ -117,6 +180,56 @@ describe('ReceiptPage — uploaded, processing and failed states', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Kunne ikke lese kvitteringen');
     await user.click(screen.getByRole('button', { name: 'Prøv igjen' }));
     expect(scanMutate).toHaveBeenCalledOnce();
+  });
+
+  it('shows "Slett kvittering" while failed, and deletes after confirmation (T30)', async () => {
+    const deleteMutate = vi.fn();
+    vi.mocked(useDeleteReceipt).mockReturnValue({
+      mutate: deleteMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteReceipt>);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(useReceipt).mockReturnValue({
+      data: {
+        status: 'failed',
+        imageUrl: '/api/receipts/42/image',
+        errorMessage: 'Kunne ikke lese kvitteringen',
+      },
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReceipt>);
+
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Slett kvittering' }));
+
+    expect(deleteMutate).toHaveBeenCalledOnce();
+  });
+
+  it('does not delete a failed receipt when the confirmation is dismissed (T30)', async () => {
+    const deleteMutate = vi.fn();
+    vi.mocked(useDeleteReceipt).mockReturnValue({
+      mutate: deleteMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteReceipt>);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(useReceipt).mockReturnValue({
+      data: {
+        status: 'failed',
+        imageUrl: '/api/receipts/42/image',
+        errorMessage: 'Kunne ikke lese kvitteringen',
+      },
+      isPending: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useReceipt>);
+
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Slett kvittering' }));
+
+    expect(deleteMutate).not.toHaveBeenCalled();
   });
 
   it('shows a toast when "Prøv igjen" fails (T24 F3)', async () => {

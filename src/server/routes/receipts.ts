@@ -37,6 +37,7 @@ function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: numb
     possibleDuplicateOf: receipt.possibleDuplicateOf,
     reviewedAt: receipt.reviewedAt,
     createdAt: receipt.createdAt,
+    updatedAt: receipt.updatedAt,
   };
 }
 

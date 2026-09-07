@@ -27,6 +27,7 @@ export const receiptSummarySchema = z.object({
   possibleDuplicateOf: z.number().int().nullable(),
   reviewedAt: z.string().nullable(),
   createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export type ReceiptSummary = z.infer<typeof receiptSummarySchema>;
