@@ -725,3 +725,23 @@ Acceptance criteria:
 - A 600×8000 image is stored as 600×8000; a 3000×20000 image is stored as 1600×10667; neither is enlarged.
 - A stored 1600×10667 image is sent as six consecutive segments with 120 px overlap; a 1200×1600 image is sent as one.
 - The Kiwi receipts already in `eval/receipts/` are 149×2000 px copies of what the pre-fix pipeline stored, so no bootstrap on this branch can recover them: they are re-uploaded from their originals once this task is deployed, get expected JSON through `eval:bootstrap`, and are run through the eval in a follow-up task. The three MENY receipts (8, 11, 12) are the baseline committed here, with `totalWithin1krRate` and `meanItemRecall` recorded in the results files committed with the PR.
+
+---
+
+## T29 — Correct a line's amount and kind, delete a line
+
+Goal: a wrong line from the model can be fixed or removed in the review, and the false warning goes away.
+
+Files: `src/shared/schemas.ts`, `src/server/routes/receiptLines.ts`, `src/client/components/ReceiptLineRow.tsx`, `src/client/api/queries.ts`, tests.
+
+Steps: see `docs/reviews/T29-plan.md`.
+
+Acceptance criteria:
+
+- Deleting the wrong discount line on a receipt whose lines then sum to the total removes `TOTAL_MISMATCH` without a rescan.
+- Changing an item line to `other` clears its product and, if it was the last unmatched item line, removes `UNMATCHED_LINES`.
+- Editing an amount to a value that breaks the sum adds `TOTAL_MISMATCH`.
+- A discount with a positive amount, or an item with a negative one, is rejected with a Norwegian message.
+- Every action is possible with 44 px targets at 360 px width; Playwright walk with screenshots under `docs/reviews/screenshots/T29/`.
+
+Tests: route tests for the three bodies, delete, both warning recomputes, the kind and sign rules, 409 when not done, 401; client tests for edit, invalid amount, delete after confirmation, error toast.
