@@ -745,3 +745,20 @@ Acceptance criteria:
 - Every action is possible with 44 px targets at 360 px width; Playwright walk with screenshots under `docs/reviews/screenshots/T29/`.
 
 Tests: route tests for the three bodies, delete, both warning recomputes, the kind and sign rules, 409 when not done, 401; client tests for edit, invalid amount, delete after confirmation, error toast.
+
+---
+
+## T30 — The receipt page's failed and processing states
+
+Goal: a receipt that keeps failing can be removed where the user sees the failure, and the processing view shows how long the receipt has really been waiting or being read.
+
+Files: `src/client/pages/ReceiptPage.tsx`, `src/shared/schemas.ts`, `src/server/routes/receipts.ts`, tests.
+
+Acceptance criteria:
+
+- The `failed` view shows `Slett kvittering`; confirming deletes the receipt, shows `Kvitteringen er slettet` and navigates to `/receipts`; dismissing the confirmation deletes nothing.
+- The `uploaded` and `done` views behave as before; one shared delete button component, no third copy of the handler.
+- `ReceiptSummary` carries `updatedAt`; the processing view shows `I kø… (x s)` while `pending` and `Leser kvittering… (x s)` while `processing`, with `x` counted from `updatedAt`, so leaving and reopening the page shows the same elapsed time.
+- Screenshots of the failed view and the processing view at 360 px under `docs/reviews/screenshots/T30/`.
+
+Tests: client tests for the failed view's delete after confirmation and after dismissal, the elapsed time from `updatedAt` against a faked clock, the same time after a remount, the two labels; the existing uploaded and done delete tests keep passing; `toReceiptSummary` includes `updatedAt`.
