@@ -14,6 +14,9 @@ const envSchema = z
     APP_PASSWORD: z.string().min(8, 'APP_PASSWORD must be at least 8 characters long'),
     SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long'),
     LLM_PROVIDER: z.enum(LLM_PROVIDERS).default('kimi'),
+    // Provider for `purpose: 'propose'` only; defaults to LLM_PROVIDER, so an existing deployment
+    // with one provider is unaffected (ADR-0017).
+    LLM_PROVIDER_PROPOSE: z.enum(LLM_PROVIDERS).optional(),
     // Explicit rather than the OpenAI SDK's own default (2): an unresponsive call retried twice on
     // top of the full timeout each time can block the queue for several times KIMI_TIMEOUT_MS.
     LLM_MAX_RETRIES: z.coerce.number().int().min(0).default(0),
@@ -36,18 +39,35 @@ const envSchema = z
     ),
   })
   .superRefine((data, ctx) => {
-    if (data.LLM_PROVIDER === 'kimi' && !data.MOONSHOT_API_KEY) {
+    // Checked over both provider selectors (ADR-0017): LLM_PROVIDER always, LLM_PROVIDER_PROPOSE
+    // resolved to its default when unset. Each missing key is reported once, naming whichever
+    // selector chose the provider that needs it — the first selector wins when both would.
+    const selectors: { envVar: 'LLM_PROVIDER' | 'LLM_PROVIDER_PROPOSE'; provider: LlmProvider }[] =
+      [
+        { envVar: 'LLM_PROVIDER', provider: data.LLM_PROVIDER },
+        {
+          envVar: 'LLM_PROVIDER_PROPOSE',
+          provider: data.LLM_PROVIDER_PROPOSE ?? data.LLM_PROVIDER,
+        },
+      ];
+    const reported = new Set<string>();
+    for (const selector of selectors) {
+      const missingKey =
+        selector.provider === 'kimi'
+          ? data.MOONSHOT_API_KEY
+            ? null
+            : 'MOONSHOT_API_KEY'
+          : data.XAI_API_KEY
+            ? null
+            : 'XAI_API_KEY';
+      if (missingKey === null || reported.has(missingKey)) {
+        continue;
+      }
+      reported.add(missingKey);
       ctx.addIssue({
         code: 'custom',
-        path: ['MOONSHOT_API_KEY'],
-        message: 'MOONSHOT_API_KEY is required when LLM_PROVIDER=kimi',
-      });
-    }
-    if (data.LLM_PROVIDER === 'grok' && !data.XAI_API_KEY) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['XAI_API_KEY'],
-        message: 'XAI_API_KEY is required when LLM_PROVIDER=grok',
+        path: [missingKey],
+        message: `${missingKey} is required when ${selector.envVar}=${selector.provider}`,
       });
     }
   });
@@ -65,6 +85,9 @@ export type Config = {
   appPassword: string;
   sessionSecret: string;
   llmProvider: LlmProvider;
+  /** Provider for `purpose: 'propose'`; resolved from `LLM_PROVIDER_PROPOSE`, defaulting to
+   * `llmProvider`, so this is never undefined (ADR-0017). */
+  llmProviderPropose: LlmProvider;
   llmMaxRetries: number;
   moonshotApiKey: string | undefined;
   kimiModel: string;
@@ -98,6 +121,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appPassword: parsed.APP_PASSWORD,
     sessionSecret: parsed.SESSION_SECRET,
     llmProvider: parsed.LLM_PROVIDER,
+    llmProviderPropose: parsed.LLM_PROVIDER_PROPOSE ?? parsed.LLM_PROVIDER,
     llmMaxRetries: parsed.LLM_MAX_RETRIES,
     moonshotApiKey: parsed.MOONSHOT_API_KEY,
     kimiModel: parsed.KIMI_MODEL,

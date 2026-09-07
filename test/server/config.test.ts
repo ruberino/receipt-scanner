@@ -23,6 +23,7 @@ describe('loadConfig', () => {
       appPassword: validEnv.APP_PASSWORD,
       sessionSecret: validEnv.SESSION_SECRET,
       llmProvider: 'kimi',
+      llmProviderPropose: 'kimi',
       llmMaxRetries: 0,
       moonshotApiKey: validEnv.MOONSHOT_API_KEY,
       kimiModel: 'kimi-k2.6',
@@ -138,6 +139,55 @@ describe('loadConfig', () => {
         xaiModel: 'grok-custom',
         xaiBaseUrl: 'https://example.test/v1',
       });
+    });
+  });
+
+  describe('LLM_PROVIDER_PROPOSE (ADR-0017, T38)', () => {
+    it('defaults llmProviderPropose to LLM_PROVIDER when unset', () => {
+      expect(loadConfig(validEnv)).toMatchObject({
+        llmProvider: 'kimi',
+        llmProviderPropose: 'kimi',
+      });
+
+      expect(
+        loadConfig({
+          APP_PASSWORD: 'a-valid-password',
+          SESSION_SECRET: 'a-session-secret-that-is-at-least-32-chars',
+          LLM_PROVIDER: 'grok',
+          XAI_API_KEY: 'xai-test-key',
+        }),
+      ).toMatchObject({ llmProvider: 'grok', llmProviderPropose: 'grok' });
+    });
+
+    it('throws naming MOONSHOT_API_KEY and LLM_PROVIDER_PROPOSE when LLM_PROVIDER=grok, LLM_PROVIDER_PROPOSE=kimi and only XAI_API_KEY is set', () => {
+      expect(() =>
+        loadConfig({
+          APP_PASSWORD: 'a-valid-password',
+          SESSION_SECRET: 'a-session-secret-that-is-at-least-32-chars',
+          LLM_PROVIDER: 'grok',
+          XAI_API_KEY: 'xai-test-key',
+          LLM_PROVIDER_PROPOSE: 'kimi',
+        }),
+      ).toThrow(/MOONSHOT_API_KEY.*LLM_PROVIDER_PROPOSE=kimi/);
+    });
+
+    it('passes with both keys and resolves llmProviderPropose to kimi', () => {
+      const config = loadConfig({
+        APP_PASSWORD: 'a-valid-password',
+        SESSION_SECRET: 'a-session-secret-that-is-at-least-32-chars',
+        LLM_PROVIDER: 'grok',
+        XAI_API_KEY: 'xai-test-key',
+        LLM_PROVIDER_PROPOSE: 'kimi',
+        MOONSHOT_API_KEY: 'sk-test',
+      });
+
+      expect(config).toMatchObject({ llmProvider: 'grok', llmProviderPropose: 'kimi' });
+    });
+
+    it('rejects an invalid LLM_PROVIDER_PROPOSE value', () => {
+      expect(() => loadConfig({ ...validEnv, LLM_PROVIDER_PROPOSE: 'gpt' })).toThrow(
+        /LLM_PROVIDER_PROPOSE/,
+      );
     });
   });
 });

@@ -19,7 +19,7 @@ import {
   toErrorResponse,
 } from './lib/errors.ts';
 import { createReceiptProcessor, type ReceiptProcessor } from './jobs/receiptProcessor.ts';
-import { activeModel, createLlmClient } from './llm/OpenAiCompatibleClient.ts';
+import { activeModels, createLlmClient } from './llm/OpenAiCompatibleClient.ts';
 import type { LlmClient } from './llm/LlmClient.ts';
 import authPlugin from './plugins/auth.ts';
 import healthRoutes from './routes/health.ts';
@@ -172,7 +172,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(healthRoutes, {
     version: readVersion(),
     replicationEnabled: config.litestreamBucket !== undefined,
-    model: activeModel(config),
+    ...activeModels(config),
   });
   app.register(authPlugin, { config });
   app.register(receiptsRoutes, { now: options.now ?? (() => new Date()) });

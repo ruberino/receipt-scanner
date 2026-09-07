@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import type { Config, KimiThinking, LlmProvider } from '../config.ts';
 import { ExtractionError, type ExtractionStage } from '../lib/errors.ts';
 import type { JsonCompletionRequest, JsonCompletionResult, LlmClient } from './LlmClient.ts';
+import { PurposeRoutingLlmClient } from './PurposeRoutingLlmClient.ts';
 
 export type MinimalLogger = {
   info(details: Record<string, unknown>, message?: string): void;
@@ -148,16 +149,28 @@ export class OpenAiCompatibleClient implements LlmClient {
   }
 }
 
-/** Which model is live, from `Config` alone — the same choice `createLlmClient` makes, without
- * constructing a client. Used by `GET /api/health` (ADR-0015). */
-export function activeModel(config: Config): string {
-  return config.llmProvider === 'grok' ? config.xaiModel : config.kimiModel;
+function modelFor(provider: LlmProvider, config: Config): string {
+  return provider === 'grok' ? config.xaiModel : config.kimiModel;
 }
 
-/** One factory for `app.ts` and `eval/run.ts`, so the two never drift on how a `Config` becomes an
- * `LlmClient` (ADR-0015). `loadConfig()` already guarantees the active provider's key is present. */
-export function createLlmClient(config: Config, logger: MinimalLogger): LlmClient {
-  if (config.llmProvider === 'grok') {
+/** Which models are live, from `Config` alone — the same choices `createLlmClient` makes, without
+ * constructing a client. Used by `GET /api/health` (ADR-0015, ADR-0017). `model` is the extraction
+ * and matching provider's, kept under its original name for compatibility; `proposalModel` is the
+ * `purpose: 'propose'` provider's, the same when `LLM_PROVIDER_PROPOSE` is unset. */
+export function activeModels(config: Config): { model: string; proposalModel: string } {
+  return {
+    model: modelFor(config.llmProvider, config),
+    proposalModel: modelFor(config.llmProviderPropose, config),
+  };
+}
+
+/** One provider's client, same options regardless of which purpose reaches it (ADR-0015). */
+function buildProviderClient(
+  provider: LlmProvider,
+  config: Config,
+  logger: MinimalLogger,
+): OpenAiCompatibleClient {
+  if (provider === 'grok') {
     return new OpenAiCompatibleClient({
       provider: 'grok',
       apiKey: config.xaiApiKey!,
@@ -178,5 +191,28 @@ export function createLlmClient(config: Config, logger: MinimalLogger): LlmClien
     timeoutMs: config.kimiTimeoutMs,
     maxRetries: config.llmMaxRetries,
     logger,
+  });
+}
+
+/** One factory for `app.ts` and `eval/run.ts`, so neither builds a client by hand (ADR-0015).
+ * Routes `purpose: 'propose'` to `config.llmProviderPropose` and everything else to
+ * `config.llmProvider` (ADR-0017), below the `LlmClient` interface so no caller knows; one
+ * `OpenAiCompatibleClient` per distinct provider in use, shared when both purposes agree.
+ * `loadConfig()` already guarantees every provider in use has its key present. */
+export function createLlmClient(config: Config, logger: MinimalLogger): LlmClient {
+  const clientsByProvider = new Map<LlmProvider, OpenAiCompatibleClient>();
+  function clientFor(provider: LlmProvider): OpenAiCompatibleClient {
+    const existing = clientsByProvider.get(provider);
+    if (existing) {
+      return existing;
+    }
+    const created = buildProviderClient(provider, config, logger);
+    clientsByProvider.set(provider, created);
+    return created;
+  }
+
+  return new PurposeRoutingLlmClient({
+    fallback: clientFor(config.llmProvider),
+    byPurpose: { propose: clientFor(config.llmProviderPropose) },
   });
 }

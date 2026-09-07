@@ -4,10 +4,11 @@ import { loadConfig } from '../../../src/server/config.ts';
 import { ExtractionError } from '../../../src/server/lib/errors.ts';
 import {
   OpenAiCompatibleClient,
-  activeModel,
+  activeModels,
   buildRequestBody,
   createLlmClient,
 } from '../../../src/server/llm/OpenAiCompatibleClient.ts';
+import type { PurposeRoutingLlmClient } from '../../../src/server/llm/PurposeRoutingLlmClient.ts';
 import type { JsonCompletionRequest } from '../../../src/server/llm/LlmClient.ts';
 
 vi.mock('openai', () => ({ default: vi.fn() }));
@@ -323,20 +324,35 @@ describe('OpenAiCompatibleClient constructor', () => {
   });
 });
 
-describe('activeModel', () => {
-  it('reports the kimi model when LLM_PROVIDER=kimi (the default)', () => {
+describe('activeModels', () => {
+  it('reports the kimi model for both when LLM_PROVIDER=kimi (the default) and LLM_PROVIDER_PROPOSE is unset', () => {
     const config = loadConfig({ ...baseEnv, MOONSHOT_API_KEY: 'sk-kimi' });
-    expect(activeModel(config)).toBe('kimi-k2.6');
+    expect(activeModels(config)).toEqual({ model: 'kimi-k2.6', proposalModel: 'kimi-k2.6' });
   });
 
-  it('reports the grok model when LLM_PROVIDER=grok', () => {
+  it('reports the grok model for both when LLM_PROVIDER=grok and LLM_PROVIDER_PROPOSE is unset', () => {
     const config = loadConfig({ ...baseEnv, LLM_PROVIDER: 'grok', XAI_API_KEY: 'xai-test' });
-    expect(activeModel(config)).toBe('grok-4.6');
+    expect(activeModels(config)).toEqual({ model: 'grok-4.6', proposalModel: 'grok-4.6' });
+  });
+
+  it('reports differing models when LLM_PROVIDER and LLM_PROVIDER_PROPOSE differ (ADR-0017)', () => {
+    const config = loadConfig({
+      ...baseEnv,
+      LLM_PROVIDER: 'grok',
+      XAI_API_KEY: 'xai-test',
+      LLM_PROVIDER_PROPOSE: 'kimi',
+      MOONSHOT_API_KEY: 'sk-kimi',
+    });
+    expect(activeModels(config)).toEqual({ model: 'grok-4.6', proposalModel: 'kimi-k2.6' });
   });
 });
 
 describe('createLlmClient', () => {
-  it('builds a kimi client with the kimi settings, thinking included', () => {
+  function clientFor(client: ReturnType<typeof createLlmClient>, purpose: 'extract' | 'propose') {
+    return (client as PurposeRoutingLlmClient).clientFor(purpose) as OpenAiCompatibleClient;
+  }
+
+  it('builds a kimi client with the kimi settings, thinking included, for both purposes', () => {
     const config = loadConfig({
       ...baseEnv,
       MOONSHOT_API_KEY: 'sk-kimi',
@@ -344,14 +360,16 @@ describe('createLlmClient', () => {
       KIMI_THINKING: 'enabled',
     });
 
-    const client = createLlmClient(config, { info: vi.fn() }) as OpenAiCompatibleClient;
+    const client = createLlmClient(config, { info: vi.fn() });
 
-    expect(client).toBeInstanceOf(OpenAiCompatibleClient);
-    expect(client.provider).toBe('kimi');
-    expect(client.model).toBe('kimi-k3');
+    const extractClient = clientFor(client, 'extract');
+    expect(extractClient).toBeInstanceOf(OpenAiCompatibleClient);
+    expect(extractClient.provider).toBe('kimi');
+    expect(extractClient.model).toBe('kimi-k3');
+    expect(clientFor(client, 'propose')).toBe(extractClient);
   });
 
-  it('builds a grok client with the grok settings', () => {
+  it('builds a grok client with the grok settings, for both purposes', () => {
     const config = loadConfig({
       ...baseEnv,
       LLM_PROVIDER: 'grok',
@@ -359,10 +377,33 @@ describe('createLlmClient', () => {
       XAI_MODEL: 'grok-custom',
     });
 
-    const client = createLlmClient(config, { info: vi.fn() }) as OpenAiCompatibleClient;
+    const client = createLlmClient(config, { info: vi.fn() });
 
-    expect(client).toBeInstanceOf(OpenAiCompatibleClient);
-    expect(client.provider).toBe('grok');
-    expect(client.model).toBe('grok-custom');
+    const extractClient = clientFor(client, 'extract');
+    expect(extractClient).toBeInstanceOf(OpenAiCompatibleClient);
+    expect(extractClient.provider).toBe('grok');
+    expect(extractClient.model).toBe('grok-custom');
+    expect(clientFor(client, 'propose')).toBe(extractClient);
+  });
+
+  it('routes extract/match to LLM_PROVIDER and propose to LLM_PROVIDER_PROPOSE when they differ (ADR-0017, T38)', () => {
+    const config = loadConfig({
+      ...baseEnv,
+      LLM_PROVIDER: 'grok',
+      XAI_API_KEY: 'xai-test',
+      LLM_PROVIDER_PROPOSE: 'kimi',
+      MOONSHOT_API_KEY: 'sk-kimi',
+      KIMI_MODEL: 'kimi-k3',
+    });
+
+    const client = createLlmClient(config, { info: vi.fn() });
+
+    const extractClient = clientFor(client, 'extract');
+    const proposeClient = clientFor(client, 'propose');
+    expect(extractClient.provider).toBe('grok');
+    expect(extractClient.model).toBe('grok-4.6');
+    expect(proposeClient.provider).toBe('kimi');
+    expect(proposeClient.model).toBe('kimi-k3');
+    expect(proposeClient).not.toBe(extractClient);
   });
 });
