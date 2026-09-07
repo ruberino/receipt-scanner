@@ -63,7 +63,7 @@ Identical to the sibling `training-log` app, plus the pieces needed for images a
 | Frontend | React, Vite, React Router, TanStack Query, Tailwind CSS | React 19, Vite 7, Router 7, Query 5, Tailwind 4 | ADR-0002 |
 | Backend | Fastify with `@fastify/cookie`, `@fastify/static`, `@fastify/rate-limit`, `@fastify/multipart` | Fastify 5 | ADR-0002 |
 | Images | `sharp` for validation, EXIF rotation, resize and JPEG re-encode | 0.33+ | ADR-0005 |
-| LLM | Kimi K2.6 or Grok via the OpenAI SDK, JSON mode, provider selectable per installation | openai 5.x | ADR-0003, ADR-0015 |
+| LLM | Kimi K2.6 or Grok via the OpenAI SDK, JSON mode, provider selectable per installation, for extraction, matching and list proposals | openai 5.x | ADR-0003, ADR-0015, ADR-0016 |
 | Validation | zod, schemas shared between client and server | 4.x | ADR-0013 |
 | Database | SQLite via `better-sqlite3`, Drizzle ORM, `drizzle-kit` migrations | Drizzle 0.4x | ADR-0010 |
 | Backup | Litestream replication to S3-compatible storage | 0.3.x | ADR-0011 |
@@ -123,6 +123,7 @@ receipt-scanner/
       money.ts               formatOre(ore) -> "43,80 kr", parseNok(string|number) -> ore
       categories.ts          PRODUCT_CATEGORIES constant, SHOPPING_CATEGORY_ORDER (store-walk order, T32)
       normalize.ts           normalizeText(), shared with the client for ProductPicker's exact-match check
+      calendar.ts            calendarEvents(today, horizonDays): pure, no I/O; public holidays, Oslo school holidays, Halloween, advent, fellesferie (T37)
     server/
       index.ts
       app.ts                 buildApp(options)
@@ -142,15 +143,18 @@ receipt-scanner/
         FakeLlmClient.ts     scripted test double
         extractReceipt.ts    buildExtractionRequest(), parseExtraction()
         matchProducts.ts     buildMatchRequest(), parseMatches()
+        proposeList.ts       runProposal(llm, context): builds the request, parses and filters the model's items (T37)
         prompts/
           extractReceipt.prompt.ts   EXTRACT_PROMPT_VERSION and the system prompt text
           matchProducts.prompt.ts    MATCH_PROMPT_VERSION and the system prompt text
+          proposeList.prompt.ts      PROPOSE_PROMPT_VERSION and the system prompt text (T37)
       domain/
         extraction.ts        applyExtraction(): decimals -> øre, warnings, line kinds
         matching.ts          matchLines(): alias lookup, LLM matching, product and alias upserts
         suggestions.ts       computeSuggestions(histories, today): pure function
         merge.ts             mergeProducts()
         receiptWarnings.ts   computeLineSum(), hasUnmatchedItemLine(): shared by receipts.ts and receiptLines.ts
+        proposalContext.ts   buildProposalContext(...): pure given its inputs; serialises history, calendar and list state for the propose call (T37)
       jobs/
         receiptProcessor.ts  queue, processReceipt(), requeueUnfinished()
       routes/
@@ -299,7 +303,7 @@ CREATE TABLE shopping_list_items (
   product_id    INTEGER REFERENCES products(id) ON DELETE SET NULL,
   name          TEXT NOT NULL,
   quantity_text TEXT,
-  source        TEXT NOT NULL CHECK (source IN ('suggested','manual')),
+  source        TEXT NOT NULL CHECK (source IN ('suggested','manual','ai')),
   reason        TEXT,
   checked       INTEGER NOT NULL DEFAULT 0,
   position      INTEGER NOT NULL,
@@ -313,6 +317,21 @@ CREATE TABLE shopping_list_dismissals (
   created_at TEXT NOT NULL,
   PRIMARY KEY (list_id, product_id)
 );
+
+CREATE TABLE shopping_list_proposals (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  list_id            INTEGER NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE,
+  model              TEXT NOT NULL,
+  prompt_version     INTEGER NOT NULL,
+  items_json         TEXT NOT NULL,
+  raw_response       TEXT NOT NULL,
+  prompt_tokens      INTEGER NOT NULL,
+  completion_tokens  INTEGER NOT NULL,
+  duration_ms        INTEGER NOT NULL,
+  accepted_json      TEXT,
+  created_at         TEXT NOT NULL
+);
+CREATE INDEX shopping_list_proposals_list ON shopping_list_proposals (list_id);
 ```
 
 Definitions:
@@ -331,6 +350,7 @@ Definitions:
 - `extraction_json` is the validated extraction result, `raw_response` the exact LLM text; both exist for debugging and for growing the eval set.
 - At most one shopping list has `status = 'open'` at a time; enforced in code.
 - A product dismissed from a list (removed while it had a `product_id`) is never re-added to that same list by a refresh; `shopping_list_dismissals` records it, `(list_id, product_id)`. T34.
+- A proposal (`shopping_list_proposals`) is applied only through `POST .../accept`; the model's answer never inserts rows on its own, and `accepted_json` (once set) makes a second accept on the same proposal a `409`. T37.
 - `PRODUCT_CATEGORIES` is the fixed list: `Frukt og grønt`, `Meieri`, `Kjøtt og fisk`, `Brød og bakevarer`, `Tørrvarer`, `Frossen`, `Drikke`, `Snacks`, `Husholdning`, `Hygiene`, `Annet`.
 - Migrations run with `foreign_keys` off and `PRAGMA foreign_key_check` after, because drizzle's SQLite table recreates would otherwise cascade-delete child rows.
 
@@ -472,6 +492,41 @@ Naming guidance in the prompt: Norwegian, singular, generic but specific enough 
 - `POST /api/products/:id/merge { intoProductId }` moves all lines and aliases from the source to the target, adds the source name as an alias of the target, and deletes the source.
 - `PATCH /api/products/:id` renames (uniqueness on `name_normalized`), sets category, or toggles `suppressed`.
 
+### 7.7 Proposal call (ADR-0016)
+
+Request to the active provider (Kimi or Grok), text only, no image:
+
+- `model`: the active provider's model, same as extraction and matching.
+- `messages`: one `system` message with the prompt from `proposeList.prompt.ts`; one `user` message with the serialised context from `buildProposalContext` (`src/server/domain/proposalContext.ts`) as JSON text.
+- `response_format: { type: 'json_object' }`.
+- `max_tokens: 4000`.
+- Same timeout and retry configuration as extraction and matching; `thinking` sent only for Kimi, as elsewhere.
+
+The context (`buildProposalContext({ histories, list, dismissedProductIds, previousProposals, today })`):
+
+- `today`, the weekday in Norwegian, the ISO week, and `calendarEvents(today)` (`src/shared/calendar.ts`) for the next three weeks.
+- `products`: every non-suppressed product with at least one purchase in the last 26 weeks — the recent scope; anything older is not sent at all — as `{ id, name, category, purchases: [...] }`, dates descending, at most the last 12 purchases per product; flags `onList`, `dismissed` (T34 dismissals for this list) and `rejected` (proposed by an earlier proposal on this list and not accepted).
+- `listItems`: the names on the list now, checked or not, so manual items without a product are visible too.
+- A size guard: a serialised context over 40,000 characters drops purchases older than 12 weeks first, then caps products at 250 by most recent purchase; one `warn` log line records the counts.
+
+The prompt asks for 5 to 15 additions for one weekly trip covering the coming seven days (the same frame as T36), weighing the last 8 weeks most, varying dinner items against the last 2 weeks of dinner-bearing purchases, and using the date and calendar events for seasonal and calendar-driven goods; season itself (grilling, strawberries, fårikål, lutefisk and the like) is left to the model's own knowledge of the date, not enumerated in the prompt.
+It must never propose something `onList`, `dismissed`, `rejected`, or bought in the last 3 days.
+
+Expected output, one JSON object:
+
+```json
+{
+  "items": [
+    { "productId": 42, "name": "Lettmelk 1 l", "category": "Meieri", "quantityText": "2 stk", "reason": "Ikke kjøpt på 9 dager, kjøpes normalt hver uke", "kind": "vane" },
+    { "productId": null, "name": "Appelsin", "category": "Frukt og grønt", "quantityText": "1 kg", "reason": "Sesongvare i september", "kind": "sesong" },
+    { "productId": null, "name": "Godteri", "category": "Snacks", "quantityText": "1 pose", "reason": "Halloween 31. oktober", "kind": "merkedag" }
+  ]
+}
+```
+
+`runProposal(llm, context)` (`src/server/llm/proposeList.ts`) parses this with zod, then: drops an item whose `productId` is not in the context or whose `category` is not in `PRODUCT_CATEGORIES` (one `warn` log naming the count, never the text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought in the last 3 days as a defence against the model ignoring the prompt's own rule, and returns at most 15 items.
+`OpenAiCompatibleClient`'s `stageFor` maps the `propose` purpose to a new `ExtractionStage` value, `'proposal'`; a failure surfaces as an `AppError` with the Norwegian message "Kunne ikke lage forslag, prøv igjen".
+
 ## 8. Suggestion engine (`domain/suggestions.ts`, ADR-0008)
 
 Pure function `computeSuggestions(histories, today)`.
@@ -503,6 +558,8 @@ Chips bought 08-31 and 09-01 → one purchase week → `n = 1` → skipped.
 Bananas bought 08-26 and 09-02 → `medianGap 7`, `daysSinceLast 2`, `dueIn 5 < 7` → suggested (T36; before this task it was skipped as bought this trip).
 Eggs bought 08-27 and 09-03 → `daysSinceLast 1` → skipped, bought yesterday.
 Milk bought 08-17 (2), 08-20 (2), 08-24 (2) and 08-27 (2) → purchase weeks 34 and 35 with weekly sums 4 and 4, `medianGap 7`, `daysSinceLast 8`, `dueIn −1 < 7` → suggested with `quantityText 4 stk`.
+
+This engine fills every new list and stays the deterministic baseline; it cannot know season, calendar events or variation, which is what `Foreslå med AI` (section 7.7, ADR-0016) adds on top, explicitly and only when the user asks for it.
 
 ## 9. API contract
 
@@ -546,8 +603,14 @@ type Suggestion = { productId: number; name: string; category: string | null; re
 type ShoppingList = {
   id: number; weekStart: string; status: 'open' | 'done'; createdAt: string; completedAt: string | null;
   items: { id: number; productId: number | null; name: string; quantityText: string | null;
-           source: 'suggested' | 'manual'; reason: string | null; checked: boolean; position: number;
+           source: 'suggested' | 'manual' | 'ai'; reason: string | null; checked: boolean; position: number;
            category: string | null }[];
+};
+
+type ShoppingListProposal = {
+  id: number; createdAt: string; model: string;
+  items: { index: number; productId: number | null; name: string; category: string | null;
+           quantityText: string | null; reason: string; kind: 'sesong' | 'merkedag' | 'variasjon' | 'vane' }[];
 };
 ```
 
@@ -584,7 +647,9 @@ type ShoppingList = {
 | `POST /api/shopping-lists/:id/reopen` | — | `200 ShoppingList` | Only when `done`, `completedAt` falls on today's date in Europe/Oslo (`todayInOslo`), and no list is `open`; sets `open` and clears `completedAt`. `409 Listen kan ikke gjenåpnes` otherwise. T31. |
 | `DELETE /api/shopping-lists/:id` | — | `204` | Only when `open`; items cascade. `409 En fullført liste kan ikke slettes` when `done`. History is never deleted. T31. |
 | `GET /api/shopping-lists?limit=20` | — | `200 ShoppingListSummary[]` | History, `weekStart` descending, `id` descending tiebreak. `ShoppingListSummary` is `ShoppingList` without `items`, plus `itemCount` (the same relationship `ReceiptSummary` has to `ReceiptDetail`). Phase 2 (T23). |
-| `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[] }` | `months` is the `months` most recent calendar months ending with today, oldest first, every month present even at zero; a `done` receipt with no `purchasedAt` is excluded from every month. `topProducts` is the all-time top 10 by `timesBought` (not scoped to `months`, same fields as `GET /api/products`), suppressed included. Phase 2 (T23). |
+| `POST /api/shopping-lists/:id/proposals` | — | `201 ShoppingListProposal` | Only when `open`, else `409 Listen er ikke åpen`; `404` when missing. Builds the context, calls the LLM, stores the row (filtered items, raw response, tokens, duration); logs one `info` line with usage. Synchronous, like `rematch`; may take 20–60 s. T37. |
+| `POST /api/shopping-lists/:id/proposals/:proposalId/accept` | `{ indexes: number[] }` | `200 ShoppingList` | Inserts the chosen items, `source = 'ai'`; records `accepted_json`, possibly empty. `409` when the proposal already has `accepted_json` or the list is not `open`; `404` when the proposal does not belong to the list; an index whose product is meanwhile on the list is skipped. T37. |
+| `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[], aiProposals: { proposals, proposedItems, acceptedItems } }` | `months` is the `months` most recent calendar months ending with today, oldest first, every month present even at zero; a `done` receipt with no `purchasedAt` is excluded from every month. `topProducts` is the all-time top 10 by `timesBought` (not scoped to `months`, same fields as `GET /api/products`), suppressed included. `aiProposals` is all-time counts over `shopping_list_proposals`, the acceptance-rate inputs (ADR-0016). Phase 2 (T23); `aiProposals` T37. |
 
 ## 10. Frontend
 
@@ -593,7 +658,7 @@ type ShoppingList = {
 | Route | Page | Content |
 | --- | --- | --- |
 | `/login` | LoginPage | Password field. |
-| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; the row (checkbox and text) toggles checked, and a pencil button on each item edits name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Oppdater forslag` (adds today's new suggestions without touching the user's own edits, and reports `x varer lagt til` or `Ingen nye forslag`), `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32, T34. |
+| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; the row (checkbox and text) toggles checked, and a pencil button on each item edits name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Oppdater forslag` (adds today's new suggestions without touching the user's own edits, and reports `x varer lagt til` or `Ingen nye forslag`), `Foreslå med AI` (reads `Tenker… (x s)` while pending, since a call may take 20–60 s; the answer renders as a panel above the buttons with every item pre-checked, its reason and a kind chip, `Legg til valgte (n)` and `Avbryt`), `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32, T34, T37. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
 | `/receipts` | ReceiptsPage | List with store, date as `4. sep. · 3 dager siden`, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
 | `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), the receipt image in a sticky, scrollable panel: toggled with `Vis bilde` on a phone, always beside the lines on desktop, tap opens the full image (T35), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. |
@@ -671,6 +736,7 @@ The guard runs before routing, so an unauthenticated request to an unknown `/api
 ### Privacy
 
 Receipt images and extracted text are sent to Moonshot AI for processing (ADR-0003).
+`Foreslå med AI` sends the household's purchase history as text to the same active provider for one call per tap (ADR-0016); no images.
 Receipts can contain store location, loyalty card ids and the last digits of a payment card.
 This is accepted for a personal household tool; do not scan documents with full card numbers or national ids.
 The database, including images, is replicated to the household S3 bucket only.

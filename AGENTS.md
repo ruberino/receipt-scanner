@@ -26,4 +26,5 @@ The architecture and the ADRs are normative; a task that disagrees with them is 
 - Tests inject `FakeLlmClient` and stay off the network.
   `eval/run.ts` is the only code that talks to Kimi, and every run costs money.
 - A change to a prompt, the default model, the thinking mode or an LLM output schema ships with an `npm run eval:extraction` run in the PR, and the aggregate metrics must not regress.
+  The list-proposal prompt has no ground truth and is measured by acceptance rate instead (ADR-0016).
 - Dependencies are pinned to exact versions at the newest stable release, per the policy in `docs/architecture.md` section 3.
