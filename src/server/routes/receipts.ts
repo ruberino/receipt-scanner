@@ -8,6 +8,7 @@ import { isUniqueViolation } from '../db/client.ts';
 import { products, receiptImages, receiptLines, receipts } from '../db/schema.ts';
 import { findPossibleDuplicate } from '../domain/extraction.ts';
 import { matchLines, type MatchLinesWarning } from '../domain/matching.ts';
+import { computeLineSum, TOTAL_MATCH_TOLERANCE_ORE } from '../domain/receiptWarnings.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
 import { normaliseImage } from '../lib/images.ts';
 
@@ -22,8 +23,6 @@ const listQuerySchema = z.object({
   before: z.coerce.number().int().positive().optional(),
 });
 const MATCHING_WARNINGS: readonly MatchLinesWarning[] = ['UNMATCHED_LINES', 'MATCHING_FAILED'];
-const LINE_SUM_KINDS: readonly string[] = ['item', 'discount', 'deposit'];
-const TOTAL_MATCH_TOLERANCE_ORE = 100;
 
 function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: number) {
   return {
@@ -57,17 +56,6 @@ function loadLineCounts(db: AppDatabase, receiptIds: number[]): Map<number, numb
 
 function loadLineCount(db: AppDatabase, receiptId: number): number {
   return loadLineCounts(db, [receiptId]).get(receiptId) ?? 0;
-}
-
-/** Sum of item/discount/deposit line totals for the total-mismatch check; `other` lines are excluded. */
-function computeLineSum(db: AppDatabase, receiptId: number): number {
-  return db
-    .select({ kind: receiptLines.kind, totalOre: receiptLines.totalOre })
-    .from(receiptLines)
-    .where(eq(receiptLines.receiptId, receiptId))
-    .all()
-    .filter((line) => LINE_SUM_KINDS.includes(line.kind))
-    .reduce((sum, line) => sum + line.totalOre, 0);
 }
 
 function buildReceiptDetail(app: FastifyInstance, receipt: typeof receipts.$inferSelect) {

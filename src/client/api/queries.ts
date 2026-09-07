@@ -8,6 +8,7 @@ import {
 import type {
   CreateShoppingListItemRequest,
   PatchProductRequest,
+  PatchReceiptLineFieldsRequest,
   PatchReceiptLineRequest,
   PatchReceiptRequest,
   Product,
@@ -167,6 +168,30 @@ export function useUpdateReceiptLine(receiptId: number) {
         method: 'PATCH',
         body: JSON.stringify(body),
       }),
+    onSuccess: () => invalidateReceiptRelated(queryClient, receiptId),
+  });
+}
+
+/** T29: the amount/quantity/kind body, distinct from useUpdateReceiptLine's product-matching bodies. */
+export function useUpdateReceiptLineFields(receiptId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ lineId, ...body }: { lineId: number } & PatchReceiptLineFieldsRequest) =>
+      fetchJson<ReceiptLine>(`/api/receipt-lines/${lineId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => invalidateReceiptRelated(queryClient, receiptId),
+  });
+}
+
+export function useDeleteReceiptLine(receiptId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (lineId: number) =>
+      fetchJson<void>(`/api/receipt-lines/${lineId}`, { method: 'DELETE' }),
     onSuccess: () => invalidateReceiptRelated(queryClient, receiptId),
   });
 }

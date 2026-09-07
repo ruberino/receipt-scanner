@@ -31,7 +31,8 @@ export const receiptSummarySchema = z.object({
 
 export type ReceiptSummary = z.infer<typeof receiptSummarySchema>;
 
-const lineKindSchema = z.enum(['item', 'discount', 'deposit', 'other']);
+export const lineKindSchema = z.enum(['item', 'discount', 'deposit', 'other']);
+export type LineKind = z.infer<typeof lineKindSchema>;
 const lineUnitSchema = z.enum(['stk', 'kg', 'l']).nullable();
 const matchSourceSchema = z.enum(['alias', 'llm', 'user']).nullable();
 
@@ -75,6 +76,19 @@ export const patchReceiptSchema = z
 
 export type PatchReceiptRequest = z.infer<typeof patchReceiptSchema>;
 
+export const patchReceiptLineFieldsSchema = z
+  .object({
+    totalOre: z.number().int(),
+    quantity: z.number().positive(),
+    unitPriceOre: z.number().int().nullable(),
+    kind: lineKindSchema,
+  })
+  .partial()
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, 'Minst ett felt må endres');
+
+export type PatchReceiptLineFieldsRequest = z.infer<typeof patchReceiptLineFieldsSchema>;
+
 export const patchReceiptLineSchema = z.union([
   z.object({ productId: z.number().int().positive() }).strict(),
   z
@@ -83,6 +97,7 @@ export const patchReceiptLineSchema = z.union([
       category: productCategorySchema.optional(),
     })
     .strict(),
+  patchReceiptLineFieldsSchema,
 ]);
 
 export type PatchReceiptLineRequest = z.infer<typeof patchReceiptLineSchema>;
