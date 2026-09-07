@@ -16,11 +16,29 @@ provider `.env` selects: `LLM_PROVIDER=kimi` (the default) requires a real `MOON
 `LLM_PROVIDER=grok` requires a real `XAI_API_KEY`.
 It reads every photo under `eval/receipts/` that has a matching `<photo>.expected.json`, runs the
 real extraction on each, prints a table and an aggregate, and writes
-`eval/results/<date>-v<promptVersion>-<model>.json` — the model name in the filename, so comparing
-Kimi against Grok is a diff of two results files (run once with each `LLM_PROVIDER`).
+`eval/results/<date>-v<promptVersion>-<model>.json` — for Kimi, with a `-thinking` or `-nothinking`
+suffix, since `KIMI_THINKING` changes results as much as the model does and the two must not
+overwrite each other's file.
 
 A photo with no matching `.expected.json` is skipped, not an error, so a folder half-annotated
 with ground truth still runs on the photos that are ready.
+
+## Comparing providers and thinking modes
+
+Price is not a deciding factor here — a long receipt costs a few US cents on any candidate — so the
+provider and model are chosen on reading quality alone, by this harness.
+The comparison is a small matrix, one `eval:extraction` run per row, each writing its own results
+file:
+
+| `LLM_PROVIDER`   | `KIMI_THINKING`                        | Results filename suffix      |
+| ---------------- | -------------------------------------- | ---------------------------- |
+| `kimi` (default) | `disabled` (default, today's baseline) | `-kimi-k2.6-nothinking.json` |
+| `kimi`           | `enabled`                              | `-kimi-k2.6-thinking.json`   |
+| `grok`           | — (no thinking mode)                   | `-grok-4.6.json`             |
+
+Every results file also records `provider` and `thinking` (`null` for a provider with no thinking
+mode) as fields, not just in the filename, so a row is identifiable even if renamed.
+Comparing two rows is a diff of their `aggregate` blocks.
 
 ## The expected-JSON shape
 
@@ -102,8 +120,8 @@ without a regression case is a bug that can come back silently.
 household receipt photos and stay out of git entirely (`.gitignore`); the app's own architecture
 already treats them as private (`docs/architecture.md` section 5).
 
-A committed results file (`eval/results/*.json`) holds only numbers and booleans, keyed by
-filename — metrics, token counts, duration, the prompt version and model — never the extracted
-store name, item texts or amounts as text.
+A committed results file (`eval/results/*.json`) holds only numbers, booleans and short
+identifying strings, keyed by filename — metrics, token counts, duration, the prompt version,
+model, provider and thinking mode — never the extracted store name, item texts or amounts as text.
 A results file is safe to commit and share as the regression record without it revealing what the
 household bought.

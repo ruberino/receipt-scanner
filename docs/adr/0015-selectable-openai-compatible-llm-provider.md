@@ -37,6 +37,7 @@ Verified facts from `docs.x.ai` on 2026-09-07:
 - Two API keys to manage on Render (`MOONSHOT_API_KEY`, `XAI_API_KEY`), though only the active provider's key is required at startup.
 - The client file and its test carry both providers' request-shaping logic; this is one conditional (`thinking` only for Kimi) rather than two client classes, since every other field is identical.
 - A provider switch is an environment change, not a deploy of different code, so rolling back a bad model choice is instant.
+- Price is not a factor in the provider or model choice: a long receipt costs a few US cents on any candidate here, negligible at one receipt a week. The decision is reading quality alone, measured by the eval harness (`eval/README.md`'s comparison matrix: `kimi-k2.6` with `KIMI_THINKING` disabled and enabled, and `grok-4.6`).
 
 ## Alternatives considered
 
