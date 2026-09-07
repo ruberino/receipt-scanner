@@ -35,6 +35,17 @@ export function formatRelativeDate(date: string, today: string = todayLocalIso()
   return SHORT_DATE_FORMATTER.format(toUtcDate(date));
 }
 
+/**
+ * `formatDateWithRelative('2026-09-04')` → `4. sep. · 3 dager siden` (today 2026-09-07): the
+ * short date, then the relative form, unless the receipt is over 30 days old, in which case
+ * `formatRelativeDate` already returns that same short date and it is shown once, not twice (T33).
+ */
+export function formatDateWithRelative(date: string, today: string = todayLocalIso()): string {
+  const shortDate = SHORT_DATE_FORMATTER.format(toUtcDate(date));
+  const relative = formatRelativeDate(date, today);
+  return relative === shortDate ? shortDate : `${shortDate} · ${relative}`;
+}
+
 /** `formatMonth('2026-07')` → `jul. 2026`. */
 export function formatMonth(month: string): string {
   const [year, monthNumber] = month.split('-').map(Number);

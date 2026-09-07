@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatDate,
+  formatDateWithRelative,
   formatOre,
   formatRelativeDate,
   formatWeek,
@@ -30,6 +31,22 @@ describe('formatRelativeDate', () => {
 
   it('returns a short date without a year beyond 30 days', () => {
     expect(formatRelativeDate('2026-08-06', '2026-09-06')).toBe('6. aug.');
+  });
+});
+
+describe('formatDateWithRelative (T33)', () => {
+  it('shows the short date and "i dag" for today', () => {
+    expect(formatDateWithRelative('2026-09-07', '2026-09-07')).toBe('7. sep. · i dag');
+  });
+
+  it('shows the short date and the days-ago form within 30 days', () => {
+    expect(formatDateWithRelative('2026-09-04', '2026-09-07')).toBe('4. sep. · 3 dager siden');
+  });
+
+  it('shows the short date once, not twice, beyond 30 days', () => {
+    // Not July: nb-NO's short month form leaves "juli" unabbreviated (no trailing "."), which
+    // would make a same-string comparison pass for the wrong reason.
+    expect(formatDateWithRelative('2026-08-01', '2026-09-07')).toBe('1. aug.');
   });
 });
 

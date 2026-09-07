@@ -2,7 +2,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   MonthlyStats,
   Product,
@@ -140,6 +140,10 @@ function mockScan(
 }
 
 describe('ReceiptsPage', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows a loading state before the first fetch resolves', () => {
     mockList([]);
     mockScan();
@@ -224,6 +228,39 @@ describe('ReceiptsPage', () => {
 
     expect(screen.getByText(/^Lastet opp /)).toBeInTheDocument();
     expect(screen.getAllByText('–')).toHaveLength(1);
+  });
+
+  it('shows the date and the relative form together for a purchased receipt (T33)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T10:00:00.000Z'));
+    mockList([[receipt({ id: 1, purchasedAt: '2026-09-04' })]]);
+    mockScan();
+
+    renderReceiptsPage();
+
+    expect(screen.getByText('4. sep. · 3 dager siden')).toBeInTheDocument();
+  });
+
+  it('reads the upload date through Oslo local time, not a naive UTC slice (T19 F1, T33)', () => {
+    vi.useFakeTimers();
+    // Far past any 30-day relative window either interpretation could produce, so the assertion
+    // isolates the date conversion itself rather than the relative-days branch.
+    vi.setSystemTime(new Date('2026-12-01T12:00:00.000Z'));
+    mockList([
+      [
+        receipt({
+          id: 1,
+          purchasedAt: null,
+          // 22:30 UTC on 7 September is already past midnight (00:30 CEST) on the 8th in Oslo.
+          createdAt: '2026-09-07T22:30:00.000Z',
+        }),
+      ],
+    ]);
+    mockScan();
+
+    renderReceiptsPage();
+
+    expect(screen.getByText('Lastet opp 8. sep.')).toBeInTheDocument();
   });
 
   it('links each row to its receipt', () => {
