@@ -150,6 +150,64 @@ function formatKronerText(totalOre: number | null): string {
   return ((totalOre ?? 0) / 100).toFixed(2).replace('.', ',');
 }
 
+/** A tap opens the full image in a new tab, for pinch-zoom (T35). */
+function ReceiptImageLink({ imageUrl, className }: { imageUrl: string; className?: string }) {
+  return (
+    <a href={imageUrl} target="_blank" rel="noreferrer" className={className}>
+      <img src={imageUrl} alt="Kvitteringsbilde" className="w-full rounded" />
+    </a>
+  );
+}
+
+const IMAGE_PANEL_STORAGE_KEY = 'receipt-image-panel';
+
+function readImagePanelPreference(): boolean {
+  try {
+    return sessionStorage.getItem(IMAGE_PANEL_STORAGE_KEY) === 'shown';
+  } catch {
+    return false;
+  }
+}
+
+function writeImagePanelPreference(visible: boolean): void {
+  try {
+    sessionStorage.setItem(IMAGE_PANEL_STORAGE_KEY, visible ? 'shown' : 'hidden');
+  } catch {
+    // Private browsing or disabled storage: the toggle still works for this page view.
+  }
+}
+
+/**
+ * Phone-only toggle, directly under the header's warning chips (T35). The desktop two-column
+ * layout shows the image unconditionally instead, so this whole block is `md:hidden`.
+ */
+function ReceiptImageToggle({ imageUrl }: { imageUrl: string }) {
+  const [visible, setVisible] = useState(readImagePanelPreference);
+
+  function toggle() {
+    const next = !visible;
+    setVisible(next);
+    writeImagePanelPreference(next);
+  }
+
+  return (
+    <div className="md:hidden">
+      <button
+        type="button"
+        onClick={toggle}
+        className="mx-4 min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
+      >
+        {visible ? 'Skjul bilde' : 'Vis bilde'}
+      </button>
+      {visible && (
+        <div className="sticky top-0 z-10 mt-2 h-[45vh] overflow-auto bg-gray-100">
+          <ReceiptImageLink imageUrl={imageUrl} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
   const [storeName, setStoreName] = useState(receipt.storeName ?? '');
   const [purchasedAt, setPurchasedAt] = useState(receipt.purchasedAt ?? '');
@@ -356,14 +414,20 @@ export default function ReceiptPage() {
   }
 
   return (
-    <div className="flex flex-col">
-      <ReceiptHeader key={data.id} receipt={data} />
-      <div className="px-4">
-        {data.lines.map((line) => (
-          <ReceiptLineRow key={line.id} line={line} receiptId={data.id} />
-        ))}
+    <div className="flex flex-col md:flex-row md:items-start md:gap-4 md:p-4">
+      <div className="hidden md:sticky md:top-0 md:block md:max-h-[calc(100vh-4rem)] md:w-1/2 md:overflow-auto">
+        <ReceiptImageLink imageUrl={data.imageUrl} />
       </div>
-      <ReceiptActions receipt={data} />
+      <div className="flex flex-col md:w-1/2">
+        <ReceiptHeader key={data.id} receipt={data} />
+        <ReceiptImageToggle imageUrl={data.imageUrl} />
+        <div className="px-4">
+          {data.lines.map((line) => (
+            <ReceiptLineRow key={line.id} line={line} receiptId={data.id} />
+          ))}
+        </div>
+        <ReceiptActions receipt={data} />
+      </div>
     </div>
   );
 }

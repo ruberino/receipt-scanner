@@ -99,6 +99,7 @@ describe('ReceiptPage — done state', () => {
   let deleteMutate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    sessionStorage.clear();
     vi.mocked(useScanReceipt).mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
@@ -324,6 +325,48 @@ describe('ReceiptPage — done state', () => {
     await user.click(screen.getByRole('button', { name: 'Slett kvittering' }));
 
     expect(deleteMutate).not.toHaveBeenCalled();
+  });
+
+  it('shows the receipt image beside the lines, linking to the full image (T35)', () => {
+    mockReceipt(baseReceipt({ imageUrl: '/api/receipts/1/image' }));
+    renderReceiptPage();
+
+    const links = screen.getAllByRole('link', { name: 'Kvitteringsbilde' });
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link).toHaveAttribute('href', '/api/receipts/1/image');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noreferrer');
+    }
+  });
+
+  it('hides the image panel by default and toggles it with "Vis bilde"/"Skjul bilde" (T35)', async () => {
+    mockReceipt(baseReceipt());
+    renderReceiptPage();
+    const user = userEvent.setup();
+
+    // One image always renders for the desktop column (shown via a `md:` class, not JS); the
+    // toggle adds a second, separate one for the phone panel.
+    expect(screen.getAllByRole('img', { name: 'Kvitteringsbilde' })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Vis bilde' }));
+    expect(screen.getAllByRole('img', { name: 'Kvitteringsbilde' })).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Skjul bilde' }));
+    expect(screen.getAllByRole('img', { name: 'Kvitteringsbilde' })).toHaveLength(1);
+  });
+
+  it('remembers the image panel preference in sessionStorage across a remount (T35)', async () => {
+    mockReceipt(baseReceipt());
+    const { unmount } = renderReceiptPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Vis bilde' }));
+    expect(sessionStorage.getItem('receipt-image-panel')).toBe('shown');
+    unmount();
+
+    renderReceiptPage();
+    expect(screen.getByRole('button', { name: 'Skjul bilde' })).toBeInTheDocument();
   });
 
   it('renders item lines with a product picker and greys out discount/deposit lines without one', () => {
