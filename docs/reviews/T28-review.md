@@ -1,8 +1,9 @@
 # Review: T28 — Kvitteringer
 
 Review of pull request #3, commits `167cede` and `19a6b5e` (T28) on `task/T28-legible-long-receipts`, 2026-09-07.
-Verdict: not yet approved; four required items (F1–F4) below, all small.
-The image pipeline, the segmenting and prompt version 2 are right; what is missing is one test the PR claims to cover, one phone-side guard, one correction to the eval wording and the results files.
+Verdict at first pass: not yet approved; four required items (F1–F4) below, all small.
+The image pipeline, the segmenting and prompt version 2 are right; what was missing was one test the PR claims to cover, one phone-side guard, one correction to the eval wording and the results files.
+F1–F4 were done in `16b1893` and `60869b2` and verified by the foreman; see the go-ahead at the end.
 
 ## What was verified
 
@@ -49,3 +50,11 @@ This set cannot yet say anything about long receipts: the four Kiwi files in `ev
 - When the remainder after the last full step is at most the overlap, the final segment is nearly all overlap (121 px tall for a 2001 px image); harmless.
 - `toDataUrl` hard-codes `image/jpeg`; correct, because `normaliseImage` always writes JPEG, and `receipt_images.mime_type` is only ever that value.
 - `eval/receipts/2026-09-07-kiwi-receipt-7.jpg` and `2026-09-07-receipt-13.jpg` are byte-identical (receipt 7 was deleted and re-uploaded as 13); the foreman will drop the duplicate locally.
+
+## Go-ahead, 2026-09-07
+
+F1–F4 verified at `60869b2`: the EXIF tests match the foreman's probe, the canvas guard returns the file unchanged above 16 777 216 px and still draws at 3000×4000, the tasks.md and README wording is as required, and the two results files are byte-identical to the foreman's run.
+All five scripts exit 0 in a clean worktree at `16b1893` (the code head; `60869b2` adds only docs and results), 511 tests, Vitest at two workers.
+Approved: commit this file on the branch, replace the "Outstanding" paragraph in the PR description with the eval table and the sentence on issues #4 and #5, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
+After the merge the foreman updates the demo, and Ruben re-uploads the long Kiwi receipts from their originals; their expected JSON and the provider decision follow in a later task.
+T29 is next.
