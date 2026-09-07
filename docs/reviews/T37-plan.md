@@ -113,7 +113,7 @@ Tests: calendar dates; context builder (26-week scope, flags, size guard); promp
 
 ## Real-data check after merge
 
-The foreman runs one proposal on the demo list with Grok and one with Kimi and records both raw proposals in the review file (names and reasons only), so Ruben can judge the first quality by eye before the acceptance rate exists.
+The foreman runs one proposal on the demo list with Grok and one with Kimi; the review file records only counts, the kind distribution and durations (the repository is public and purchases are private), and the item names and reasons go to Ruben directly, so he can judge the first quality by eye before the acceptance rate exists.
 
 ## Gate
 
