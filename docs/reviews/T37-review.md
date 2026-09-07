@@ -40,3 +40,30 @@ All five scripts exit 0 in a clean worktree at `2a39ef6`, 685 tests, Vitest at t
 Approved: re-read this file, commit it on the branch together with the plan-file correction, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
 After the merge the foreman updates the demo once its scan queue is empty and runs the real-data check (one proposal with Grok, one with Kimi) as described above.
 The Kvitteringer queue is empty after this task.
+
+## Real-data check, 2026-09-07
+
+Run by the foreman on the demo at `c5faa72` against the household database: 26 receipts from July to September 2026, 235 products, a fresh list with 36 engine suggestions in each run.
+One proposal per provider through `POST /api/shopping-lists/:id/proposals`, the temporary list deleted afterwards (its proposal rows go with it through the cascade).
+
+| Provider | Duration | Prompt / completion tokens | Items | Kinds | New products |
+| --- | --- | --- | --- | --- | --- |
+| Grok 4.6 | 210 s | 18 216 / 610 | 10 | vane 6, variasjon 2, sesong 2 | 0 |
+| Kimi K2.6, thinking off | 16 s | 17 214 / 884 | 9 | sesong 5, variasjon 3, vane 1 | 8 |
+
+Both calls returned `201`, both parsed on the first attempt with `finishReason: stop`, and the filters (on the list, dismissed, bought today or yesterday) had nothing left to remove.
+
+Judgement:
+
+- Grok stays inside the purchase history.
+  Every item is a known product, every reason names the last purchase date or an item already on the list, and the seasonal picks fit September.
+  Three and a half minutes is too long to wait in a shop; the live timer keeps the panel honest, but the wait itself is the finding, and it matches the extraction timings in the eval matrix.
+- Kimi answers in sixteen seconds and leans on the season.
+  Five of nine items are seasonal produce or dishes it names as new products, one of them a whole dish with two ingredients written into the quantity field instead of a product.
+  The reasons are as concrete as Grok's.
+  The novel items arrive with categories from the model, which F2 made visible in the grouped list.
+- Both runs tripped the size guard without effect: 235 of 235 products survived the narrowing because every purchase already lies inside the 12-week fallback, so the `warn` line will now appear on every proposal.
+  Filed as issue #15; not a blocker for the feature.
+- Acceptance rate is the metric (ADR-0016).
+  These two runs show the feature working end to end on real data for both providers; they are not a quality verdict.
+  Whether the proposal should run on a faster provider than extraction is a product question for Ruben, recorded as a follow-up, not decided here.
