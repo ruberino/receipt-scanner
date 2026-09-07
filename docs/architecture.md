@@ -509,6 +509,7 @@ type ReceiptSummary = {
   id: number; status: ReceiptStatus; storeName: string | null; purchasedAt: string | null;
   totalOre: number | null; lineCount: number; warnings: string[]; errorMessage: string | null;
   possibleDuplicateOf: number | null; reviewedAt: string | null; createdAt: string;
+  updatedAt: string;
 };
 
 type ReceiptLine = {
@@ -581,7 +582,7 @@ type ShoppingList = {
 | `/` | ShoppingListPage | The open list with check-off, add item, remove item, "Ferdig handlet"; when there is no open list, a preview of suggestions and a "Lag handleliste" button. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
 | `/receipts` | ReceiptsPage | List with store, date, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
-| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and "Leser kvittering…" with polling. When `failed`: error and "Prøv igjen", which calls scan. When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. |
+| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. |
 | `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed. |
 | `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product, aliases with delete, purchase history. |
 
