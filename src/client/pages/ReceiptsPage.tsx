@@ -8,7 +8,8 @@ import type {
 } from '../../shared/schemas.ts';
 import { formatOre } from '../../shared/money.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
-import { formatMonth, formatRelativeDate, formatWeek } from '../lib/format.ts';
+import { todayInOslo } from '../../shared/dates.ts';
+import { formatDateWithRelative, formatMonth, formatWeek } from '../lib/format.ts';
 import {
   useReceiptsList,
   useScanReceipt,
@@ -40,9 +41,12 @@ function storeNameLabel(receipt: ReceiptSummary): string {
 
 function dateLabel(receipt: ReceiptSummary): string {
   if (receipt.purchasedAt !== null) {
-    return formatRelativeDate(receipt.purchasedAt);
+    return formatDateWithRelative(receipt.purchasedAt);
   }
-  return `Lastet opp ${formatRelativeDate(receipt.createdAt.slice(0, 10))}`;
+  // createdAt is a UTC timestamp; converting through the Oslo civil date (rather than slicing the
+  // UTC one) avoids reading an upload just after midnight Oslo time as "i går" (T33, deferred T19 F1).
+  const createdAtOsloDate = todayInOslo(new Date(receipt.createdAt));
+  return `Lastet opp ${formatDateWithRelative(createdAtOsloDate)}`;
 }
 
 function shoppingListStatusLabel(status: ShoppingListSummary['status']): string {
