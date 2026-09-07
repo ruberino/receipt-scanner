@@ -59,7 +59,7 @@ System prompt, in English like the others, stating:
 - Output: exactly one JSON object `{ "items": [ { "productId": number | null, "name": string, "category": one of PRODUCT_CATEGORIES, "quantityText": string | null, "reason": string, "kind": "sesong" | "merkedag" | "variasjon" | "vane" } ] }`; `name` is the known product's exact name when `productId` is set, else a new name following the matching prompt's naming guidance; `reason` in Norwegian, at most 120 characters, concrete ("Halloween 31. oktober", "Ikke kjøpt fisk på to uker, sist var kjøttdeig og pølser").
 - One worked example with three items of different kinds.
 
-`src/server/llm/proposeList.ts`: `runProposal(llm, context)` builds the request (`purpose: 'propose'`, `maxTokens: 4000`), parses with a zod schema, drops items whose `productId` is not in the context or whose category is unknown (with a `warn` log naming how many were dropped, never their text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought in the last 3 days as a defence against the model ignoring the rule, and returns at most 15 items.
+`src/server/llm/proposeList.ts`: `runProposal(llm, context)` builds the request (`purpose: 'propose'`, `maxTokens: 4000`), parses with a zod schema, drops items whose `productId` is not in the context or whose category is unknown (with a `warn` log naming how many were dropped, never their text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought today or yesterday (the engine's step 3 rule, T36) as a defence against the model ignoring the rule, and returns at most 15 items.
 `OpenAiCompatibleClient.stageFor` maps `propose` to a new stage `proposal`; errors surface as an `AppError` subclass with `userMessage` `Kunne ikke lage forslag, prøv igjen`.
 
 ## API
@@ -98,7 +98,7 @@ Steps: see `docs/reviews/T37-plan.md`.
 
 Acceptance criteria:
 
-- `Foreslå med AI` on an open list produces a proposal of 5 to 15 items with Norwegian reasons and kinds, none of which is on the list, dismissed, rejected earlier on this list, or bought in the last 3 days.
+- `Foreslå med AI` on an open list produces a proposal of 5 to 15 items with Norwegian reasons and kinds, none of which is on the list, dismissed, rejected earlier on this list, or bought today or yesterday (the engine's step 3 rule, T36).
 - Products with no purchase in the last 26 weeks are not in the context sent to the model.
 - On 2026-10-15 the calendar context contains Halloween; on 2026-09-07 it does not; Easter 2026 falls on 5 April.
 - Accepting three of seven items adds exactly those three as `source = 'ai'` with their reasons, records the accepted indexes, and a second accept gives `409`.
