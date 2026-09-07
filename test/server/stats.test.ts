@@ -4,6 +4,7 @@ import {
   products,
   receiptLines,
   receipts,
+  shoppingListItems,
   shoppingListProposals,
   shoppingLists,
 } from '../../src/server/db/schema.ts';
@@ -256,6 +257,7 @@ describe('GET /api/stats/summary', () => {
       proposals: 2,
       proposedItems: 4,
       acceptedItems: 2,
+      boughtItems: 0,
     });
   });
 
@@ -273,6 +275,106 @@ describe('GET /api/stats/summary', () => {
       proposals: 0,
       proposedItems: 0,
       acceptedItems: 0,
+      boughtItems: 0,
+    });
+  });
+
+  describe('trips (T39)', () => {
+    function insertDoneList(
+      weekStart: string,
+      overrides: Partial<typeof shoppingLists.$inferInsert> = {},
+    ): number {
+      return app!.db
+        .insert(shoppingLists)
+        .values({ weekStart, status: 'done', createdAt: NOW, completedAt: NOW, ...overrides })
+        .returning()
+        .get().id;
+    }
+
+    function insertListItem(
+      listId: number,
+      position: number,
+      overrides: Partial<typeof shoppingListItems.$inferInsert> = {},
+    ): void {
+      app!.db
+        .insert(shoppingListItems)
+        .values({
+          listId,
+          name: `Vare ${position}`,
+          source: 'suggested',
+          checked: 0,
+          position,
+          createdAt: NOW,
+          ...overrides,
+        })
+        .run();
+    }
+
+    it('sums trip counts across every done list, with a fixture of two lists, one with a receipt', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      insertDoneList('2026-08-24'); // no receipt linked
+
+      const listB = insertDoneList('2026-08-31');
+      const milk = insertProduct('Lettmelk 1 l');
+      const bread = insertProduct('Brød');
+      const banana = insertProduct('Banan');
+      insertListItem(listB, 1, { productId: milk, name: 'Lettmelk 1 l' });
+      insertListItem(listB, 2, { productId: bread, name: 'Brød' });
+      const receiptId = insertReceipt({ shoppingListId: listB });
+      insertLine(receiptId, milk);
+      insertLine(receiptId, banana);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/stats/summary?months=1',
+        headers: { cookie },
+      });
+
+      expect(response.json().trips).toEqual({
+        completedLists: 2,
+        listsWithReceipt: 1,
+        plannedItems: 2,
+        boughtItems: 1,
+        unplannedItems: 1,
+      });
+    });
+
+    it('shows zero trips with no completed lists', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/stats/summary?months=1',
+        headers: { cookie },
+      });
+
+      expect(response.json().trips).toEqual({
+        completedLists: 0,
+        listsWithReceipt: 0,
+        plannedItems: 0,
+        boughtItems: 0,
+        unplannedItems: 0,
+      });
+    });
+
+    it("sums aiProposals.boughtItems from bought source='ai' items across every list's trip", async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const listId = insertDoneList('2026-08-31');
+      const milk = insertProduct('Lettmelk 1 l');
+      insertListItem(listId, 1, { productId: milk, name: 'Lettmelk 1 l', source: 'ai' });
+      const receiptId = insertReceipt({ shoppingListId: listId });
+      insertLine(receiptId, milk);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/stats/summary?months=1',
+        headers: { cookie },
+      });
+
+      expect(response.json().aiProposals.boughtItems).toBe(1);
     });
   });
 });

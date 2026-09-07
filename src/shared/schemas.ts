@@ -28,6 +28,8 @@ export const receiptSummarySchema = z.object({
   reviewedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** The list this receipt was bought for, or null (T39, ADR-0018). */
+  shoppingListId: z.number().int().nullable(),
 });
 
 export type ReceiptSummary = z.infer<typeof receiptSummarySchema>;
@@ -61,6 +63,8 @@ export type ReceiptLine = z.infer<typeof receiptLineSchema>;
 export const receiptDetailSchema = receiptSummarySchema.extend({
   imageUrl: z.string(),
   lines: z.array(receiptLineSchema),
+  /** The linked list's id and week, or null (T39, ADR-0018); the receipt page shows a link. */
+  shoppingList: z.object({ id: z.number().int(), weekStart: z.string() }).nullable(),
 });
 
 export type ReceiptDetail = z.infer<typeof receiptDetailSchema>;
@@ -71,6 +75,8 @@ export const patchReceiptSchema = z
     purchasedAt: z.string().refine(isIsoDate, 'Ugyldig dato'),
     totalOre: z.number().int().nonnegative(),
     reviewed: z.boolean(),
+    /** Links or unlinks the receipt by hand; `null` unlinks (T39, ADR-0018). */
+    shoppingListId: z.number().int().positive().nullable(),
   })
   .partial()
   .strict();
@@ -184,6 +190,40 @@ export const shoppingListItemSchema = z.object({
 
 export type ShoppingListItem = z.infer<typeof shoppingListItemSchema>;
 
+const tripCountsSchema = z.object({
+  planned: z.number().int(),
+  bought: z.number().int(),
+  notBought: z.number().int(),
+  unplanned: z.number().int(),
+});
+
+/** What was bought against what was planned, computed on read from the list's items and its
+ * linked receipts' lines; never stored (T39, ADR-0018). */
+export const tripSchema = z.object({
+  planned: z.array(
+    z.object({
+      itemId: z.number().int(),
+      name: z.string(),
+      quantityText: z.string().nullable(),
+      source: shoppingListItemSourceSchema,
+      checked: z.boolean(),
+      status: z.enum(['bought', 'notBought']),
+    }),
+  ),
+  unplanned: z.array(
+    z.object({
+      productId: z.number().int().nullable(),
+      name: z.string(),
+      quantity: z.number(),
+      unit: z.string().nullable(),
+    }),
+  ),
+  counts: tripCountsSchema,
+  receiptIds: z.array(z.number().int()),
+});
+
+export type Trip = z.infer<typeof tripSchema>;
+
 export const shoppingListSchema = z.object({
   id: z.number().int(),
   weekStart: z.string(),
@@ -191,12 +231,17 @@ export const shoppingListSchema = z.object({
   createdAt: z.string(),
   completedAt: z.string().nullable(),
   items: z.array(shoppingListItemSchema),
+  /** Linked receipts, newest first (T39, ADR-0018). */
+  receipts: z.array(receiptSummarySchema),
+  /** `null` while the list is `open` or has no linked receipt (T39, ADR-0018). */
+  trip: tripSchema.nullable(),
 });
 
 export type ShoppingList = z.infer<typeof shoppingListSchema>;
 
-/** `ShoppingList` without `items`, plus `itemCount` — the same relationship `ReceiptSummary` has
- * to `ReceiptDetail` — for the history list (`GET /api/shopping-lists`), T23. */
+/** `ShoppingList` without `items` or `receipts`, plus `itemCount` — the same relationship
+ * `ReceiptSummary` has to `ReceiptDetail` — for the history list (`GET /api/shopping-lists`), T23.
+ * `tripCounts` is `null` on the same terms as `trip` (T39). */
 export const shoppingListSummarySchema = z.object({
   id: z.number().int(),
   weekStart: z.string(),
@@ -204,6 +249,7 @@ export const shoppingListSummarySchema = z.object({
   createdAt: z.string(),
   completedAt: z.string().nullable(),
   itemCount: z.number().int(),
+  tripCounts: tripCountsSchema.nullable(),
 });
 
 export type ShoppingListSummary = z.infer<typeof shoppingListSummarySchema>;
@@ -283,19 +329,33 @@ export const monthlyStatsSchema = z.object({
 
 export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
 
-/** All-time counts over `shopping_list_proposals`, the acceptance-rate inputs (T37, ADR-0016). */
+/** All-time counts over `shopping_list_proposals`, the acceptance-rate inputs (T37, ADR-0016);
+ * `boughtItems` is the subset of accepted items whose list item is `bought` in its trip (T39). */
 export const aiProposalsStatsSchema = z.object({
   proposals: z.number().int(),
   proposedItems: z.number().int(),
   acceptedItems: z.number().int(),
+  boughtItems: z.number().int(),
 });
 
 export type AiProposalsStats = z.infer<typeof aiProposalsStatsSchema>;
+
+/** All-time counts over every `done` list's trip (T39, ADR-0018). */
+export const tripsStatsSchema = z.object({
+  completedLists: z.number().int(),
+  listsWithReceipt: z.number().int(),
+  plannedItems: z.number().int(),
+  boughtItems: z.number().int(),
+  unplannedItems: z.number().int(),
+});
+
+export type TripsStats = z.infer<typeof tripsStatsSchema>;
 
 export const statsSummarySchema = z.object({
   months: z.array(monthlyStatsSchema),
   topProducts: z.array(productSchema),
   aiProposals: aiProposalsStatsSchema,
+  trips: tripsStatsSchema,
 });
 
 export type StatsSummary = z.infer<typeof statsSummarySchema>;

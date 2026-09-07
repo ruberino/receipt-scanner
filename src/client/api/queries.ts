@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -35,7 +36,9 @@ export function receiptRefetchInterval(status: ReceiptStatus | undefined): numbe
   return status !== undefined && POLLING_STATUSES.has(status) ? POLLING_INTERVAL_MS : false;
 }
 
-/** A receipt/line correction can change product history and therefore suggestions too. */
+/** A receipt/line correction can change product history and therefore suggestions too; it can
+ * also change a linked list's trip (a re-matched or deleted line, or the link itself), so the
+ * shopping-list queries are invalidated too (T39). */
 function invalidateReceiptRelated(queryClient: QueryClient, receiptId?: number): void {
   if (receiptId !== undefined) {
     void queryClient.invalidateQueries({ queryKey: ['receipt', receiptId] });
@@ -43,6 +46,7 @@ function invalidateReceiptRelated(queryClient: QueryClient, receiptId?: number):
   void queryClient.invalidateQueries({ queryKey: ['receipts'] });
   void queryClient.invalidateQueries({ queryKey: ['products'] });
   void queryClient.invalidateQueries({ queryKey: ['suggestions'] });
+  void queryClient.invalidateQueries({ queryKey: ['shopping-lists'] });
 }
 
 type MeResponse = { authenticated: true };
@@ -102,6 +106,32 @@ export function useReceipt(id: number) {
     queryFn: () => fetchJson<ReceiptDetail>(`/api/receipts/${id}`),
     refetchInterval: (query) => receiptRefetchInterval(query.state.data?.status),
   });
+}
+
+/** Pure: whether a receipt reaching `done` should invalidate the shopping-list queries, given the
+ * status just before this render and now — only on the actual transition, not on every render of
+ * an already-done receipt (T39). Exported for direct testing, same pattern as
+ * {@link receiptRefetchInterval}. */
+export function shouldInvalidateShoppingListsOnDone(
+  previousStatus: ReceiptStatus | undefined,
+  status: ReceiptStatus | undefined,
+): boolean {
+  return previousStatus !== 'done' && status === 'done';
+}
+
+/** The receipt page's own polling (`useReceipt`'s `refetchInterval`) already refetches a
+ * pending/processing receipt; once it lands on `done` it may have been auto-linked to a list
+ * (T39), so the shopping-list queries need a nudge too. */
+export function useInvalidateShoppingListsOnDone(status: ReceiptStatus | undefined): void {
+  const queryClient = useQueryClient();
+  const previousStatus = useRef(status);
+
+  useEffect(() => {
+    if (shouldInvalidateShoppingListsOnDone(previousStatus.current, status)) {
+      void queryClient.invalidateQueries({ queryKey: ['shopping-lists'] });
+    }
+    previousStatus.current = status;
+  }, [status, queryClient]);
 }
 
 export function useReceipts() {
@@ -425,6 +455,9 @@ export function useCompleteShoppingList(listId: number) {
       fetchJson<ShoppingList>(`/api/shopping-lists/${listId}/complete`, { method: 'POST' }),
     onSuccess: () => {
       queryClient.setQueryData(CURRENT_SHOPPING_LIST_KEY, null);
+      // Completing may auto-link a same-day receipt (T39), which the history and detail views
+      // need to pick up.
+      void queryClient.invalidateQueries({ queryKey: ['shopping-lists'] });
     },
   });
 }
@@ -478,6 +511,32 @@ export function useLatestShoppingList() {
     queryFn: async () => {
       const lists = await fetchJson<ShoppingListSummary[]>('/api/shopping-lists?limit=1');
       return lists[0] ?? null;
+    },
+  });
+}
+
+/** Read-only list detail with `receipts` and `trip` (T39, ADR-0018); used by
+ * `ShoppingListDetailPage` and, indirectly, kept fresh by `invalidateReceiptRelated`. */
+export function useShoppingListDetail(id: number) {
+  return useQuery({
+    queryKey: ['shopping-lists', 'detail', id],
+    queryFn: () => fetchJson<ShoppingList>(`/api/shopping-lists/${id}`),
+  });
+}
+
+/** The eight most recent completed lists, for the receipt page's `Handleliste` selector (T39);
+ * always on, like {@link useLatestShoppingList}, since the receipt page has no collapsed section
+ * to gate it behind. */
+const RECENT_DONE_SHOPPING_LISTS_LIMIT = 8;
+
+export function useRecentDoneShoppingLists() {
+  return useQuery({
+    queryKey: ['shopping-lists', 'recent-done'],
+    queryFn: async () => {
+      const lists = await fetchJson<ShoppingListSummary[]>('/api/shopping-lists?limit=20');
+      return lists
+        .filter((list) => list.status === 'done')
+        .slice(0, RECENT_DONE_SHOPPING_LISTS_LIMIT);
     },
   });
 }

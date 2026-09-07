@@ -11,6 +11,7 @@ import ProductsPage from './pages/ProductsPage.tsx';
 import ReceiptPage from './pages/ReceiptPage.tsx';
 import ReceiptsPage from './pages/ReceiptsPage.tsx';
 import ScanPage from './pages/ScanPage.tsx';
+import ShoppingListDetailPage from './pages/ShoppingListDetailPage.tsx';
 import ShoppingListPage from './pages/ShoppingListPage.tsx';
 
 function UnauthorizedBridge(): null {
@@ -57,6 +58,7 @@ export default function App() {
           }
         >
           <Route index element={<ShoppingListPage />} />
+          <Route path="shopping-lists/:id" element={<ShoppingListDetailPage />} />
           <Route path="scan" element={<ScanPage />} />
           <Route path="receipts" element={<ReceiptsPage />} />
           <Route path="receipts/:id" element={<ReceiptPage />} />

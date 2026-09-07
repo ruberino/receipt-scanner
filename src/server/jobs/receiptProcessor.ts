@@ -1,14 +1,38 @@
 import type Database from 'better-sqlite3';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
-import { receiptImages, receiptLines, receipts } from '../db/schema.ts';
+import { receiptImages, receiptLines, receipts, shoppingLists } from '../db/schema.ts';
 import { applyExtraction, findPossibleDuplicate } from '../domain/extraction.ts';
 import { matchLines } from '../domain/matching.ts';
+import { findTripList, type TripListCandidate } from '../domain/tripLink.ts';
 import { ExtractionError, type ExtractionStage } from '../lib/errors.ts';
 import { runExtraction } from '../llm/extractReceipt.ts';
 import type { LlmClient } from '../llm/LlmClient.ts';
+
+/** A bound on how far back to look for a candidate list, not the linking rule itself (that is
+ * `findTripList`'s one-day tolerance); wide enough that no realistic gap between finishing a trip
+ * and scanning its receipt falls outside it (T39, ADR-0018). */
+const TRIP_LINK_CANDIDATE_WINDOW_DAYS = 3;
+
+function loadRecentDoneListCandidates(db: AppDatabase, now: Date): TripListCandidate[] {
+  const cutoff = new Date(
+    now.getTime() - TRIP_LINK_CANDIDATE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  return db
+    .select({ id: shoppingLists.id, completedAt: shoppingLists.completedAt })
+    .from(shoppingLists)
+    .where(
+      and(
+        eq(shoppingLists.status, 'done'),
+        isNotNull(shoppingLists.completedAt),
+        gte(shoppingLists.completedAt, cutoff),
+      ),
+    )
+    .all()
+    .filter((list): list is { id: number; completedAt: string } => list.completedAt !== null);
+}
 
 export type ReceiptProcessorDeps = {
   db: AppDatabase;
@@ -111,8 +135,25 @@ async function processReceipt(deps: ReceiptProcessorDeps, receiptId: number): Pr
     const matched = await matchLines({ db, sqlite, llm, logger, receiptId });
     const finalWarnings = [...warnings, ...matched.warnings];
 
+    // Automatic trip link (T39, ADR-0018): only when nothing has linked this receipt already, by
+    // hand or by an earlier run of this same job (a retry after a crash must not override a
+    // manual unlink that happened in between).
+    let shoppingListId = before.shoppingListId;
+    if (shoppingListId === null && applied.purchasedAt !== null) {
+      const candidates = loadRecentDoneListCandidates(db, now());
+      shoppingListId = findTripList(applied.purchasedAt, candidates);
+      if (shoppingListId !== null) {
+        logger.info({ receiptId, shoppingListId }, 'Linked receipt to shopping list');
+      }
+    }
+
     db.update(receipts)
-      .set({ status: 'done', warningsJson: JSON.stringify(finalWarnings), updatedAt: nowIso() })
+      .set({
+        status: 'done',
+        warningsJson: JSON.stringify(finalWarnings),
+        shoppingListId,
+        updatedAt: nowIso(),
+      })
       .where(eq(receipts.id, receiptId))
       .run();
   } catch (error) {

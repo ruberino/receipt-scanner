@@ -1,0 +1,2 @@
+ALTER TABLE `receipts` ADD `shopping_list_id` integer REFERENCES shopping_lists(id) ON DELETE SET NULL;--> statement-breakpoint
+CREATE INDEX `receipts_shopping_list` ON `receipts` (`shopping_list_id`);

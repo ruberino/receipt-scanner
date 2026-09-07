@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Link } from 'react-router';
 import type { ShoppingList, ShoppingListItem } from '../../shared/schemas.ts';
 import { isoWeekKey, todayInOslo } from '../../shared/dates.ts';
 import { SHOPPING_CATEGORY_ORDER } from '../../shared/categories.ts';
@@ -71,6 +72,9 @@ function SuggestionsPreview() {
           <p className="text-gray-600">
             Handleturen ble fullført kl. {formatTimeInOslo(latestList.completedAt)}
           </p>
+          <Link to={`/shopping-lists/${latestList.id}`} className="text-blue-600 underline">
+            Se handleturen
+          </Link>
           <button
             type="button"
             onClick={handleReopen}

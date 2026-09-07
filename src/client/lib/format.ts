@@ -26,6 +26,12 @@ export function formatDate(date: string): string {
   return DATE_FORMATTER.format(toUtcDate(date));
 }
 
+/** `formatShortDate('2026-09-03')` → `3. sep.`, no year, no relative wording (T39: the linked
+ * receipt links on the shopping list detail page). */
+export function formatShortDate(date: string): string {
+  return SHORT_DATE_FORMATTER.format(toUtcDate(date));
+}
+
 /** `today` defaults to the browser's local date (ADR-0007); display only, never persisted. */
 export function formatRelativeDate(date: string, today: string = todayLocalIso()): string {
   const days = diffDays(date, today);

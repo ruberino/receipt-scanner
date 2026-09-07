@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -55,6 +55,7 @@ function receipt(overrides: Partial<ReceiptSummary> = {}): ReceiptSummary {
     reviewedAt: null,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
+    shoppingListId: null,
     ...overrides,
   };
 }
@@ -99,6 +100,7 @@ function shoppingListSummary(overrides: Partial<ShoppingListSummary> = {}): Shop
     createdAt: '2026-08-31T00:00:00.000Z',
     completedAt: null,
     itemCount: 3,
+    tripCounts: null,
     ...overrides,
   };
 }
@@ -108,7 +110,18 @@ function mockStats(extra: Partial<ReturnType<typeof useStatsSummary>> = {}) {
     isPending: false,
     isError: false,
     isSuccess: true,
-    data: { months: [monthlyStats()], topProducts: [product()] },
+    data: {
+      months: [monthlyStats()],
+      topProducts: [product()],
+      aiProposals: { proposals: 0, proposedItems: 0, acceptedItems: 0, boughtItems: 0 },
+      trips: {
+        completedLists: 0,
+        listsWithReceipt: 0,
+        plannedItems: 0,
+        boughtItems: 0,
+        unplannedItems: 0,
+      },
+    },
     ...extra,
   } as unknown as ReturnType<typeof useStatsSummary>);
 }
@@ -377,7 +390,14 @@ describe('ReceiptsPage — Statistikk og historikk', () => {
       data: {
         months: [monthlyStats({ month: '2026-08', totalOre: 5000 })],
         topProducts: [product({ name: 'Lettmelk 1 l', timesBought: 4 })],
-        aiProposals: { proposals: 0, proposedItems: 0, acceptedItems: 0 },
+        aiProposals: { proposals: 9, proposedItems: 12, acceptedItems: 7, boughtItems: 5 },
+        trips: {
+          completedLists: 4,
+          listsWithReceipt: 3,
+          plannedItems: 20,
+          boughtItems: 15,
+          unplannedItems: 6,
+        },
       },
     });
     mockHistory({
@@ -398,6 +418,58 @@ describe('ReceiptsPage — Statistikk og historikk', () => {
     expect(screen.getByText('Uke 35, 2026')).toBeInTheDocument();
     expect(screen.getByText('5 varer')).toBeInTheDocument();
     expect(screen.getByText('Fullført')).toBeInTheDocument();
+
+    // Handleturer (T39).
+    expect(screen.getByText('Handleturer')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument(); // completedLists
+    expect(screen.getByText('3')).toBeInTheDocument(); // listsWithReceipt
+    expect(screen.getByText('75 %')).toBeInTheDocument(); // 15/20 bought
+    expect(screen.getByText('2,0')).toBeInTheDocument(); // 6 unplanned / 3 trips
+
+    // AI-forslag (T39, closes the T37 acceptance criterion).
+    expect(screen.getByText('AI-forslag')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument(); // proposedItems
+    expect(screen.getByText('7')).toBeInTheDocument(); // acceptedItems
+    expect(screen.getByText('5')).toBeInTheDocument(); // boughtItems
+  });
+
+  it('links each history row to its detail page and shows the trip counts label when set', async () => {
+    mockList([[receipt({ id: 1 })]]);
+    mockScan();
+    mockStats();
+    mockHistory({
+      data: [
+        shoppingListSummary({
+          id: 9,
+          weekStart: '2026-08-24',
+          status: 'done',
+          tripCounts: { planned: 14, bought: 12, notBought: 2, unplanned: 5 },
+        }),
+      ],
+    });
+
+    renderReceiptsPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Statistikk og historikk'));
+
+    const link = screen.getByRole('link', { name: /12 av 14 kjøpt/ });
+    expect(link).toHaveAttribute('href', '/shopping-lists/9');
+    expect(screen.getByText('12 av 14 kjøpt · 5 utenom')).toBeInTheDocument();
+  });
+
+  it('omits the trip counts label for a list with no linked receipt', async () => {
+    mockList([[receipt({ id: 1 })]]);
+    mockScan();
+    mockStats();
+    mockHistory({ data: [shoppingListSummary({ id: 9, tripCounts: null })] });
+
+    renderReceiptsPage();
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Statistikk og historikk'));
+
+    const historySection = screen.getByText('Handlelistehistorikk').closest('section');
+    expect(within(historySection!).queryByText(/kjøpt/)).not.toBeInTheDocument();
+    expect(within(historySection!).getByRole('link')).toHaveAttribute('href', '/shopping-lists/9');
   });
 
   it('shows a loading state and an error state independently for stats and history', async () => {

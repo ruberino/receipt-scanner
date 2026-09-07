@@ -34,6 +34,13 @@ const preProposalsMigrationsFolder = path.resolve(
   '0002-only',
 );
 const preCategoryMigrationsFolder = path.resolve(here, '..', 'fixtures', 'migrations', '0004-only');
+const preShoppingListLinkMigrationsFolder = path.resolve(
+  here,
+  '..',
+  'fixtures',
+  'migrations',
+  '0005-only',
+);
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -128,7 +135,17 @@ describe('database schema and migrations', () => {
     opened = openDatabase(':memory:');
     migrate(opened.db, { migrationsFolder: oldMigrationsFolder });
 
-    const receipt = insertReceipt(opened, { status: 'done', storeName: 'KIWI Torshov' });
+    // Raw SQL, not the `insertReceipt` helper: the live `receipts` schema object now has
+    // `shopping_list_id` too (T39), which the table this fixture recreates does not have yet.
+    const receiptId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into receipts (status, store_name, warnings_json, created_at, updated_at)
+           values (?, ?, ?, ?, ?)`,
+        )
+        .run('done', 'KIWI Torshov', '[]', NOW, NOW).lastInsertRowid,
+    );
+    const receipt = { id: receiptId };
     const line = opened.db
       .insert(receiptLines)
       .values({
@@ -319,6 +336,54 @@ describe('database schema and migrations', () => {
         })
         .run(),
     ).not.toThrow();
+  });
+
+  it('keeps an existing receipt intact, with shopping_list_id null, when migrating in receipts.shopping_list_id (T39)', () => {
+    opened = openDatabase(':memory:');
+    migrate(opened.db, { migrationsFolder: preShoppingListLinkMigrationsFolder });
+
+    // Raw SQL: the live `receipts` schema object now has `shopping_list_id` too, which the table
+    // this fixture recreates does not have yet.
+    const receiptId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into receipts (status, warnings_json, created_at, updated_at) values (?, ?, ?, ?)`,
+        )
+        .run('done', '[]', NOW, NOW).lastInsertRowid,
+    );
+
+    runMigrations(opened);
+
+    const stored = opened.db.select().from(receipts).where(eq(receipts.id, receiptId)).get();
+    expect(stored).toMatchObject({ status: 'done', shoppingListId: null });
+
+    const list = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+    expect(() =>
+      opened.db
+        .update(receipts)
+        .set({ shoppingListId: list.id })
+        .where(eq(receipts.id, receiptId))
+        .run(),
+    ).not.toThrow();
+  });
+
+  it("deleting a shopping list sets a linked receipt's shopping_list_id to null (T39)", () => {
+    opened = createDb();
+    const list = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'done', createdAt: NOW, completedAt: NOW })
+      .returning()
+      .get();
+    const receipt = insertReceipt(opened, { shoppingListId: list.id });
+
+    opened.db.delete(shoppingLists).where(eq(shoppingLists.id, list.id)).run();
+
+    const stored = opened.db.select().from(receipts).where(eq(receipts.id, receipt.id)).get();
+    expect(stored?.shoppingListId).toBeNull();
   });
 
   it('rejects an unknown shopping_list_items source', () => {
