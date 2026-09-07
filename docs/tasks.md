@@ -915,3 +915,25 @@ Acceptance criteria:
 - `git diff --stat` shows no change under `src/client/`, in `extractReceipt.ts`, `matchProducts.ts`, `proposeList.ts`, the receipt processor or `eval/run.ts`.
 
 Tests: config (default, missing-key messages naming the right variable, both keys present, invalid value); routing (`extract`/`match` to the fallback, `propose` to its override, one shared client when both purposes agree); `createLlmClient` for both provider combinations; `activeModels` for both combinations; health with equal and differing providers.
+
+---
+
+## T39 — Handleturen, the completed list meets the receipt
+
+Goal: a completed shopping list shows what was actually bought against what was planned and what the AI proposed, so both engines are measured against the same receipts.
+
+Files: `src/server/domain/tripLink.ts` (new), `src/server/domain/trip.ts` (new), `src/server/db/schema.ts`, one migration, `src/server/jobs/receiptProcessor.ts`, `src/server/routes/shoppingLists.ts`, `src/server/routes/receipts.ts`, `src/server/routes/stats.ts`, `src/shared/schemas.ts`, `src/client/pages/ShoppingListDetailPage.tsx` (new), `src/client/pages/ShoppingListPage.tsx`, `src/client/pages/ReceiptsPage.tsx`, `src/client/pages/ReceiptPage.tsx`, `src/client/api/queries.ts`, `docs/adr/0018-*.md`, tests.
+
+Steps: see `docs/reviews/T39-plan.md`.
+
+Acceptance criteria:
+
+- A list completed today and a receipt purchased today, scanned before or after `Ferdig handlet`, end up linked without any user action; a receipt two days off does not.
+- The completed list shows the three groups with correct counts for a fixture of 6 planned items, 4 bought (one by name match), 2 not bought, and 3 unplanned products across two receipts.
+- The receipt page can link a receipt to any of the eight most recent completed lists and unlink it; the list page reflects the change on the next load.
+- Deleting a list leaves its receipts intact with no link; deleting a receipt removes it from the trip.
+- Statistics show trips and AI figures including bought counts; with no completed lists the section shows zeros, not an error.
+- The suggestion engine, the proposal prompt and `proposeList.ts` are unchanged (`git diff --stat` shows no change there).
+- Existing receipts and lists survive migration `0006` with their ids and `shopping_list_id = null`.
+
+Tests: linking rule with fixed dates; comparison with product and name matches, two receipts, grouping, checked-but-not-bought; routes (`401` on the new endpoint, `GET` by id with and without receipts, `PATCH` link/unlink/404, `complete` linking same-day receipts only, processor `done` linking within one day); stats fields; migration survival and `SET NULL` on list delete; client (detail page, null message, receipt selector, history label, statistics section).

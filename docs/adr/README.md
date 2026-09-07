@@ -23,6 +23,7 @@ To change a decision, write a new ADR that supersedes the old one and link both 
 | [0015](0015-selectable-openai-compatible-llm-provider.md) | Selectable OpenAI-compatible LLM provider (Kimi or Grok) | Superseded in part by ADR-0017 |
 | [0016](0016-llm-shopping-list-proposal.md) | An LLM proposal beside the rule engine, user-triggered and reviewed | Superseded in part by ADR-0017 |
 | [0017](0017-llm-provider-per-purpose.md) | One LLM provider per purpose | Accepted |
+| [0018](0018-shopping-trip-outcome.md) | A receipt belongs to a list; the outcome is computed, not stored | Accepted |
 
 ## Template
 
