@@ -452,7 +452,7 @@ describe('PATCH /api/receipt-lines/:id — amount, quantity and kind (T29)', () 
     expect(toItemNegative.statusCode).toBe(400);
   });
 
-  it('does not check the amount sign when only kind changes and totalOre is not in the request', async () => {
+  it('checks the amount sign against the resulting kind even when only kind changes (T29 F1)', async () => {
     app = createTestApp();
     const cookie = await loginCookie(app);
     const receiptId = insertReceipt();
@@ -462,6 +462,23 @@ describe('PATCH /api/receipt-lines/:id — amount, quantity and kind (T29)', () 
       method: 'PATCH',
       url: `/api/receipt-lines/${lineId}`,
       payload: { kind: 'other' },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toMatch(/negativt/i);
+  });
+
+  it('allows changing kind alone when the existing amount already fits the resulting kind (T29 F1)', async () => {
+    app = createTestApp();
+    const cookie = await loginCookie(app);
+    const receiptId = insertReceipt();
+    const lineId = insertLine(receiptId, 'RABATT', { kind: 'discount', totalOre: -100 });
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/receipt-lines/${lineId}`,
+      payload: { kind: 'other', totalOre: 0 },
       headers: { cookie },
     });
 

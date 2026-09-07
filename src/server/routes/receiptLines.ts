@@ -79,12 +79,13 @@ export default async function receiptLinesRoutes(app: FastifyInstance): Promise<
         throw new ConflictError('Kvitteringen er ikke ferdig behandlet');
       }
 
-      if (body.totalOre !== undefined) {
+      if (body.totalOre !== undefined || body.kind !== undefined) {
+        const resultingTotalOre = body.totalOre ?? line.totalOre;
         const resultingKind = body.kind ?? line.kind;
-        if (resultingKind === 'discount' && body.totalOre > 0) {
+        if (resultingKind === 'discount' && resultingTotalOre > 0) {
           throw new ValidationError('Beløpet for en rabatt kan ikke være positivt');
         }
-        if (resultingKind !== 'discount' && body.totalOre < 0) {
+        if (resultingKind !== 'discount' && resultingTotalOre < 0) {
           throw new ValidationError('Beløpet kan ikke være negativt');
         }
       }
