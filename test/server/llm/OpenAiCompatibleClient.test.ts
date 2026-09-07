@@ -97,6 +97,23 @@ describe('buildRequestBody', () => {
     expect(body.messages[1].content).toEqual([{ type: 'text', text: baseRequest.userText }]);
   });
 
+  it('sends only the text part for a propose request, text-only like matching (T37)', () => {
+    const proposeRequest: JsonCompletionRequest = {
+      ...baseRequest,
+      purpose: 'propose',
+      receiptId: undefined,
+      listId: 7,
+    };
+
+    const body = buildRequestBody(proposeRequest, {
+      provider: 'kimi',
+      model: 'kimi-k2.6',
+      thinking: 'disabled',
+    });
+
+    expect(body.messages[1].content).toEqual([{ type: 'text', text: baseRequest.userText }]);
+  });
+
   it('passes the thinking mode through unchanged for kimi', () => {
     const body = buildRequestBody(baseRequest, {
       provider: 'kimi',
@@ -189,6 +206,39 @@ describe('OpenAiCompatibleClient.completeJson', () => {
     await expect(matchClient.completeJson({ ...baseRequest, purpose: 'match' })).rejects.toSatisfy(
       (error: unknown) => (error as ExtractionError).stage === 'matching',
     );
+
+    const proposeClient = new OpenAiCompatibleClient({
+      ...options,
+      client: stubClient(vi.fn().mockRejectedValue(sdkError)),
+      logger: { info: vi.fn() },
+    });
+    await expect(
+      proposeClient.completeJson({ ...baseRequest, purpose: 'propose' }),
+    ).rejects.toSatisfy((error: unknown) => (error as ExtractionError).stage === 'proposal');
+  });
+
+  it('logs listId instead of receiptId for a propose call (T37)', async () => {
+    const create = vi.fn().mockResolvedValue({
+      model: 'grok-4.6',
+      choices: [{ message: { content: '{"items":[]}' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 100, completion_tokens: 50 },
+    });
+    const info = vi.fn();
+    const client = new OpenAiCompatibleClient({
+      ...options,
+      client: stubClient(create),
+      logger: { info },
+    });
+
+    await client.completeJson({
+      ...baseRequest,
+      purpose: 'propose',
+      receiptId: undefined,
+      listId: 7,
+    });
+
+    const [logged] = info.mock.calls[0] as [Record<string, unknown>];
+    expect(logged).toMatchObject({ purpose: 'propose', listId: 7 });
   });
 
   it('returns an empty text and finishReason "unknown" for a response with no choices', async () => {

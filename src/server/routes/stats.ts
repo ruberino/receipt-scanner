@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { todayInOslo } from '../../shared/dates.ts';
-import { products, receipts } from '../db/schema.ts';
+import type { AppDatabase } from '../db/client.ts';
+import { products, receipts, shoppingListProposals } from '../db/schema.ts';
 import { loadProductStatsMap, type ProductStats } from '../domain/productStats.ts';
 import { toProduct } from './products.ts';
 
@@ -15,6 +16,32 @@ const summaryQuerySchema = z.object({
 
 function monthKey(date: string): string {
   return date.slice(0, 7);
+}
+
+/** All-time acceptance-rate inputs over every proposal ever made (T37, ADR-0016): small counts at
+ * household scale, so summing in memory needs no extra columns or triggers. */
+function loadAiProposalsStats(db: AppDatabase) {
+  const rows = db
+    .select({
+      itemsJson: shoppingListProposals.itemsJson,
+      acceptedJson: shoppingListProposals.acceptedJson,
+    })
+    .from(shoppingListProposals)
+    .all();
+
+  return rows.reduce(
+    (totals, row) => {
+      const items = JSON.parse(row.itemsJson) as unknown[];
+      totals.proposals += 1;
+      totals.proposedItems += items.length;
+      if (row.acceptedJson !== null) {
+        const accepted = JSON.parse(row.acceptedJson) as unknown[];
+        totals.acceptedItems += accepted.length;
+      }
+      return totals;
+    },
+    { proposals: 0, proposedItems: 0, acceptedItems: 0 },
+  );
 }
 
 /** `count` calendar months as `YYYY-MM`, ascending, the last one being `endMonth` itself. */
@@ -77,6 +104,8 @@ export default async function statsRoutes(
       .sort((a, b) => b.timesBought - a.timesBought || a.name.localeCompare(b.name, 'nb'))
       .slice(0, TOP_PRODUCTS_LIMIT);
 
-    return { months, topProducts };
+    const aiProposals = loadAiProposalsStats(app.db);
+
+    return { months, topProducts, aiProposals };
   });
 }

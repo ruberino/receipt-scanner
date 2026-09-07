@@ -62,7 +62,13 @@ export function buildRequestBody(
 }
 
 function stageFor(purpose: JsonCompletionRequest['purpose']): ExtractionStage {
-  return purpose === 'extract' ? 'extraction' : 'matching';
+  if (purpose === 'extract') {
+    return 'extraction';
+  }
+  if (purpose === 'match') {
+    return 'matching';
+  }
+  return 'proposal';
 }
 
 /** `LlmClient` implementation for Kimi (Moonshot AI) or Grok (xAI), both OpenAI-compatible
@@ -127,6 +133,7 @@ export class OpenAiCompatibleClient implements LlmClient {
       {
         purpose: request.purpose,
         receiptId: request.receiptId,
+        listId: request.listId,
         model: response.model,
         promptVersion: request.promptVersion,
         promptTokens: usage.promptTokens,

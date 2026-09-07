@@ -143,7 +143,10 @@ export const shoppingListItems = sqliteTable(
     createdAt: text('created_at').notNull(),
   },
   (table) => [
-    check('shopping_list_items_source_check', sql`${table.source} in ('suggested', 'manual')`),
+    check(
+      'shopping_list_items_source_check',
+      sql`${table.source} in ('suggested', 'manual', 'ai')`,
+    ),
     index('shopping_list_items_list').on(table.listId, table.position),
   ],
 );
@@ -161,4 +164,26 @@ export const shoppingListDismissals = sqliteTable(
     createdAt: text('created_at').notNull(),
   },
   (table) => [primaryKey({ columns: [table.listId, table.productId] })],
+);
+
+/** One `Foreslå med AI` call and its outcome (T37, ADR-0016); `accepted_json` is null until the
+ * user accepts or cancels, and once set makes a second accept on the same proposal a 409. */
+export const shoppingListProposals = sqliteTable(
+  'shopping_list_proposals',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    listId: integer('list_id')
+      .notNull()
+      .references(() => shoppingLists.id, { onDelete: 'cascade' }),
+    model: text('model').notNull(),
+    promptVersion: integer('prompt_version').notNull(),
+    itemsJson: text('items_json').notNull(),
+    rawResponse: text('raw_response').notNull(),
+    promptTokens: integer('prompt_tokens').notNull(),
+    completionTokens: integer('completion_tokens').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    acceptedJson: text('accepted_json'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('shopping_list_proposals_list').on(table.listId)],
 );

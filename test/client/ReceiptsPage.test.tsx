@@ -377,6 +377,7 @@ describe('ReceiptsPage — Statistikk og historikk', () => {
       data: {
         months: [monthlyStats({ month: '2026-08', totalOre: 5000 })],
         topProducts: [product({ name: 'Lettmelk 1 l', timesBought: 4 })],
+        aiProposals: { proposals: 0, proposedItems: 0, acceptedItems: 0 },
       },
     });
     mockHistory({
