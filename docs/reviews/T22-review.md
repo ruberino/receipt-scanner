@@ -10,10 +10,11 @@ The sibling's copy has been green on every run since its T14, which is the refer
 No test needs `MOONSHOT_API_KEY`: `createTestApp` hands a fake key to `loadConfig()` and nothing under test imports `src/server/index.ts`, so the workflow needs no secrets.
 The agent ran every command of the `checks` job locally in sequence (435 tests) and the exact `docker build` of the second job, and confirmed the failure path once with a deliberate unused variable that made `npm run lint` fail, reverted and not committed.
 
-## Pending until the remote exists
+## GitHub acceptance, 2026-09-07
 
-Green on a docs-only pull request and red on a deliberate lint error, once; record the run ids here.
-The remote is Ruben's decision; see `T21-review.md`.
+The remote now exists (`ruberino/receipt-scanner`), and PR #1 (`docs/pr-workflow`, switching `AGENTS.md` to the PR workflow) closes the acceptance criterion that stayed pending above.
+Three runs on that PR: green on the docs-only commit `8288b86` ([run 34093673944](https://github.com/ruberino/receipt-scanner/actions/runs/34093673944)), red on a deliberate unused variable in commit `7b93f56` ([run 34093887565](https://github.com/ruberino/receipt-scanner/actions/runs/34093887565), `checks` failed on the lint error, `docker-build` passed as expected), and green again after the revert in commit `f620543` ([run 34094015129](https://github.com/ruberino/receipt-scanner/actions/runs/34094015129)).
+CI gates the branch as designed.
 
 ## Done
 
