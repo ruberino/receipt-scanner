@@ -20,7 +20,9 @@ To change a decision, write a new ADR that supersedes the old one and link both 
 | [0012](0012-structured-logging-and-error-format.md) | Structured logging with pino and one error format | Accepted |
 | [0013](0013-zod-schemas-shared-between-client-and-server.md) | zod schemas shared between client and server | Accepted |
 | [0014](0014-testing-strategy-with-llm-fake-and-eval-set.md) | Testing strategy: fake LLM client in tests, real-receipt eval set for prompts | Accepted |
-| [0015](0015-selectable-openai-compatible-llm-provider.md) | Selectable OpenAI-compatible LLM provider (Kimi or Grok) | Accepted |
+| [0015](0015-selectable-openai-compatible-llm-provider.md) | Selectable OpenAI-compatible LLM provider (Kimi or Grok) | Superseded in part by ADR-0017 |
+| [0016](0016-llm-shopping-list-proposal.md) | An LLM proposal beside the rule engine, user-triggered and reviewed | Superseded in part by ADR-0017 |
+| [0017](0017-llm-provider-per-purpose.md) | One LLM provider per purpose | Accepted |
 
 ## Template
 

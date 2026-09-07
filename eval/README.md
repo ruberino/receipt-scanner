@@ -14,6 +14,9 @@ npm run eval:extraction
 Builds its LLM client from the same `loadConfig()` the server uses (ADR-0015), so it runs whichever
 provider `.env` selects: `LLM_PROVIDER=kimi` (the default) requires a real `MOONSHOT_API_KEY`,
 `LLM_PROVIDER=grok` requires a real `XAI_API_KEY`.
+The harness measures extraction only and always uses `LLM_PROVIDER`; `LLM_PROVIDER_PROPOSE`
+(ADR-0017) has no effect here, though `loadConfig()` still demands both providers' keys when `.env`
+names two different ones.
 It reads every photo under `eval/receipts/` that has a matching `<photo>.expected.json`, runs the
 real extraction on each, prints a table and an aggregate, and writes
 `eval/results/<date>-v<promptVersion>-<model>.json` — for Kimi, with a `-thinking` or `-nothinking`

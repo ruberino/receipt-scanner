@@ -1,6 +1,7 @@
 # ADR-0015: Selectable OpenAI-compatible LLM provider (Kimi or Grok)
 
 - Status: Accepted
+- Superseded in part by ADR-0017 (the provider is chosen per `LlmPurpose`, not once for the whole app)
 - Date: 2026-09-07
 
 ## Context

@@ -1,6 +1,7 @@
 # ADR-0016: An LLM proposal beside the rule engine, user-triggered and reviewed
 
 - Status: Accepted
+- Superseded in part by ADR-0017 (the proposal need not use "the same provider as extraction and matching" any more)
 - Date: 2026-09-07
 
 ## Context
