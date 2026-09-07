@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-07",
+  "promptVersion": 2,
+  "model": "kimi-k2.6",
+  "provider": "kimi",
+  "thinking": "disabled",
+  "receipts": [
+    {
+      "filename": "2026-09-07-receipt-11.jpg",
+      "dateMatch": true,
+      "storeMatch": true,
+      "totalWithin1kr": true,
+      "itemRecall": 1,
+      "priceAccuracy": 1,
+      "lineCountDiff": 0,
+      "promptTokens": 2090,
+      "completionTokens": 317,
+      "durationMs": 10110
+    },
+    {
+      "filename": "2026-09-07-receipt-12.jpg",
+      "dateMatch": true,
+      "storeMatch": true,
+      "totalWithin1kr": true,
+      "itemRecall": 1,
+      "priceAccuracy": 1,
+      "lineCountDiff": 0,
+      "promptTokens": 1946,
+      "completionTokens": 240,
+      "durationMs": 7461
+    },
+    {
+      "filename": "2026-09-07-receipt-8.jpg",
+      "dateMatch": true,
+      "storeMatch": true,
+      "totalWithin1kr": true,
+      "itemRecall": 1,
+      "priceAccuracy": 1,
+      "lineCountDiff": 0,
+      "promptTokens": 1784,
+      "completionTokens": 157,
+      "durationMs": 5620
+    }
+  ],
+  "aggregate": {
+    "receiptCount": 3,
+    "dateMatchRate": 1,
+    "storeMatchRate": 1,
+    "totalWithin1krRate": 1,
+    "meanItemRecall": 1,
+    "meanPriceAccuracy": 1,
+    "meanAbsLineCountDiff": 0
+  }
+}

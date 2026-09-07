@@ -21,10 +21,13 @@ Three receipts with hand-written ground truth (`receipt-8`, `receipt-11`, `recei
 | Row                        | totalWithin1krRate | meanItemRecall | meanPriceAccuracy | meanAbsLineCountDiff | Duration per receipt |
 | -------------------------- | ------------------ | -------------- | ----------------- | -------------------- | -------------------- |
 | kimi-k2.6, thinking off    | 100%               | 100%           | 100%              | 0.00                 | 5.6–10.1 s           |
-| kimi-k2.6, thinking on     | (pending)          |                |                   |                      |                      |
-| grok-4.6                   | (pending)          |                |                   |                      |                      |
+| kimi-k2.6, thinking on     | run failed         | —              | —                 | —                    | 6 min, then error    |
+| grok-4.6                   | 100%               | 100%           | 100%              | 0.00                 | 24.4–48.6 s          |
 
 On prompt version 1 the same three receipts each got a bogus discount line and a wrong line sum; version 2 removes every one of them.
+The thinking row is not a T28 problem: Kimi in thinking mode spent the whole `max_tokens` budget of 6000 on reasoning over the first, 7-item receipt and never produced the JSON (`ExtractionError: Kvitteringen var for lang til å leses`), and the harness then aborted the run without writing a results file.
+Both are filed as issues #4 (thinking mode exhausts `max_tokens`; decide raise-or-drop in an ADR) and #5 (the harness must record a failed receipt and continue).
+Kimi without thinking and Grok tie on quality here; Kimi answers in 5–10 s where Grok takes 24–49 s per receipt, so the default stays `kimi` until the re-uploaded Kiwi receipts say otherwise.
 This set cannot yet say anything about long receipts: the four Kiwi files in `eval/receipts/` are 149×2000 px copies of what the database stored, so no resize rule can recover them (see F3).
 
 ## Required before merge
@@ -38,7 +41,7 @@ This set cannot yet say anything about long receipts: the four Kiwi files in `ev
   Document the guard in one sentence in architecture 7.1 step 1.
 - F3. `docs/tasks.md` T28, third acceptance criterion, and the PR description: the four Kiwi files cannot be bootstrapped after this fix, they are already destroyed; reword to "the Kiwi receipts are re-uploaded from their originals once this task is deployed, get expected JSON through `eval:bootstrap`, and are run through the eval in a follow-up task; the three MENY receipts are the baseline committed here".
   Also note in `eval/README.md`, under "The rule", that the version 2 results files are the first committed baseline, since version 1 never had ground truth.
-- F4. Commit the three results files the foreman copies into `eval/results/` (`2026-09-07-v2-kimi-k2.6-nothinking.json`, `2026-09-07-v2-kimi-k2.6-thinking.json`, `2026-09-07-v2-grok-4.6.json`) unchanged, and paste the aggregate table above into the PR description in place of the "Outstanding" paragraph.
+- F4. Commit the two results files the foreman copied into `eval/results/` (`2026-09-07-v2-kimi-k2.6-nothinking.json` and `2026-09-07-v2-grok-4.6.json`) unchanged, and paste the aggregate table above into the PR description in place of the "Outstanding" paragraph, with one sentence on the failed thinking row pointing at issues #4 and #5.
 
 ## Noted, no action
 

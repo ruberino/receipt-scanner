@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-07",
+  "promptVersion": 2,
+  "model": "grok-4.6",
+  "provider": "grok",
+  "thinking": null,
+  "receipts": [
+    {
+      "filename": "2026-09-07-receipt-11.jpg",
+      "dateMatch": true,
+      "storeMatch": true,
+      "totalWithin1kr": true,
+      "itemRecall": 1,
+      "priceAccuracy": 1,
+      "lineCountDiff": 0,
+      "promptTokens": 2514,
+      "completionTokens": 335,
+      "durationMs": 48607
+    },
+    {
+      "filename": "2026-09-07-receipt-12.jpg",
+      "dateMatch": true,
+      "storeMatch": true,
+      "totalWithin1kr": true,
+      "itemRecall": 1,
+      "priceAccuracy": 1,
+      "lineCountDiff": 0,
+      "promptTokens": 2409,
+      "completionTokens": 321,
+      "durationMs": 40983
+    },
+    {
+      "filename": "2026-09-07-receipt-8.jpg",
+      "dateMatch": true,
+      "storeMatch": true,
+      "totalWithin1kr": true,
+      "itemRecall": 1,
+      "priceAccuracy": 1,
+      "lineCountDiff": 0,
+      "promptTokens": 2289,
+      "completionTokens": 208,
+      "durationMs": 24384
+    }
+  ],
+  "aggregate": {
+    "receiptCount": 3,
+    "dateMatchRate": 1,
+    "storeMatchRate": 1,
+    "totalWithin1krRate": 1,
+    "meanItemRecall": 1,
+    "meanPriceAccuracy": 1,
+    "meanAbsLineCountDiff": 0
+  }
+}
