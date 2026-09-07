@@ -140,6 +140,9 @@ export const shoppingListItems = sqliteTable(
     reason: text('reason'),
     checked: integer('checked').notNull().default(0),
     position: integer('position').notNull(),
+    /** Set from the AI proposal when the item has no product, otherwise null (T37); a product's
+     * own category always wins, this is only the fallback for a novel item `accept` inserted. */
+    category: text('category'),
     createdAt: text('created_at').notNull(),
   },
   (table) => [

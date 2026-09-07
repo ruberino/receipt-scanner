@@ -111,28 +111,63 @@ describe('runProposal', () => {
     expect(result.items[0]?.productId).toBeNull();
   });
 
-  it('throws ProposalFailedError when the call itself fails', async () => {
+  it('throws ProposalFailedError with the caught error as cause when the call itself fails, warning once (F1)', async () => {
     const llm = new FakeLlmClient([]);
+    const warn = vi.fn();
 
-    await expect(runProposal(llm, context(), 9)).rejects.toBeInstanceOf(ProposalFailedError);
+    await expect(runProposal(llm, context(), 9, { warn })).rejects.toMatchObject({
+      cause: expect.any(Error),
+    });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      listId: 9,
+      stage: 'client',
+      err: expect.any(Error),
+    });
   });
 
-  it('throws ProposalFailedError when finishReason is "length"', async () => {
+  it('throws ProposalFailedError with { finishReason } as cause when the answer is cut off, warning once (F1)', async () => {
     const llm = new FakeLlmClient([completion([validItem], { finishReason: 'length' })]);
+    const warn = vi.fn();
 
-    await expect(runProposal(llm, context(), 9)).rejects.toBeInstanceOf(ProposalFailedError);
+    await expect(runProposal(llm, context(), 9, { warn })).rejects.toMatchObject({
+      cause: { finishReason: 'length' },
+    });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({ listId: 9, stage: 'length' });
   });
 
-  it('throws ProposalFailedError when the response is not valid JSON', async () => {
+  it('throws ProposalFailedError with the parse error as cause when the answer is not valid JSON, warning once (F1)', async () => {
     const llm = new FakeLlmClient([completion([], { text: 'not json' })]);
+    const warn = vi.fn();
 
-    await expect(runProposal(llm, context(), 9)).rejects.toBeInstanceOf(ProposalFailedError);
+    await expect(runProposal(llm, context(), 9, { warn })).rejects.toMatchObject({
+      cause: expect.any(Error),
+    });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({
+      listId: 9,
+      stage: 'parse',
+      err: expect.any(Error),
+    });
   });
 
-  it('throws ProposalFailedError when the response does not match the schema', async () => {
-    const llm = new FakeLlmClient([completion([{ name: 'Missing fields' }])]);
+  it('throws ProposalFailedError with zod issue path/code (never the model text) as cause when the schema does not match, warning once (F1)', async () => {
+    const llm = new FakeLlmClient([completion([{ name: 'a very telling model answer' }])]);
+    const warn = vi.fn();
 
-    await expect(runProposal(llm, context(), 9)).rejects.toBeInstanceOf(ProposalFailedError);
+    const error = await runProposal(llm, context(), 9, { warn }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProposalFailedError);
+    const cause = (error as ProposalFailedError).cause as { path: unknown; code: unknown }[];
+    expect(Array.isArray(cause)).toBe(true);
+    expect(cause.length).toBeGreaterThan(0);
+    expect(
+      cause.every((issue) => Array.isArray(issue.path) && typeof issue.code === 'string'),
+    ).toBe(true);
+    expect(JSON.stringify(cause)).not.toContain('a very telling model answer');
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({ listId: 9, stage: 'schema' });
   });
 
   it('drops an item with an unknown productId and warns once with the count', async () => {

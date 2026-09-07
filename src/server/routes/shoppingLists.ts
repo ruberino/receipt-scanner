@@ -68,7 +68,8 @@ function toShoppingListSummary(list: typeof shoppingLists.$inferSelect, itemCoun
   };
 }
 
-/** Left-joins `products` for `category` (T32): derived on read, not stored, so no migration. */
+/** Left-joins `products` for `category` (T32): a product's own category wins when there is one,
+ * otherwise the item's own stored `category` (T37 F2 — set only for a productless AI proposal). */
 function loadItems(db: AppDatabase, listId: number) {
   return db
     .select({
@@ -80,7 +81,7 @@ function loadItems(db: AppDatabase, listId: number) {
       reason: shoppingListItems.reason,
       checked: shoppingListItems.checked,
       position: shoppingListItems.position,
-      category: products.category,
+      category: sql<string | null>`coalesce(${products.category}, ${shoppingListItems.category})`,
     })
     .from(shoppingListItems)
     .leftJoin(products, eq(shoppingListItems.productId, products.id))
@@ -89,17 +90,22 @@ function loadItems(db: AppDatabase, listId: number) {
     .all();
 }
 
-/** For the single-item endpoints, which only have the raw row after an insert/update (no join). */
-function loadItemCategory(db: AppDatabase, productId: number | null): string | null {
+/** For the single-item endpoints, which only have the raw row after an insert/update (no join);
+ * `itemCategory` is that row's own `category` column, the T37 F2 fallback when there is no product. */
+function loadItemCategory(
+  db: AppDatabase,
+  productId: number | null,
+  itemCategory: string | null,
+): string | null {
   if (productId === null) {
-    return null;
+    return itemCategory;
   }
   const product = db
     .select({ category: products.category })
     .from(products)
     .where(eq(products.id, productId))
     .get();
-  return product?.category ?? null;
+  return product?.category ?? itemCategory;
 }
 
 function nextPosition(db: AppDatabase, listId: number): number {
@@ -275,11 +281,12 @@ export default async function shoppingListsRoutes(
       .returning()
       .get();
 
-    reply
-      .status(201)
-      .send(
-        toShoppingListItem({ ...created, category: loadItemCategory(app.db, created.productId) }),
-      );
+    reply.status(201).send(
+      toShoppingListItem({
+        ...created,
+        category: loadItemCategory(app.db, created.productId, created.category),
+      }),
+    );
   });
 
   app.patch('/api/shopping-list-items/:id', async (request) => {
@@ -314,7 +321,7 @@ export default async function shoppingListsRoutes(
 
     return toShoppingListItem({
       ...updated,
-      category: loadItemCategory(app.db, updated.productId),
+      category: loadItemCategory(app.db, updated.productId, updated.category),
     });
   });
 
@@ -573,6 +580,9 @@ export default async function shoppingListsRoutes(
             quantityText: item.quantityText,
             source: 'ai',
             reason: item.reason,
+            // Set even when there is a product too (harmless, and consistent): `loadItems`/
+            // `loadItemCategory` only fall back to it once the product itself has none (T37 F2).
+            category: item.category,
             checked: 0,
             position,
             createdAt: now,

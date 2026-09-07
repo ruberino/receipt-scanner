@@ -59,10 +59,15 @@ export class RateLimitedError extends AppError {
 
 /** The synchronous `POST /api/shopping-lists/:id/proposals` call failed (network, timeout,
  * `finishReason: 'length'`, or an answer that does not parse); unlike matching's silent
- * degrade-to-warning, a proposal with no result is not useful, so this reaches the user (T37). */
+ * degrade-to-warning, a proposal with no result is not useful, so this reaches the user (T37).
+ * `cause` carries what `runProposal` knew at the failing site (the caught error, `{ finishReason }`,
+ * the parse error, or the zod issues), so the log this ends up in is triage-ready (AGENTS.md). */
 export class ProposalFailedError extends AppError {
-  constructor(message = 'Kunne ikke lage forslag, prøv igjen') {
+  constructor(message = 'Kunne ikke lage forslag, prøv igjen', options?: { cause?: unknown }) {
     super(500, 'INTERNAL', message);
+    if (options?.cause !== undefined) {
+      this.cause = options.cause;
+    }
   }
 }
 

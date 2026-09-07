@@ -337,6 +337,31 @@ describe('GET /api/shopping-lists/current', () => {
     expect(items[0]).toMatchObject({ name: 'Lettmelk 1 l', category: 'Meieri' });
     expect(items[1]).toMatchObject({ name: 'Handlenett', category: null });
   });
+
+  it("falls back to the item's own category only when it has no product (T37 F2)", async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    const listId = insertOpenList();
+    insertItem(listId, 1, { name: 'Plommer', category: 'Frukt og grønt', source: 'ai' });
+    insertItem(listId, 2, {
+      name: 'Lettmelk 1 l',
+      productId: milk,
+      category: 'Snacks',
+      source: 'ai',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/shopping-lists/current',
+      headers: { cookie },
+    });
+
+    const items = response.json().items;
+    expect(items[0]).toMatchObject({ name: 'Plommer', category: 'Frukt og grønt' });
+    // The product's own category wins over the item's own, even though one was stored (T37 F2).
+    expect(items[1]).toMatchObject({ name: 'Lettmelk 1 l', category: 'Meieri' });
+  });
 });
 
 describe('POST /api/shopping-lists/:id/items', () => {
@@ -1207,12 +1232,34 @@ describe('POST /api/shopping-lists/:id/proposals/:proposalId/accept', () => {
     expect(items.every((item: { source: string; reason: string }) => item.source === 'ai')).toBe(
       true,
     );
+    expect(items.every((item: { category: string }) => item.category === 'Annet')).toBe(true);
     const stored = app.db
       .select()
       .from(shoppingListProposals)
       .where(eq(shoppingListProposals.id, proposalId))
       .get();
     expect(stored?.acceptedJson).toBe(JSON.stringify([1, 3, 5]));
+  });
+
+  it("keeps a productId-null item's own category, so it groups correctly instead of falling under Annet (T37 F2)", async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const proposalId = insertProposal(listId, [
+      { ...sevenItems[0]!, name: 'Plommer', category: 'Frukt og grønt' },
+    ]);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [0] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().items).toEqual([
+      expect.objectContaining({ name: 'Plommer', category: 'Frukt og grønt', productId: null }),
+    ]);
   });
 
   it('gives 409 on a second accept of the same proposal', async () => {

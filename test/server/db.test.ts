@@ -33,6 +33,7 @@ const preProposalsMigrationsFolder = path.resolve(
   'migrations',
   '0002-only',
 );
+const preCategoryMigrationsFolder = path.resolve(here, '..', 'fixtures', 'migrations', '0004-only');
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -176,19 +177,17 @@ describe('database schema and migrations', () => {
       .returning()
       .get();
     const product = insertProduct(opened, 'Lettmelk');
-    const item = opened.db
-      .insert(shoppingListItems)
-      .values({
-        listId: list.id,
-        productId: product.id,
-        name: 'Lettmelk 1 l',
-        source: 'suggested',
-        checked: 0,
-        position: 1,
-        createdAt: NOW,
-      })
-      .returning()
-      .get();
+    // Raw SQL, not the drizzle query builder: the live `shoppingListItems` schema object now has
+    // `category` too, and drizzle's insert names every schema column, which the old table this
+    // fixture recreates does not have yet (T37 F2).
+    const itemId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into shopping_list_items (list_id, product_id, name, source, checked, position, created_at)
+           values (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(list.id, product.id, 'Lettmelk 1 l', 'suggested', 0, 1, NOW).lastInsertRowid,
+    );
 
     runMigrations(opened);
 
@@ -196,7 +195,7 @@ describe('database schema and migrations', () => {
       opened.db.select().from(shoppingLists).where(eq(shoppingLists.id, list.id)).get(),
     ).toMatchObject({ status: 'open', weekStart: '2026-08-31' });
     expect(
-      opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, item.id)).get(),
+      opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
     ).toMatchObject({ name: 'Lettmelk 1 l', productId: product.id });
     expect(() =>
       opened.db
@@ -216,19 +215,15 @@ describe('database schema and migrations', () => {
       .returning()
       .get();
     const product = insertProduct(opened, 'Lettmelk');
-    const item = opened.db
-      .insert(shoppingListItems)
-      .values({
-        listId: list.id,
-        productId: product.id,
-        name: 'Lettmelk 1 l',
-        source: 'suggested',
-        checked: 0,
-        position: 1,
-        createdAt: NOW,
-      })
-      .returning()
-      .get();
+    // Raw SQL, see the T34 test above: the pre-T37 fixture predates `category`.
+    const itemId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into shopping_list_items (list_id, product_id, name, source, checked, position, created_at)
+           values (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(list.id, product.id, 'Lettmelk 1 l', 'suggested', 0, 1, NOW).lastInsertRowid,
+    );
     const dismissal = opened.db
       .insert(shoppingListDismissals)
       .values({ listId: list.id, productId: product.id, createdAt: NOW })
@@ -241,7 +236,7 @@ describe('database schema and migrations', () => {
       opened.db.select().from(shoppingLists).where(eq(shoppingLists.id, list.id)).get(),
     ).toMatchObject({ status: 'open', weekStart: '2026-08-31' });
     expect(
-      opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, item.id)).get(),
+      opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
     ).toMatchObject({ name: 'Lettmelk 1 l', productId: product.id, source: 'suggested' });
     expect(
       opened.db
@@ -276,6 +271,50 @@ describe('database schema and migrations', () => {
           promptTokens: 100,
           completionTokens: 50,
           durationMs: 1000,
+          createdAt: NOW,
+        })
+        .run(),
+    ).not.toThrow();
+  });
+
+  it('keeps an existing item intact, with category null, when migrating in shopping_list_items.category (T37 F2)', () => {
+    opened = openDatabase(':memory:');
+    migrate(opened.db, { migrationsFolder: preCategoryMigrationsFolder });
+
+    const list = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+    // Raw SQL, not the drizzle query builder: it names every column of the live schema, including
+    // `category`, which the table this fixture recreates does not have yet.
+    const itemId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into shopping_list_items (list_id, name, source, checked, position, created_at)
+           values (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(list.id, 'Handlenett', 'manual', 0, 1, NOW).lastInsertRowid,
+    );
+
+    runMigrations(opened);
+
+    const stored = opened.db
+      .select()
+      .from(shoppingListItems)
+      .where(eq(shoppingListItems.id, itemId))
+      .get();
+    expect(stored).toMatchObject({ name: 'Handlenett', category: null });
+    expect(() =>
+      opened.db
+        .insert(shoppingListItems)
+        .values({
+          listId: list.id,
+          name: 'Plommer',
+          source: 'ai',
+          category: 'Frukt og grønt',
+          checked: 0,
+          position: 2,
           createdAt: NOW,
         })
         .run(),

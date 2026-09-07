@@ -26,7 +26,9 @@ Write `docs/adr/0016-llm-shopping-list-proposal.md` with:
 - Migration 1: `shopping_list_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, list_id INTEGER NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE, model TEXT NOT NULL, prompt_version INTEGER NOT NULL, items_json TEXT NOT NULL, raw_response TEXT NOT NULL, prompt_tokens INTEGER NOT NULL, completion_tokens INTEGER NOT NULL, duration_ms INTEGER NOT NULL, accepted_json TEXT, created_at TEXT NOT NULL)`; index on `list_id`.
 - Migration 2: `shopping_list_items.source` CHECK gains `'ai'`.
   This is a table recreate in SQLite; the runner turns foreign keys off around `migrate()` and runs `PRAGMA foreign_key_check` (T24), and the migration test must show that existing lists, items and dismissals survive with their ids.
-- Items accepted from a proposal are inserted with `source = 'ai'`, the model's `reason`, `quantityText`, `productId` when the proposal named an existing product, `position` after the current maximum.
+- Migration 3 (review F2): `shopping_list_items` gains a nullable `category` column, a plain `ALTER TABLE … ADD COLUMN`; an existing item survives with `category` null.
+  `loadItems`/`loadItemCategory` (`src/server/routes/shoppingLists.ts`) return `COALESCE(products.category, shopping_list_items.category)`, so a matched product's own category still wins and this is only the fallback for a productless item.
+- Items accepted from a proposal are inserted with `source = 'ai'`, the model's `reason`, `quantityText`, `category` (review F2 — set on every inserted item, harmless when a product is also set), `productId` when the proposal named an existing product, `position` after the current maximum.
 
 ## Calendar (`src/shared/calendar.ts`, pure)
 
