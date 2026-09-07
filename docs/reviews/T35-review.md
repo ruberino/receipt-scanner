@@ -2,6 +2,7 @@
 
 Review of pull request #8, commits `dfedea5` (docs) and `aabac77` (implementation) on `task/T35-receipt-image-compare`, 2026-09-07.
 Verdict at first pass: one small required item (F1); the layout itself is right on both widths.
+Second pass on `cde9fae`: F1 is done; approved, see the go-ahead at the end.
 
 ## What was verified
 
@@ -21,3 +22,11 @@ CI run on `aabac77` is green on both jobs.
 
 - The desktop column's `<img>` is `hidden` below `md`, and browsers still fetch a hidden image, so a phone downloads the receipt image once per done receipt even with the panel hidden; the image route's one-day `Cache-Control` keeps it to one fetch, and the toggle then shows it from cache.
   Not worth a `matchMedia` hook.
+
+## Go-ahead, 2026-09-07
+
+F1 verified at `cde9fae`: `Skjul bilde` is overlaid top-right inside the sticky block, the image scrolls in its own inner scroller so the button stays put, `Vis bilde` is unchanged when hidden, the toggle test asserts the hide control sits inside the panel, and the retaken scrolled screenshot shows the button on the pinned panel.
+All five scripts exit 0 in a clean worktree at `cde9fae`, 553 tests, Vitest at two workers; CI is green on both jobs.
+Approved: commit this file on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
+After the merge the foreman updates the demo.
+T33 is next, then T31, T32, T34, T37.
