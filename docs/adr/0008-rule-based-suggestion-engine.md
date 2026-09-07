@@ -34,3 +34,14 @@ An LLM could produce plausible lists but not stable, testable, explainable ones.
 - Asking the LLM for a list from the purchase history: not deterministic, hard to test, unexplained changes week to week.
 - Simple "everything bought last week": misses biweekly and monthly items and repeats one-off purchases.
 - Statistical models (Poisson or survival analysis): more accurate in theory, but the data is tens of purchases per product and the gain is not worth the opacity.
+
+## Amendment, 2026-09-07 (T36): the list is a week's shopping
+
+Ruben's decision: the shopping list should suggest food for at least the coming seven days, not just what is needed right this moment.
+Three constants and one formula change; the engine stays pure and deterministic.
+
+- "Bought this trip" shrinks from three days to one (`RECENT_PURCHASE_DAYS = 1`): a product bought yesterday is still excluded, but one bought two days ago is now a candidate.
+- The due rule becomes a seven-day horizon (`HORIZON_DAYS = 7`, replacing `DUE_SOON_DAYS = 3`): a product is due when it will run out strictly before a trip seven days out (`medianGap − daysSinceLast < 7`), not only within three days of running out.
+- The quantity hint is the median of each purchase week's total, not of individual purchases: two purchases in the same week (buying milk twice on a big shopping week) count as one week's worth, so the list sizes for a week, not a single trip.
+
+Architecture.md section 8 and its worked example are updated accordingly and stay normative.

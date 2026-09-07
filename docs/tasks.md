@@ -818,3 +818,20 @@ Acceptance criteria:
 - Every action is possible with 44 px targets at 360 px width; Playwright walk with screenshots under `docs/reviews/screenshots/T31/`.
 
 Tests: route tests for reopen (today, yesterday, another list open, 404, 401) and delete (open, done, 404, 401); client tests with fake timers for remove-and-undo, remove-and-expire, a second removal flushing the first, unmount flushing; complete-and-undo; the preview with and without `Gjenåpne`; delete list confirmed and dismissed; the `Kjøpt` section.
+
+---
+
+## T36 — The list is the week's shopping
+
+Goal: everything the household will run out of within the coming week is on the list, in the week's quantity.
+
+Files: `src/server/domain/suggestions.ts`, `docs/adr/0008-*.md`, tests.
+
+Steps: see `docs/reviews/T36-plan.md`.
+
+Acceptance criteria:
+
+- A product with a weekly cadence bought two days ago is suggested; bought yesterday it is not; bought eight days ago it is, with the same reason text as before.
+- A product bought every two weeks and last bought six days ago is not suggested (`dueIn 8`); last bought eight days ago it is (`dueIn 6`).
+- A product bought twice in one week is suggested with the sum of that week's quantities.
+- `npm test` is the only verification; no LLM call is involved.

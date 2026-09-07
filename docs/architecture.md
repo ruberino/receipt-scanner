@@ -475,15 +475,15 @@ Algorithm, evaluated per product:
 1. Skip if `suppressed`.
 2. `weeks` = distinct `isoWeekKey(date)` over the purchase dates, ascending; `n = weeks.length`; skip if `n < 2`.
    Two purchases in the same week count as one purchase week, so a product bought on two consecutive days once is not a pattern.
-3. `daysSinceLast = diffDays(lastPurchaseDate, today)`; skip if `daysSinceLast <= 3` (bought on this trip).
+3. `daysSinceLast = diffDays(lastPurchaseDate, today)`; skip if `daysSinceLast <= 1` (bought today or yesterday).
 4. `medianGap = 7 × median(gaps in whole weeks between consecutive purchase weeks)`, so the smallest possible gap is 7 days.
 5. Skip if `daysSinceLast > max(60, 3 × medianGap)` (stale product).
-6. `dueIn = medianGap − daysSinceLast`; `dueRule = dueIn <= 3`.
+6. `dueIn = medianGap − daysSinceLast`; `dueRule = dueIn < 7` — due strictly before the next weekly trip (T36: the list is a week's shopping, ADR-0008 amendment).
 7. `weeksBought` = number of distinct `isoWeekKey(date)` among dates within the last 84 days; `freqRule = weeksBought / 12 >= 0.5`.
 8. Skip unless `dueRule || freqRule`.
 9. `score = daysSinceLast / medianGap`.
 10. `reason` = when `dueRule`: `Kjøpes ca. hver {medianGap}. dag, sist for {daysSinceLast} dager siden`; otherwise `Kjøpt {weeksBought} av de siste 12 ukene`.
-11. `quantityText`: median quantity over purchases; unit `kg` → one decimal plus ` kg`; otherwise `max(1, round(median))` plus ` stk`.
+11. `quantityText`: group purchases by `isoWeekKey(date)`, sum the quantities within each purchase week, take the median over those weekly sums (T36) — two purchases in the same week count as one week's worth; unit `kg` → one decimal plus ` kg`; otherwise `max(1, round(median))` plus ` stk`.
 
 Output sorted by `score` descending, then `name`.
 Each suggestion is `{ productId, name, category, reason, quantityText, score }`.
@@ -491,8 +491,10 @@ Each suggestion is `{ productId, name, category, reason, quantityText, score }`.
 Worked example with `today = 2026-09-04`: milk bought 08-07, 08-14, 08-21, 08-28 → `medianGap 7`, `daysSinceLast 7`, `dueIn 0` → suggested with score 1.0.
 Coffee bought 07-24, 08-14 → `medianGap 21`, `daysSinceLast 21`, `dueIn 0` → suggested.
 Flour bought 06-01, 06-15 → `daysSinceLast 81 > max(60, 42)` → skipped as stale.
-Bananas bought 09-02 and 08-26 → `daysSinceLast 2` → skipped, bought this trip.
 Chips bought 08-31 and 09-01 → one purchase week → `n = 1` → skipped.
+Bananas bought 08-26 and 09-02 → `medianGap 7`, `daysSinceLast 2`, `dueIn 5 < 7` → suggested (T36; before this task it was skipped as bought this trip).
+Eggs bought 08-27 and 09-03 → `daysSinceLast 1` → skipped, bought yesterday.
+Milk bought 08-24 (2), 08-27 (2), 08-31 (2) and 09-03 (2) → purchase weeks 35 and 36 with weekly sums 4 and 4 → `quantityText 4 stk`.
 
 ## 9. API contract
 
