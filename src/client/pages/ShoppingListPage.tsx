@@ -1,13 +1,19 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ShoppingList, ShoppingListItem } from '../../shared/schemas.ts';
+import { todayInOslo } from '../../shared/dates.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
+import { formatTimeInOslo } from '../lib/format.ts';
 import { useDebouncedValue } from '../lib/useDebouncedValue.ts';
 import {
   useCompleteShoppingList,
   useCreateShoppingList,
   useCreateShoppingListItem,
   useCurrentShoppingList,
+  useDeleteShoppingList,
+  useDeleteShoppingListItem,
+  useLatestShoppingList,
   useProductSearch,
+  useReopenShoppingList,
   useSuggestions,
   useToggleShoppingListItem,
 } from '../api/queries.ts';
@@ -16,10 +22,19 @@ import SuggestionCard from '../components/SuggestionCard.tsx';
 import { useToast } from '../components/Toast.tsx';
 
 const DEBOUNCE_MS = 200;
+const REMOVE_UNDO_MS = 6000;
+
+function completedTodayInOslo(completedAt: string | null): boolean {
+  return completedAt !== null && todayInOslo(new Date(completedAt)) === todayInOslo();
+}
 
 function SuggestionsPreview() {
   const { data: suggestions, isPending, isError } = useSuggestions();
+  const { data: latestList } = useLatestShoppingList();
   const createList = useCreateShoppingList();
+  // Only rendered/enabled through handleReopen, gated on completedToday below; the list id is
+  // fixed once latestList loads, same as any other per-resource mutation hook in this file.
+  const reopen = useReopenShoppingList(latestList?.id ?? -1);
   const { showToast } = useToast();
 
   function handleCreate() {
@@ -28,8 +43,35 @@ function SuggestionsPreview() {
     });
   }
 
+  function handleReopen() {
+    reopen.mutate(undefined, {
+      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+    });
+  }
+
+  const completedToday =
+    latestList != null &&
+    latestList.status === 'done' &&
+    completedTodayInOslo(latestList.completedAt);
+
   return (
     <div className="flex flex-col gap-4 p-4">
+      {completedToday && latestList.completedAt !== null && (
+        <div className="flex flex-col gap-2 rounded border border-gray-300 p-4">
+          <p className="text-gray-600">
+            Handleturen ble fullført kl. {formatTimeInOslo(latestList.completedAt)}
+          </p>
+          <button
+            type="button"
+            onClick={handleReopen}
+            disabled={reopen.isPending}
+            className="min-h-11 rounded border border-blue-600 px-4 py-2 font-medium text-blue-600 disabled:opacity-50"
+          >
+            Gjenåpne listen
+          </button>
+        </div>
+      )}
+
       <button
         type="button"
         onClick={handleCreate}
@@ -148,25 +190,64 @@ function AddItemField({ listId }: { listId: number }) {
   );
 }
 
-function completedLabel(count: number): string {
-  return count === 1 ? '1 fullført' : `${count} fullført`;
+function boughtLabel(count: number): string {
+  return count === 1 ? 'Kjøpt (1)' : `Kjøpt (${count})`;
 }
+
+type PendingRemoval = { item: ShoppingListItem; timeoutId: ReturnType<typeof setTimeout> };
 
 function OpenListView({ list }: { list: ShoppingList }) {
   const completeList = useCompleteShoppingList(list.id);
+  const reopen = useReopenShoppingList(list.id);
+  const deleteList = useDeleteShoppingList(list.id);
   const toggle = useToggleShoppingListItem();
+  const deleteItem = useDeleteShoppingListItem();
   const { showToast } = useToast();
   // Instant, revert-on-failure checked state, independent of the query cache's own timing (see
   // useToggleShoppingListItem's doc comment): flipped synchronously in the click handler itself,
   // so both the checkbox and which group the item is in update in the same tick as the tap.
   const [checkedOverride, setCheckedOverride] = useState<Record<number, boolean>>({});
+  // Deferred removal (T31): tapping "Fjern" hides the row and offers "Angre" for 6s before the
+  // DELETE is actually sent. Only one removal is pending at a time, so a ref (not state) holds it
+  // — the timeout callback and the "second removal" and "unmount" flush paths all need the current
+  // value synchronously, not a stale render's closure.
+  const pendingRemovalRef = useRef<PendingRemoval | null>(null);
+  const [removedItemId, setRemovedItemId] = useState<number | null>(null);
 
-  const items = list.items.map((item) => ({
-    ...item,
-    checked: checkedOverride[item.id] ?? item.checked,
-  }));
+  const items = list.items
+    .filter((item) => item.id !== removedItemId)
+    .map((item) => ({
+      ...item,
+      checked: checkedOverride[item.id] ?? item.checked,
+    }));
   const uncheckedItems = items.filter((item) => !item.checked);
   const checkedItems = items.filter((item) => item.checked);
+
+  function sendPendingRemoval() {
+    const pending = pendingRemovalRef.current;
+    if (pending === null) {
+      return;
+    }
+    clearTimeout(pending.timeoutId);
+    pendingRemovalRef.current = null;
+    deleteItem.mutate(pending.item.id, {
+      onError: (mutationError) => {
+        setRemovedItemId((current) => (current === pending.item.id ? null : current));
+        showToast(apiErrorMessage(mutationError));
+      },
+    });
+  }
+
+  // Flush whatever is pending when this view goes away (T31), and only then: the closure is fixed
+  // at mount, but it reads pendingRemovalRef.current at call time, which is always current, and
+  // calls deleteItem.mutate/showToast from that same render, functionally equivalent to any other
+  // render's since both close over the same stable queryClient and toast context.
+  useEffect(() => {
+    return () => {
+      sendPendingRemoval();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flush-on-unmount only, see comment above
+  }, []);
 
   function handleToggle(item: ShoppingListItem) {
     const nextChecked = !(checkedOverride[item.id] ?? item.checked);
@@ -182,11 +263,44 @@ function OpenListView({ list }: { list: ShoppingList }) {
     );
   }
 
+  function handleRemove(item: ShoppingListItem) {
+    sendPendingRemoval(); // only one removal pending at a time
+    const timeoutId = setTimeout(sendPendingRemoval, REMOVE_UNDO_MS);
+    pendingRemovalRef.current = { item, timeoutId };
+    setRemovedItemId(item.id);
+    showToast(`«${item.name}» fjernet`, {
+      actionLabel: 'Angre',
+      onAction: () => {
+        if (pendingRemovalRef.current?.item.id === item.id) {
+          clearTimeout(pendingRemovalRef.current.timeoutId);
+          pendingRemovalRef.current = null;
+          setRemovedItemId(null);
+        }
+      },
+    });
+  }
+
   function handleComplete() {
-    if (!window.confirm('Fullføre handleturen?')) {
+    completeList.mutate(undefined, {
+      onSuccess: () => {
+        showToast('Handleturen er fullført', {
+          actionLabel: 'Angre',
+          onAction: () => {
+            reopen.mutate(undefined, {
+              onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+            });
+          },
+        });
+      },
+      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+    });
+  }
+
+  function handleDeleteList() {
+    if (!window.confirm('Slette handlelisten? Dette kan ikke angres.')) {
       return;
     }
-    completeList.mutate(undefined, {
+    deleteList.mutate(undefined, {
       onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
     });
   }
@@ -198,22 +312,30 @@ function OpenListView({ list }: { list: ShoppingList }) {
       ) : (
         <ul>
           {uncheckedItems.map((item) => (
-            <ShoppingListItemRow key={item.id} item={item} onToggle={() => handleToggle(item)} />
+            <ShoppingListItemRow
+              key={item.id}
+              item={item}
+              onToggle={() => handleToggle(item)}
+              onRemove={() => handleRemove(item)}
+            />
           ))}
         </ul>
       )}
 
       {checkedItems.length > 0 && (
-        <details className="px-4 py-2">
-          <summary className="cursor-pointer py-2 text-sm text-gray-600">
-            {completedLabel(checkedItems.length)}
-          </summary>
+        <div className="px-4 pt-2">
+          <p className="py-2 text-sm text-gray-600">{boughtLabel(checkedItems.length)}</p>
           <ul>
             {checkedItems.map((item) => (
-              <ShoppingListItemRow key={item.id} item={item} onToggle={() => handleToggle(item)} />
+              <ShoppingListItemRow
+                key={item.id}
+                item={item}
+                onToggle={() => handleToggle(item)}
+                onRemove={() => handleRemove(item)}
+              />
             ))}
           </ul>
-        </details>
+        </div>
       )}
 
       <div className="flex flex-col gap-4 p-4">
@@ -225,6 +347,14 @@ function OpenListView({ list }: { list: ShoppingList }) {
           className="min-h-11 rounded bg-green-600 px-4 py-2 font-medium text-white disabled:opacity-50"
         >
           Ferdig handlet
+        </button>
+        <button
+          type="button"
+          onClick={handleDeleteList}
+          disabled={deleteList.isPending}
+          className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
+        >
+          Slett listen
         </button>
       </div>
     </div>

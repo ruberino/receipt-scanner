@@ -4,19 +4,27 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider, useToast } from '../../src/client/components/Toast.tsx';
 
-function TestHarness() {
+function TestHarness({ onAction = () => {} }: { onAction?: () => void }) {
   const { showToast } = useToast();
   return (
-    <button type="button" onClick={() => showToast('Lagret')}>
-      Vis
-    </button>
+    <>
+      <button type="button" onClick={() => showToast('Lagret')}>
+        Vis
+      </button>
+      <button
+        type="button"
+        onClick={() => showToast('«Lettmelk 1 l» fjernet', { actionLabel: 'Angre', onAction })}
+      >
+        Vis med angre
+      </button>
+    </>
   );
 }
 
-function renderHarness() {
+function renderHarness(onAction?: () => void) {
   render(
     <ToastProvider>
-      <TestHarness />
+      <TestHarness onAction={onAction} />
     </ToastProvider>,
   );
 }
@@ -34,7 +42,7 @@ describe('Toast', () => {
     renderHarness();
 
     act(() => {
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: 'Vis' }));
     });
 
     expect(screen.getByRole('status')).toHaveTextContent('Lagret');
@@ -45,7 +53,7 @@ describe('Toast', () => {
     renderHarness();
 
     act(() => {
-      fireEvent.click(screen.getByRole('button'));
+      fireEvent.click(screen.getByRole('button', { name: 'Vis' }));
     });
     act(() => {
       vi.advanceTimersByTime(3000);
@@ -58,18 +66,70 @@ describe('Toast', () => {
     renderHarness();
 
     act(() => {
-      fireEvent.click(screen.getByRole('button')); // t=0
+      fireEvent.click(screen.getByRole('button', { name: 'Vis' })); // t=0
     });
     act(() => {
       vi.advanceTimersByTime(2000); // t=2s
     });
     act(() => {
-      fireEvent.click(screen.getByRole('button')); // second call at t=2s
+      fireEvent.click(screen.getByRole('button', { name: 'Vis' })); // second call at t=2s
     });
     act(() => {
       vi.advanceTimersByTime(2000); // t=4s, 2s since the second call
     });
 
     expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
+  it('shows an action button and stays for 6 seconds instead of 3 (T31)', () => {
+    renderHarness();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Vis med angre' }));
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('«Lettmelk 1 l» fjernet');
+    expect(screen.getByRole('button', { name: 'Angre' })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByRole('status')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('calls onAction and dismisses immediately when the action button is tapped (T31)', () => {
+    const onAction = vi.fn();
+    renderHarness(onAction);
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Vis med angre' }));
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Angre' }));
+    });
+
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('a plain toast without an action still uses the 3 second duration after an action toast', () => {
+    renderHarness();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Vis med angre' }));
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Vis' }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

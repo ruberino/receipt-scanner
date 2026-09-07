@@ -9,6 +9,12 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('nb-NO', {
 });
 const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat('nb-NO', { day: 'numeric', month: 'short' });
 const MONTH_FORMATTER = new Intl.DateTimeFormat('nb-NO', { month: 'short', year: 'numeric' });
+const TIME_IN_OSLO_FORMATTER = new Intl.DateTimeFormat('nb-NO', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'Europe/Oslo',
+});
 
 function toUtcDate(date: string): Date {
   const [year, month, day] = date.split('-').map(Number);
@@ -44,6 +50,13 @@ export function formatDateWithRelative(date: string, today: string = todayLocalI
   const shortDate = SHORT_DATE_FORMATTER.format(toUtcDate(date));
   const relative = formatRelativeDate(date, today);
   return relative === shortDate ? shortDate : `${shortDate} · ${relative}`;
+}
+
+/** `formatTimeInOslo('2026-09-07T12:12:00.000Z')` → `14:12`: the household's own time zone
+ * (ADR-0007), not the browser's, since "when the trip was completed" is a fact about the
+ * household, not the viewer (T31). */
+export function formatTimeInOslo(isoTimestamp: string): string {
+  return TIME_IN_OSLO_FORMATTER.format(new Date(isoTimestamp));
 }
 
 /** `formatMonth('2026-07')` → `jul. 2026`. */

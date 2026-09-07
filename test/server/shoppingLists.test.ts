@@ -65,10 +65,10 @@ function insertOpenList(weekStart = '2026-08-31'): number {
     .get().id;
 }
 
-function insertDoneList(weekStart = '2026-08-24'): number {
+function insertDoneList(weekStart = '2026-08-24', completedAt = NOW): number {
   return app!.db
     .insert(shoppingLists)
-    .values({ weekStart, status: 'done', createdAt: NOW, completedAt: NOW })
+    .values({ weekStart, status: 'done', createdAt: NOW, completedAt })
     .returning()
     .get().id;
 }
@@ -506,6 +506,164 @@ describe('DELETE /api/shopping-list-items/:id', () => {
     });
 
     expect(response.statusCode).toBe(204);
+    expect(
+      app.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
+    ).toBeUndefined();
+  });
+});
+
+describe('POST /api/shopping-lists/:id/reopen', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'POST', url: '/api/shopping-lists/1/reopen' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown list', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/shopping-lists/999/reopen',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('reopens a list completed today in Oslo, restoring its items and clearing completedAt', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertDoneList('2026-08-31', NOW);
+    insertItem(listId, 1, { name: 'Kaffe', checked: 1 });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/reopen`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toMatchObject({ id: listId, status: 'open', completedAt: null });
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({ name: 'Kaffe', checked: true });
+  });
+
+  it('reopens when completedAt is just after midnight in Oslo, even though the UTC date is still yesterday', async () => {
+    // 2026-09-03T22:30:00Z is 2026-09-04T00:30 CEST: "today" in Oslo, same as NOW's Oslo day.
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertDoneList('2026-08-31', '2026-09-03T22:30:00.000Z');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/reopen`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it('gives 409 when completed on an earlier day in Oslo', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertDoneList('2026-08-24', '2026-09-03T12:00:00.000Z');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/reopen`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('gives 409 when another list is already open', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertDoneList('2026-08-31', NOW);
+    insertOpenList('2026-09-07');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/reopen`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('gives 409 for a list that is still open', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/reopen`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+});
+
+describe('DELETE /api/shopping-lists/:id', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'DELETE', url: '/api/shopping-lists/1' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/shopping-lists/999',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('gives 409 for a done list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('deletes an open list and cascades its items', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const itemId = insertItem(listId, 1);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(
+      app.db.select().from(shoppingLists).where(eq(shoppingLists.id, listId)).get(),
+    ).toBeUndefined();
     expect(
       app.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
     ).toBeUndefined();
