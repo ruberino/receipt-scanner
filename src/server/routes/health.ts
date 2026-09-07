@@ -3,8 +3,10 @@ import type { FastifyInstance } from 'fastify';
 export type HealthRouteOptions = {
   version: string;
   replicationEnabled: boolean;
-  /** The active provider's model name (ADR-0015), so an operator can see which one is live. */
+  /** The extraction/matching provider's model name (ADR-0015), so an operator can see which one is live. */
   model: string;
+  /** The `purpose: 'propose'` provider's model name; equals `model` unless `LLM_PROVIDER_PROPOSE` is set (ADR-0017). */
+  proposalModel: string;
 };
 
 export default async function healthRoutes(
@@ -18,5 +20,6 @@ export default async function healthRoutes(
     queueLength: app.receiptProcessor.queueLength(),
     replication: options.replicationEnabled ? 'on' : 'off',
     model: options.model,
+    proposalModel: options.proposalModel,
   }));
 }
