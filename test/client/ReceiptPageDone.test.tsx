@@ -350,9 +350,16 @@ describe('ReceiptPage — done state', () => {
     expect(screen.getAllByRole('img', { name: 'Kvitteringsbilde' })).toHaveLength(1);
 
     await user.click(screen.getByRole('button', { name: 'Vis bilde' }));
-    expect(screen.getAllByRole('img', { name: 'Kvitteringsbilde' })).toHaveLength(2);
+    const images = screen.getAllByRole('img', { name: 'Kvitteringsbilde' });
+    expect(images).toHaveLength(2);
 
-    await user.click(screen.getByRole('button', { name: 'Skjul bilde' }));
+    // "Skjul bilde" must live inside the same sticky block as the phone's image (T35 review F1),
+    // not back where "Vis bilde" was, or scrolling into the lines would leave it unreachable.
+    const phoneImage = images[1] ?? null;
+    const hideButton = screen.getByRole('button', { name: 'Skjul bilde' });
+    expect(hideButton.closest('.sticky')).toContainElement(phoneImage);
+
+    await user.click(hideButton);
     expect(screen.getAllByRole('img', { name: 'Kvitteringsbilde' })).toHaveLength(1);
   });
 
