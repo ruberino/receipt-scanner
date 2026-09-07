@@ -567,6 +567,31 @@ describe('ShoppingListPage', () => {
       expect(reopenMutate).toHaveBeenCalledWith(undefined, expect.anything());
     });
 
+    it('flushes a pending removal before completing, so only the completion toast shows (T31 review F1)', () => {
+      vi.useFakeTimers();
+      completeMutate.mockImplementation((_body, options) => {
+        options?.onSuccess?.();
+      });
+      mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+      renderPage();
+
+      act(() => {
+        fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+      });
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Ferdig handlet' }));
+      });
+
+      expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
+      expect(completeMutate).toHaveBeenCalledWith(undefined, expect.anything());
+      const deleteOrder = deleteItemMutate.mock.invocationCallOrder[0]!;
+      const completeOrder = completeMutate.mock.invocationCallOrder[0]!;
+      expect(deleteOrder).toBeLessThan(completeOrder);
+
+      expect(screen.getByRole('status')).toHaveTextContent('Handleturen er fullført');
+      expect(screen.queryByText('Noe gikk galt')).not.toBeInTheDocument();
+    });
+
     it('returns to the suggestions preview once the list completes (T18 acceptance)', async () => {
       completeMutate.mockImplementation((_body, options) => {
         options?.onSuccess?.();
@@ -618,6 +643,28 @@ describe('ShoppingListPage', () => {
       await user.click(screen.getByRole('button', { name: 'Slett listen' }));
 
       expect(deleteListMutate).not.toHaveBeenCalled();
+    });
+
+    it('cancels a pending removal instead of sending it when the list itself is deleted (T31 review F1)', () => {
+      vi.useFakeTimers();
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+      renderPage();
+
+      act(() => {
+        fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+      });
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Slett listen' }));
+      });
+
+      expect(deleteListMutate).toHaveBeenCalledWith(undefined, expect.anything());
+      expect(deleteItemMutate).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(6000);
+      });
+      expect(deleteItemMutate).not.toHaveBeenCalled();
     });
   });
 });

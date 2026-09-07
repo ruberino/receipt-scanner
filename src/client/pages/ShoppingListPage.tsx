@@ -281,6 +281,10 @@ function OpenListView({ list }: { list: ShoppingList }) {
   }
 
   function handleComplete() {
+    // A pending removal must not outlive the list it belongs to (T31 review F1): flushed here,
+    // while the list is still open, instead of possibly racing the completion via the unmount
+    // flush and hitting a 409 on a now-done list, which would replace this toast with the error.
+    sendPendingRemoval();
     completeList.mutate(undefined, {
       onSuccess: () => {
         showToast('Handleturen er fullført', {
@@ -299,6 +303,12 @@ function OpenListView({ list }: { list: ShoppingList }) {
   function handleDeleteList() {
     if (!window.confirm('Slette handlelisten? Dette kan ikke angres.')) {
       return;
+    }
+    // The list's own delete cascades its items, so a pending removal is cancelled, not flushed
+    // (T31 review F1): sending it separately would race a list that is about to stop existing.
+    if (pendingRemovalRef.current !== null) {
+      clearTimeout(pendingRemovalRef.current.timeoutId);
+      pendingRemovalRef.current = null;
     }
     deleteList.mutate(undefined, {
       onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
