@@ -280,6 +280,25 @@ describe('GET /api/shopping-lists/current', () => {
       'Banan',
     ]);
   });
+
+  it("carries the product's category for a matched item, and null for a manual one without a product (T32)", async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    const listId = insertOpenList();
+    insertItem(listId, 1, { name: 'Lettmelk 1 l', productId: milk, source: 'suggested' });
+    insertItem(listId, 2, { name: 'Handlenett' });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/shopping-lists/current',
+      headers: { cookie },
+    });
+
+    const items = response.json().items;
+    expect(items[0]).toMatchObject({ name: 'Lettmelk 1 l', category: 'Meieri' });
+    expect(items[1]).toMatchObject({ name: 'Handlenett', category: null });
+  });
 });
 
 describe('POST /api/shopping-lists/:id/items', () => {
@@ -354,7 +373,28 @@ describe('POST /api/shopping-lists/:id/items', () => {
     });
 
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({ name: 'Ost', source: 'manual', position: 3 });
+    expect(response.json()).toMatchObject({
+      name: 'Ost',
+      source: 'manual',
+      position: 3,
+      category: null,
+    });
+  });
+
+  it("returns the product's category when created with a productId (T32)", async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const milk = insertProduct('Lettmelk 1 l');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/items`,
+      payload: { name: 'Lettmelk 1 l', productId: milk },
+      headers: { cookie },
+    });
+
+    expect(response.json()).toMatchObject({ category: 'Meieri' });
   });
 });
 
@@ -433,11 +473,12 @@ describe('PATCH /api/shopping-list-items/:id', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('updates checked, name, quantityText and position', async () => {
+  it("updates checked, name, quantityText and position, and keeps the product's category unchanged (T32)", async () => {
     app = createTestApp();
     cookie = await loginCookie(app);
     const listId = insertOpenList();
-    const itemId = insertItem(listId, 1);
+    const milk = insertProduct('Lettmelk 1 l');
+    const itemId = insertItem(listId, 1, { productId: milk });
 
     const response = await app.inject({
       method: 'PATCH',
@@ -452,6 +493,7 @@ describe('PATCH /api/shopping-list-items/:id', () => {
       name: 'Ny navn',
       quantityText: '2 stk',
       position: 5,
+      category: 'Meieri',
     });
   });
 });

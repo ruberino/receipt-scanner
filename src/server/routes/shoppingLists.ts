@@ -47,13 +47,38 @@ function toShoppingListSummary(list: typeof shoppingLists.$inferSelect, itemCoun
   };
 }
 
+/** Left-joins `products` for `category` (T32): derived on read, not stored, so no migration. */
 function loadItems(db: AppDatabase, listId: number) {
   return db
-    .select()
+    .select({
+      id: shoppingListItems.id,
+      productId: shoppingListItems.productId,
+      name: shoppingListItems.name,
+      quantityText: shoppingListItems.quantityText,
+      source: shoppingListItems.source,
+      reason: shoppingListItems.reason,
+      checked: shoppingListItems.checked,
+      position: shoppingListItems.position,
+      category: products.category,
+    })
     .from(shoppingListItems)
+    .leftJoin(products, eq(shoppingListItems.productId, products.id))
     .where(eq(shoppingListItems.listId, listId))
     .orderBy(shoppingListItems.position)
     .all();
+}
+
+/** For the single-item endpoints, which only have the raw row after an insert/update (no join). */
+function loadItemCategory(db: AppDatabase, productId: number | null): string | null {
+  if (productId === null) {
+    return null;
+  }
+  const product = db
+    .select({ category: products.category })
+    .from(products)
+    .where(eq(products.id, productId))
+    .get();
+  return product?.category ?? null;
 }
 
 function nextPosition(db: AppDatabase, listId: number): number {
@@ -65,7 +90,17 @@ function nextPosition(db: AppDatabase, listId: number): number {
   return (row?.max ?? 0) + 1;
 }
 
-function toShoppingListItem(item: typeof shoppingListItems.$inferSelect) {
+function toShoppingListItem(item: {
+  id: number;
+  productId: number | null;
+  name: string;
+  quantityText: string | null;
+  source: string;
+  reason: string | null;
+  checked: number;
+  position: number;
+  category: string | null;
+}) {
   return {
     id: item.id,
     productId: item.productId,
@@ -75,6 +110,7 @@ function toShoppingListItem(item: typeof shoppingListItems.$inferSelect) {
     reason: item.reason,
     checked: item.checked === 1,
     position: item.position,
+    category: item.category,
   };
 }
 
@@ -196,7 +232,11 @@ export default async function shoppingListsRoutes(
       .returning()
       .get();
 
-    reply.status(201).send(toShoppingListItem(created));
+    reply
+      .status(201)
+      .send(
+        toShoppingListItem({ ...created, category: loadItemCategory(app.db, created.productId) }),
+      );
   });
 
   app.patch('/api/shopping-list-items/:id', async (request) => {
@@ -229,7 +269,10 @@ export default async function shoppingListsRoutes(
       .returning()
       .get();
 
-    return toShoppingListItem(updated);
+    return toShoppingListItem({
+      ...updated,
+      category: loadItemCategory(app.db, updated.productId),
+    });
   });
 
   app.delete('/api/shopping-list-items/:id', async (request, reply) => {

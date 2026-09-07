@@ -179,6 +179,7 @@ export const shoppingListItemSchema = z.object({
   reason: z.string().nullable(),
   checked: z.boolean(),
   position: z.number().int(),
+  category: z.string().nullable(),
 });
 
 export type ShoppingListItem = z.infer<typeof shoppingListItemSchema>;

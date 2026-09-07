@@ -27,6 +27,7 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useReopenShoppingList: vi.fn(),
     useDeleteShoppingList: vi.fn(),
     useToggleShoppingListItem: vi.fn(),
+    useUpdateShoppingListItem: vi.fn(),
     useDeleteShoppingListItem: vi.fn(),
     useProductSearch: vi.fn(),
   };
@@ -42,6 +43,7 @@ const {
   useReopenShoppingList,
   useDeleteShoppingList,
   useToggleShoppingListItem,
+  useUpdateShoppingListItem,
   useDeleteShoppingListItem,
   useProductSearch,
 } = await import('../../src/client/api/queries.ts');
@@ -68,6 +70,7 @@ function item(overrides: Partial<ShoppingListItem> = {}): ShoppingListItem {
     reason: 'Kjøpes ca. hver 7. dag, sist for 7 dager siden',
     checked: false,
     position: 1,
+    category: 'Meieri',
     ...overrides,
   };
 }
@@ -158,6 +161,7 @@ describe('ShoppingListPage', () => {
   let reopenMutate: ReturnType<typeof vi.fn>;
   let deleteListMutate: ReturnType<typeof vi.fn>;
   let toggleMutate: ReturnType<typeof vi.fn>;
+  let updateItemMutate: ReturnType<typeof vi.fn>;
   let deleteItemMutate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -167,6 +171,7 @@ describe('ShoppingListPage', () => {
     reopenMutate = vi.fn();
     deleteListMutate = vi.fn();
     toggleMutate = vi.fn();
+    updateItemMutate = vi.fn();
     deleteItemMutate = vi.fn();
     mockLatestList(null);
     vi.mocked(useCreateShoppingList).mockReturnValue({
@@ -193,6 +198,10 @@ describe('ShoppingListPage', () => {
       mutate: toggleMutate,
       isPending: false,
     } as unknown as ReturnType<typeof useToggleShoppingListItem>);
+    vi.mocked(useUpdateShoppingListItem).mockReturnValue({
+      mutate: updateItemMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateShoppingListItem>);
     vi.mocked(useDeleteShoppingListItem).mockReturnValue({
       mutate: deleteItemMutate,
       isPending: false,
@@ -232,6 +241,17 @@ describe('ShoppingListPage', () => {
       ).toBeInTheDocument();
       expect(screen.getByText('1 stk')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Lag handleliste' })).toBeInTheDocument();
+    });
+
+    it('shows "Forslag til uke N" for the ISO week containing today (T32)', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-07T10:00:00.000Z'));
+      mockNoList();
+      mockSuggestions([]);
+
+      renderPage();
+
+      expect(screen.getByText('Forslag til uke 37')).toBeInTheDocument();
     });
 
     it('creates a list when "Lag handleliste" is clicked', async () => {
@@ -348,6 +368,68 @@ describe('ShoppingListPage', () => {
       expect(screen.getByText('Kjøpt (1)').closest('details')).toBeNull();
     });
 
+    it('shows the ISO week and "x av n kjøpt" progress in the header (T32)', () => {
+      mockList(
+        list({
+          weekStart: '2026-09-07',
+          items: [
+            item({ id: 1, name: 'Kaffe', checked: true }),
+            item({ id: 2, name: 'Lettmelk 1 l', checked: false }),
+            item({ id: 3, name: 'Brød', checked: false }),
+          ],
+        }),
+      );
+
+      renderPage();
+
+      expect(screen.getByText('Handleliste uke 37')).toBeInTheDocument();
+      expect(screen.getByText('1 av 3 kjøpt')).toBeInTheDocument();
+    });
+
+    it('groups unchecked items by category in store-walk order, a manual item without a product under "Annet", and renders no heading for an empty group (T32)', () => {
+      mockList(
+        list({
+          items: [
+            item({ id: 1, name: 'Kylling', checked: false, category: 'Kjøtt og fisk' }),
+            item({ id: 2, name: 'Eple', checked: false, category: 'Frukt og grønt' }),
+            item({
+              id: 3,
+              name: 'Handlenett',
+              checked: false,
+              category: null,
+              productId: null,
+              source: 'manual',
+              reason: null,
+            }),
+          ],
+        }),
+      );
+
+      renderPage();
+
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings).toEqual(['Frukt og grønt', 'Kjøtt og fisk', 'Annet']);
+      expect(screen.queryByText('Meieri')).not.toBeInTheDocument();
+      expect(screen.getByText('Handlenett')).toBeInTheDocument();
+    });
+
+    it('sorts items alphabetically (nb) within a category group', () => {
+      mockList(
+        list({
+          items: [
+            item({ id: 1, name: 'Yoghurt', checked: false, category: 'Meieri' }),
+            item({ id: 2, name: 'Ost', checked: false, category: 'Meieri' }),
+            item({ id: 3, name: 'Ærfugl-melk', checked: false, category: 'Meieri' }),
+          ],
+        }),
+      );
+
+      renderPage();
+
+      const names = screen.getAllByText(/Yoghurt|Ost|Ærfugl-melk/).map((el) => el.textContent);
+      expect(names).toEqual(['Ost', 'Yoghurt', 'Ærfugl-melk']);
+    });
+
     it('toggles an item to checked immediately, and one tap on a checked item unchecks it', async () => {
       mockList(list({ items: [item({ id: 1, checked: false })] }));
       renderPage();
@@ -358,14 +440,16 @@ describe('ShoppingListPage', () => {
       expect(toggleMutate).toHaveBeenCalledWith({ id: 1, checked: true }, expect.anything());
     });
 
-    it('toggles when the name is tapped, not only the checkbox itself (T18 F1)', async () => {
+    it('opens inline editing when the name is tapped, not the checkbox toggle (T32; replaces T18 F1)', async () => {
       mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l', checked: false })] }));
       renderPage();
       const user = userEvent.setup();
 
       await user.click(screen.getByText('Lettmelk 1 l'));
 
-      expect(toggleMutate).toHaveBeenCalledWith({ id: 1, checked: true }, expect.anything());
+      expect(toggleMutate).not.toHaveBeenCalled();
+      expect(screen.getByLabelText('Navn')).toHaveValue('Lettmelk 1 l');
+      expect(screen.getByLabelText('Antall')).toBeInTheDocument();
     });
 
     it('does not toggle when "Fjern" is tapped (T18 F1)', async () => {
@@ -389,6 +473,79 @@ describe('ShoppingListPage', () => {
       await user.click(screen.getByLabelText('Merk Lettmelk 1 l som kjøpt'));
 
       expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
+    });
+
+    describe('inline editing (T32)', () => {
+      it('sends only the changed fields, keeps checked state and category untouched, and shows a toast', async () => {
+        mockList(
+          list({
+            items: [
+              item({
+                id: 1,
+                name: 'Lettmelk 1 l',
+                quantityText: '1 stk',
+                checked: true,
+                category: 'Meieri',
+              }),
+            ],
+          }),
+        );
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.clear(screen.getByLabelText('Navn'));
+        await user.type(screen.getByLabelText('Navn'), 'Lettmelk 1,5 l');
+        await user.click(screen.getByRole('button', { name: 'Lagre' }));
+
+        expect(updateItemMutate).toHaveBeenCalledWith(
+          { id: 1, name: 'Lettmelk 1,5 l' },
+          expect.anything(),
+        );
+      });
+
+      it('rejects an empty name inline and sends nothing', async () => {
+        mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l' })] }));
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.clear(screen.getByLabelText('Navn'));
+        await user.click(screen.getByRole('button', { name: 'Lagre' }));
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Navnet kan ikke være tomt');
+        expect(updateItemMutate).not.toHaveBeenCalled();
+      });
+
+      it('clearing the quantity field sends quantityText: null', async () => {
+        mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l', quantityText: '1 stk' })] }));
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.clear(screen.getByLabelText('Antall'));
+        await user.click(screen.getByRole('button', { name: 'Lagre' }));
+
+        expect(updateItemMutate).toHaveBeenCalledWith(
+          { id: 1, quantityText: null },
+          expect.anything(),
+        );
+      });
+
+      it('"Avbryt" discards the edit without sending anything', async () => {
+        mockList(list({ items: [item({ id: 1, name: 'Lettmelk 1 l' })] }));
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByText('Lettmelk 1 l'));
+        await user.clear(screen.getByLabelText('Navn'));
+        await user.type(screen.getByLabelText('Navn'), 'Noe annet');
+        await user.click(screen.getByRole('button', { name: 'Avbryt' }));
+
+        expect(updateItemMutate).not.toHaveBeenCalled();
+        expect(screen.getByText('Lettmelk 1 l')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Navn')).not.toBeInTheDocument();
+      });
     });
 
     it('adds an item from a search result with its product id', async () => {
