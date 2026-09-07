@@ -156,6 +156,8 @@ receipt-scanner/
         merge.ts             mergeProducts()
         receiptWarnings.ts   computeLineSum(), hasUnmatchedItemLine(): shared by receipts.ts and receiptLines.ts
         proposalContext.ts   buildProposalContext(...): pure given its inputs; serialises history, calendar and list state for the propose call (T37)
+        tripLink.ts          findTripList(purchaseDate, candidates): pure; the automatic receipt-to-list linking rule (T39, ADR-0018)
+        trip.ts              computeTrip({ items, lines, productNames }): pure; planned/bought/notBought/unplanned, computed on read (T39, ADR-0018)
       jobs/
         receiptProcessor.ts  queue, processReceipt(), requeueUnfinished()
       routes/
@@ -179,6 +181,7 @@ receipt-scanner/
       pages/
         LoginPage.tsx
         ShoppingListPage.tsx   route /
+        ShoppingListDetailPage.tsx   route /shopping-lists/:id, read-only, Handleturen (T39)
         ScanPage.tsx           route /scan
         ReceiptsPage.tsx       route /receipts
         ReceiptPage.tsx        route /receipts/:id
@@ -242,9 +245,11 @@ CREATE TABLE receipts (
   attempts        INTEGER NOT NULL DEFAULT 0,
   possible_duplicate_of INTEGER REFERENCES receipts(id) ON DELETE SET NULL,
   reviewed_at     TEXT,
+  shopping_list_id INTEGER REFERENCES shopping_lists(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
+CREATE INDEX receipts_shopping_list ON receipts (shopping_list_id);
 
 CREATE TABLE receipt_images (
   receipt_id  INTEGER PRIMARY KEY REFERENCES receipts(id) ON DELETE CASCADE,
@@ -354,6 +359,7 @@ Definitions:
 - A product dismissed from a list (removed while it had a `product_id`) is never re-added to that same list by a refresh; `shopping_list_dismissals` records it, `(list_id, product_id)`. T34.
 - A proposal (`shopping_list_proposals`) is applied only through `POST .../accept`; the model's answer never inserts rows on its own, and `accepted_json` (once set) makes a second accept on the same proposal a `409`. T37.
 - `shopping_list_items.category` is set from the AI proposal, otherwise null (T37); a matched product's own category still wins on read, so this is only the display fallback for a proposal-accepted item with no product.
+- `receipts.shopping_list_id` links a receipt to the list it was bought for (T39, ADR-0018); several receipts can belong to one list, a receipt to at most one list. Set automatically by `findTripList` (`src/server/domain/tripLink.ts`) when a receipt reaches `done` or a list is completed, and overridable on the receipt page. The outcome (`Trip`, `src/server/domain/trip.ts`) is computed from the list's items and the linked receipts' lines on every read, never stored.
 - `PRODUCT_CATEGORIES` is the fixed list: `Frukt og grønt`, `Meieri`, `Kjøtt og fisk`, `Brød og bakevarer`, `Tørrvarer`, `Frossen`, `Drikke`, `Snacks`, `Husholdning`, `Hygiene`, `Annet`.
 - Migrations run with `foreign_keys` off and `PRAGMA foreign_key_check` after, because drizzle's SQLite table recreates would otherwise cascade-delete child rows.
 
@@ -579,7 +585,7 @@ type ReceiptSummary = {
   id: number; status: ReceiptStatus; storeName: string | null; purchasedAt: string | null;
   totalOre: number | null; lineCount: number; warnings: string[]; errorMessage: string | null;
   possibleDuplicateOf: number | null; reviewedAt: string | null; createdAt: string;
-  updatedAt: string;
+  updatedAt: string; shoppingListId: number | null;
 };
 
 type ReceiptLine = {
@@ -589,7 +595,9 @@ type ReceiptLine = {
   matchSource: 'alias' | 'llm' | 'user' | null;
 };
 
-type ReceiptDetail = ReceiptSummary & { lines: ReceiptLine[]; imageUrl: string };
+type ReceiptDetail = ReceiptSummary & {
+  lines: ReceiptLine[]; imageUrl: string; shoppingList: { id: number; weekStart: string } | null;
+};
 
 type Product = {
   id: number; name: string; category: string | null; suppressed: boolean;
@@ -603,11 +611,21 @@ type ProductDetail = Product & {
 
 type Suggestion = { productId: number; name: string; category: string | null; reason: string; quantityText: string; score: number };
 
+type Trip = {
+  planned: { itemId: number; name: string; quantityText: string | null;
+             source: 'suggested' | 'manual' | 'ai'; checked: boolean;
+             status: 'bought' | 'notBought' }[];
+  unplanned: { productId: number | null; name: string; quantity: number; unit: string | null }[];
+  counts: { planned: number; bought: number; notBought: number; unplanned: number };
+  receiptIds: number[];
+};
+
 type ShoppingList = {
   id: number; weekStart: string; status: 'open' | 'done'; createdAt: string; completedAt: string | null;
   items: { id: number; productId: number | null; name: string; quantityText: string | null;
            source: 'suggested' | 'manual' | 'ai'; reason: string | null; checked: boolean; position: number;
            category: string | null }[];
+  receipts: ReceiptSummary[]; trip: Trip | null;
 };
 
 type ShoppingListProposal = {
@@ -627,7 +645,7 @@ type ShoppingListProposal = {
 | `GET /api/receipts?limit=50&before=<id>` | — | `200 ReceiptSummary[]` | Newest first, cursor pagination on id. |
 | `GET /api/receipts/:id` | — | `200 ReceiptDetail` | Client polls this every 2 s while `pending` or `processing`. |
 | `GET /api/receipts/:id/image` | — | `200 image/jpeg` | `Cache-Control: private, max-age=86400`. |
-| `PATCH /api/receipts/:id` | `{ storeName?, purchasedAt?, totalOre?, reviewed? }` | `200 ReceiptDetail` | `reviewed: true` sets `reviewedAt`. Recomputes `TOTAL_MISMATCH` and `POSSIBLE_DUPLICATE`; when `storeName` is patched, `MISSING_STORE` is set only if it is null; when `purchasedAt` is patched, `MISSING_DATE` is removed and `FUTURE_DATE` is set only if the date is after `todayInOslo()`. Only when `done`. |
+| `PATCH /api/receipts/:id` | `{ storeName?, purchasedAt?, totalOre?, reviewed?, shoppingListId? }` | `200 ReceiptDetail` | `reviewed: true` sets `reviewedAt`. Recomputes `TOTAL_MISMATCH` and `POSSIBLE_DUPLICATE`; when `storeName` is patched, `MISSING_STORE` is set only if it is null; when `purchasedAt` is patched, `MISSING_DATE` is removed and `FUTURE_DATE` is set only if the date is after `todayInOslo()`. Only when `done`. `shoppingListId` links or unlinks the receipt by hand (`null` unlinks); `404 Handlelisten finnes ikke` for an unknown list id (T39). |
 | `POST /api/receipts/:id/scan` | — | `202 ReceiptSummary` | Only when `uploaded` or `failed`, else `409`. |
 | `POST /api/receipts/:id/rematch` | — | `200 ReceiptDetail` | Runs matching for unmatched lines synchronously; may call Kimi. |
 | `DELETE /api/receipts/:id` | — | `204` | Cascades lines and image. |
@@ -641,18 +659,19 @@ type ShoppingListProposal = {
 | `DELETE /api/product-aliases/:id` | — | `204` | Lines keep their product; only future matching changes. |
 | `GET /api/suggestions` | — | `200 Suggestion[]` | Computed on demand; no caching. |
 | `GET /api/shopping-lists/current` | — | `200 ShoppingList` | `404` when no open list. |
+| `GET /api/shopping-lists/:id` | — | `200 ShoppingList` | `404` when missing. `trip` is `null` while the list is `open` or has no linked receipt; `receipts` is the linked receipts, newest first. T39. |
 | `POST /api/shopping-lists` | — | `201 ShoppingList` or `200` existing open list | Populated from suggestions. `weekStart = mondayOf(today)`. |
 | `POST /api/shopping-lists/:id/items` | `{ name, productId?, quantityText? }` | `201 item` | `source = 'manual'`, appended last. `category` is the product's when `productId` is set, else the item's own stored `category` (null for a manual add). T32, T37. |
 | `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | `category` is unaffected: editing never changes `productId` or the item's own `category`. T32. |
 | `DELETE /api/shopping-list-items/:id` | — | `204` | |
-| `POST /api/shopping-lists/:id/complete` | — | `200 ShoppingList` | Sets `done` and `completedAt`. |
+| `POST /api/shopping-lists/:id/complete` | — | `200 ShoppingList` | Sets `done` and `completedAt`, then links every unlinked `done` receipt whose `purchasedAt` equals the completion day (Oslo) — no one-day tolerance here, unlike the processor's own linking (T39). The response's `receipts`/`trip` reflect anything linked by this call. |
 | `POST /api/shopping-lists/:id/refresh` | — | `200 ShoppingList` | Only when `open`, else `409 Listen er ikke åpen`; `404` when missing. Adds every suggestion whose product is on neither the list's items nor its dismissals, `source = 'suggested'`, `position` after the current maximum; existing items are untouched. T34. |
-| `POST /api/shopping-lists/:id/reopen` | — | `200 ShoppingList` | Only when `done`, `completedAt` falls on today's date in Europe/Oslo (`todayInOslo`), and no list is `open`; sets `open` and clears `completedAt`. `409 Listen kan ikke gjenåpnes` otherwise. T31. |
+| `POST /api/shopping-lists/:id/reopen` | — | `200 ShoppingList` | Only when `done`, `completedAt` falls on today's date in Europe/Oslo (`todayInOslo`), and no list is `open`; sets `open` and clears `completedAt`. `409 Listen kan ikke gjenåpnes` otherwise. T31. Any receipt linked before reopening stays linked, but `trip` reads `null` again while the list is `open` (T39). |
 | `DELETE /api/shopping-lists/:id` | — | `204` | Only when `open`; items cascade. `409 En fullført liste kan ikke slettes` when `done`. History is never deleted. T31. |
-| `GET /api/shopping-lists?limit=20` | — | `200 ShoppingListSummary[]` | History, `weekStart` descending, `id` descending tiebreak. `ShoppingListSummary` is `ShoppingList` without `items`, plus `itemCount` (the same relationship `ReceiptSummary` has to `ReceiptDetail`). Phase 2 (T23). |
+| `GET /api/shopping-lists?limit=20` | — | `200 ShoppingListSummary[]` | History, `weekStart` descending, `id` descending tiebreak. `ShoppingListSummary` is `ShoppingList` without `items` or `receipts`, plus `itemCount` (the same relationship `ReceiptSummary` has to `ReceiptDetail`) and `tripCounts: { planned, bought, notBought, unplanned } \| null` (`null` on the same terms as `trip`). Phase 2 (T23); `tripCounts` T39. |
 | `POST /api/shopping-lists/:id/proposals` | — | `201 ShoppingListProposal` | Only when `open`, else `409 Listen er ikke åpen`; `404` when missing. Builds the context, calls the LLM, stores the row (filtered items, raw response, tokens, duration); logs one `info` line with usage. Synchronous, like `rematch`; may take 20–60 s. T37. |
 | `POST /api/shopping-lists/:id/proposals/:proposalId/accept` | `{ indexes: number[] }` | `200 ShoppingList` | Inserts the chosen items, `source = 'ai'`, `category` from the proposal item on every insert (a product's own still wins on read); records `accepted_json`, possibly empty. `409` when the proposal already has `accepted_json` or the list is not `open`; `404` when the proposal does not belong to the list; an index whose product is meanwhile on the list is skipped. T37. |
-| `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[], aiProposals: { proposals, proposedItems, acceptedItems } }` | `months` is the `months` most recent calendar months ending with today, oldest first, every month present even at zero; a `done` receipt with no `purchasedAt` is excluded from every month. `topProducts` is the all-time top 10 by `timesBought` (not scoped to `months`, same fields as `GET /api/products`), suppressed included. `aiProposals` is all-time counts over `shopping_list_proposals`, the acceptance-rate inputs (ADR-0016). Phase 2 (T23); `aiProposals` T37. |
+| `GET /api/stats/summary?months=6` | — | `200 { months: { month, totalOre, receipts }[], topProducts: Product[], aiProposals: { proposals, proposedItems, acceptedItems, boughtItems }, trips: { completedLists, listsWithReceipt, plannedItems, boughtItems, unplannedItems } }` | `months` is the `months` most recent calendar months ending with today, oldest first, every month present even at zero; a `done` receipt with no `purchasedAt` is excluded from every month. `topProducts` is the all-time top 10 by `timesBought` (not scoped to `months`, same fields as `GET /api/products`), suppressed included. `aiProposals` is all-time counts over `shopping_list_proposals`, the acceptance-rate inputs (ADR-0016); `boughtItems` is the subset of accepted items whose list item is `bought` in its list's trip (T39). `trips` is over every `done` list, all-time: `listsWithReceipt` of `completedLists` has at least one linked receipt, `plannedItems`/`boughtItems`/`unplannedItems` sum each trip's counts (T39). Phase 2 (T23); `aiProposals` T37; `boughtItems`, `trips` T39. |
 
 ## 10. Frontend
 
@@ -661,10 +680,11 @@ type ShoppingListProposal = {
 | Route | Page | Content |
 | --- | --- | --- |
 | `/login` | LoginPage | Password field. |
-| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; the row (checkbox and text) toggles checked, and a pencil button on each item edits name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Oppdater forslag` (adds today's new suggestions without touching the user's own edits, and reports `x varer lagt til` or `Ingen nye forslag`), `Foreslå med AI` (reads `Tenker… (x s)` while pending, since a call may take 20–60 s; the answer renders as a panel above the buttons with every item pre-checked, its reason and a kind chip, `Legg til valgte (n)` and `Avbryt`), `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32, T34, T37. |
+| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; the row (checkbox and text) toggles checked, and a pencil button on each item edits name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens and a `Se handleturen` link to the detail page, `Oppdater forslag` (adds today's new suggestions without touching the user's own edits, and reports `x varer lagt til` or `Ingen nye forslag`), `Foreslå med AI` (reads `Tenker… (x s)` while pending, since a call may take 20–60 s; the answer renders as a panel above the buttons with every item pre-checked, its reason and a kind chip, `Legg til valgte (n)` and `Avbryt`), `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32, T34, T37, T39. |
+| `/shopping-lists/:id` | ShoppingListDetailPage | Read-only. Header `Handleliste uke N` with `Fullført <date>` and the linked receipts as links (`Kiwi, 7. sep, 412 kr`); an `open` list redirects to `/`. When `trip` is not `null`: `Handleturen` in three groups with counts in the headings — `Kjøpt som planlagt (n)`, `Ikke kjøpt (n)`, `Utenom lista (n)`; planned rows show name, quantity and a source chip (`Forslag`, `Manuell`, `AI`), a checked-but-not-bought row shows `Avkrysset` in grey; unplanned rows show name and quantity and link to `/products/:id` when `productId` is set. When `trip` is `null`: `Ingen kvittering er knyttet til denne listen ennå` and how to link one. T39. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
-| `/receipts` | ReceiptsPage | List with store, date as `4. sep. · 3 dager siden`, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
-| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), the receipt image in a sticky, scrollable panel: toggled with `Vis bilde` on a phone, always beside the lines on desktop, tap opens the full image (T35), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. |
+| `/receipts` | ReceiptsPage | List with store, date as `4. sep. · 3 dager siden`, total, status badge and warning count; a `done` receipt with `tripCounts` set also shows `12 av 14 kjøpt · 5 utenom`; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), the shopping list history (week, item count, status, each row linking to its detail page, T39) and, since T37, `AI-forslag` (proposals, proposed, accepted, bought) and `Handleturer` (completed lists, of which with receipt, share of planned items bought, unplanned items per trip, T39) — `aiProposals` has been in the API since T37 but was not rendered anywhere until this task; closed, neither request fires, so the everyday visit costs nothing extra. |
+| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), a `Handleliste` select under it (`Ingen` and the eight most recent `done` lists as `Uke 37, fullført 7. sep`, saved through `PATCH`, with a note `Knyttes automatisk når datoene stemmer`; when linked, a `Handleliste uke 37` link instead), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), the receipt image in a sticky, scrollable panel: toggled with `Vis bilde` on a phone, always beside the lines on desktop, tap opens the full image (T35), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. T39: the select. |
 | `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed. |
 | `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product, aliases with delete, purchase history. |
 
