@@ -12,7 +12,7 @@ The architecture and the ADRs are normative; a task that disagrees with them is 
   Anything else you notice goes into the PR description as a follow-up.
 - Done means `npm run lint`, `npm run typecheck`, `npm test` and `npm run build` pass locally, with the summary pasted into the PR.
 - The repository is on GitHub (`ruberino/receipt-scanner`): push the task branch, open a pull request whose description states intent, what changed, risk and how it was tested, wait for CI to be green and for the foreman's go-ahead recorded in `docs/reviews/`, then merge with `gh pr merge --rebase --delete-branch` so `main` stays linear.
-- `docs/reviews/*.md` is a review channel from a foreman session Ruben also runs across his apps; check it after finishing a task and before fast-forward merging, verify any checkable technical claim empirically before acting on it, and don't delete or move those files.
+- `docs/reviews/*.md` is a review channel from a foreman session Ruben also runs across his apps; check it after finishing a task and before merging, verify any checkable technical claim empirically before acting on it, and don't delete or move those files.
 
 ## Conventions that apply to every task
 
