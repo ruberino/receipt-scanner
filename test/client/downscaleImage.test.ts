@@ -82,6 +82,30 @@ describe('downscaleImage', () => {
     expect(result).toBe(file);
   });
 
+  it("returns the original file unchanged when the target canvas would exceed WebKit's iOS area limit (T28 F2)", async () => {
+    vi.mocked(createImageBitmap).mockResolvedValue(
+      fakeBitmap(3000, 20000) as unknown as ImageBitmap,
+    );
+    const file = new File(['x'], 'receipt.jpg', { type: 'image/jpeg' });
+
+    const result = await downscaleImage(file, { maxEdge: 1600, quality: 0.85 });
+
+    expect(drawImage).not.toHaveBeenCalled();
+    expect(result).toBe(file);
+  });
+
+  it('still goes through the canvas when the target stays within the WebKit canvas limit (T28 F2)', async () => {
+    vi.mocked(createImageBitmap).mockResolvedValue(
+      fakeBitmap(3000, 4000) as unknown as ImageBitmap,
+    );
+    const file = new File(['x'], 'receipt.jpg', { type: 'image/jpeg' });
+
+    const result = await downscaleImage(file, { maxEdge: 1600, quality: 0.85 });
+
+    expect(drawImage).toHaveBeenCalled();
+    expect(result.type).toBe('image/jpeg');
+  });
+
   it('re-encodes a non-JPEG image even when it is already small', async () => {
     vi.mocked(createImageBitmap).mockResolvedValue(fakeBitmap(800, 600) as unknown as ImageBitmap);
     const file = new File(['x'], 'receipt.png', { type: 'image/png' });

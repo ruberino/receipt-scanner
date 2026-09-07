@@ -21,6 +21,21 @@ async function syntheticJpeg(width: number, height: number): Promise<Buffer> {
     .toBuffer();
 }
 
+/** A JPEG whose raw stored pixels are `width`x`height`, tagged with the given EXIF orientation
+ * (no pixel data is actually rotated) — the same shape a phone camera saves a portrait photo in. */
+async function syntheticJpegWithOrientation(
+  width: number,
+  height: number,
+  orientation: number,
+): Promise<Buffer> {
+  return sharp({
+    create: { width, height, channels: 3, background: { r: 10, g: 20, b: 30 } },
+  })
+    .withMetadata({ orientation })
+    .jpeg()
+    .toBuffer();
+}
+
 describe('normaliseImage', () => {
   it('re-encodes a small JPEG as JPEG and reports its dimensions', async () => {
     const buffer = await readFixture('receipt-small.jpg');
@@ -79,6 +94,37 @@ describe('normaliseImage', () => {
 
     expect(result.width).toBe(1000);
     expect(result.height).toBe(800);
+  });
+
+  it('reads the visual short edge through EXIF orientation 6 (rotate 90), not the raw stored dimensions (T28 F1)', async () => {
+    const buffer = await syntheticJpegWithOrientation(20000, 3000, 6);
+    const rawMetadata = await sharp(buffer).metadata();
+    expect([rawMetadata.width, rawMetadata.height, rawMetadata.orientation]).toEqual([
+      20000, 3000, 6,
+    ]);
+
+    const result = await normaliseImage(buffer);
+
+    expect(result.width).toBe(1600);
+    expect(result.height).toBe(10667);
+  });
+
+  it('reads the visual short edge through EXIF orientation 8 (rotate -90) the same way (T28 F1)', async () => {
+    const buffer = await syntheticJpegWithOrientation(20000, 3000, 8);
+
+    const result = await normaliseImage(buffer);
+
+    expect(result.width).toBe(1600);
+    expect(result.height).toBe(10667);
+  });
+
+  it('applies the same orientation-aware rule when the raw storage is already portrait (T28 F1)', async () => {
+    const buffer = await syntheticJpegWithOrientation(3000, 20000, 6);
+
+    const result = await normaliseImage(buffer);
+
+    expect(result.width).toBe(10667);
+    expect(result.height).toBe(1600);
   });
 
   it('is deterministic: the same bytes produce the same sha256', async () => {
