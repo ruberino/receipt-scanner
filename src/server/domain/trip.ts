@@ -64,9 +64,11 @@ function lineDisplayName(line: TripLine, productNames: Map<number, string>): str
  * Compares a list's items against the item lines of its linked receipts (T39, ADR-0018): pure
  * given its inputs, computed on every read, nothing stored back.
  *
- * A planned item is `bought` when a line shares its `productId`, or, for an item with no
- * `productId`, when a line's display name (its product's name, or its raw text when it has none)
- * normalises to the same text as the item's name; otherwise `notBought`.
+ * A planned item is `bought` when a line shares its `productId` (for an item with a product), or
+ * when a line's display name (its product's name, or its raw text when it has none) normalises to
+ * the same text as the item's name — the name check applies to every item, with or without a
+ * product, since a line can fail product matching (ADR-0004) and still read the same text as a
+ * planned item that did match a product; otherwise `notBought`.
  * A line is `unplanned` when its own `productId` is not one of the planned items' product ids
  * (for a line with a product), or its normalised raw text matches no planned item's name (for a
  * line without one); unplanned lines are grouped by product id (or normalised text when there is
@@ -93,9 +95,8 @@ export function computeTrip({ items, lines, productNames }: ComputeTripInput): T
 
   const planned: TripPlannedRow[] = items.map((item) => {
     const bought =
-      item.productId !== null
-        ? lineProductIds.has(item.productId)
-        : lineNames.has(normalizeText(item.name));
+      (item.productId !== null && lineProductIds.has(item.productId)) ||
+      lineNames.has(normalizeText(item.name));
     return {
       itemId: item.id,
       name: item.name,

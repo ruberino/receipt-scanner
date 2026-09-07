@@ -76,6 +76,17 @@ describe('computeTrip', () => {
     expect(trip.planned[0]).toMatchObject({ status: 'bought' });
   });
 
+  it('matches an item with a product to a line whose matching failed but reads the same (F1)', () => {
+    const trip = computeTrip({
+      items: [item({ id: 1, productId: 7, name: 'Melk' })],
+      lines: [line({ productId: null, rawText: 'MELK' })],
+      productNames: new Map(),
+    });
+
+    expect(trip.planned[0]).toMatchObject({ status: 'bought' });
+    expect(trip.counts).toMatchObject({ bought: 1, notBought: 0, unplanned: 0 });
+  });
+
   it('collects lines from two receipts on one trip', () => {
     const trip = computeTrip({
       items: [
