@@ -194,6 +194,27 @@ describe('computeSuggestions — quantityText', () => {
     expect(suggestions[0]?.quantityText).toBe('2 stk');
   });
 
+  it('matches the architecture.md worked example exactly: milk bought 08-17, 08-20, 08-24, 08-27 (2 each) against today 2026-09-04', () => {
+    const suggestions = computeSuggestions(
+      [
+        history(
+          17,
+          'Melk (arbeidseksempel)',
+          ['2026-08-17', '2026-08-20', '2026-08-24', '2026-08-27'],
+          {
+            quantities: [2, 2, 2, 2],
+          },
+        ),
+      ],
+      '2026-09-04',
+    );
+
+    expect(suggestions[0]).toMatchObject({
+      reason: 'Kjøpes ca. hver 7. dag, sist for 8 dager siden',
+      quantityText: '4 stk',
+    });
+  });
+
   it("sums same-week purchases before taking the median, since the list is a week's shopping (T36)", () => {
     // Milk bought twice in each of two weeks (35: 08-24 and 08-27; 36: 08-31 and 09-03), 2 each
     // time: weekly sums of 4 and 4, so the median quantity is 4, not the single-purchase median of

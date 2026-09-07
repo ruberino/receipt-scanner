@@ -25,7 +25,8 @@ Worked example, `today = 2026-09-04`, replace the bananas line and add two:
 
 - Bananas bought 08-26 and 09-02 → `medianGap 7`, `daysSinceLast 2`, `dueIn 5 < 7` → suggested (before this task it was skipped as bought this trip).
 - Eggs bought 08-27 and 09-03 → `daysSinceLast 1` → skipped, bought yesterday.
-- Milk bought 08-24 (2), 08-27 (2), 08-31 (2) and 09-03 (2) → purchase weeks 35 and 36 with weekly sums 4 and 4 → `quantityText 4 stk`.
+- Milk bought 08-17 (2), 08-20 (2), 08-24 (2) and 08-27 (2) → purchase weeks 34 and 35 with weekly sums 4 and 4, `medianGap 7`, `daysSinceLast 8`, `dueIn −1 < 7` → suggested with `quantityText 4 stk`.
+  (Corrected during review: the first version of this line ended on 09-03, one day before `today`, which step 3 skips.)
 
 ## Docs commit
 
