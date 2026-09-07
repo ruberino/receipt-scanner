@@ -180,6 +180,12 @@ function writeImagePanelPreference(visible: boolean): void {
 /**
  * Phone-only toggle, directly under the header's warning chips (T35). The desktop two-column
  * layout shows the image unconditionally instead, so this whole block is `md:hidden`.
+ *
+ * `Skjul bilde` lives inside the sticky panel itself (overlaid top-right), not beside `Vis
+ * bilde`: once the panel is pinned and the user has scrolled into the lines, a hide control left
+ * behind at the top would have scrolled out of reach with the header (T35 review F1). The panel
+ * is a fixed-height outer box (sticky, `overflow-hidden`) with its own inner `overflow-auto`
+ * scroller for the image, so the button stays put even while the image scrolls inside it.
  */
 function ReceiptImageToggle({ imageUrl }: { imageUrl: string }) {
   const [visible, setVisible] = useState(readImagePanelPreference);
@@ -190,20 +196,32 @@ function ReceiptImageToggle({ imageUrl }: { imageUrl: string }) {
     writeImagePanelPreference(next);
   }
 
+  if (!visible) {
+    return (
+      <div className="md:hidden">
+        <button
+          type="button"
+          onClick={toggle}
+          className="mx-4 min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
+        >
+          Vis bilde
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="md:hidden">
+    <div className="sticky top-0 z-10 mt-2 h-[45vh] overflow-hidden bg-gray-100 md:hidden">
+      <div className="h-full overflow-auto">
+        <ReceiptImageLink imageUrl={imageUrl} />
+      </div>
       <button
         type="button"
         onClick={toggle}
-        className="mx-4 min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
+        className="absolute right-2 top-2 min-h-11 min-w-11 rounded border border-gray-400 bg-white px-3 py-2 text-sm font-medium shadow"
       >
-        {visible ? 'Skjul bilde' : 'Vis bilde'}
+        Skjul bilde
       </button>
-      {visible && (
-        <div className="sticky top-0 z-10 mt-2 h-[45vh] overflow-auto bg-gray-100">
-          <ReceiptImageLink imageUrl={imageUrl} />
-        </div>
-      )}
     </div>
   );
 }
