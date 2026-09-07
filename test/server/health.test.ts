@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/createTestApp.ts';
 
 describe('GET /api/health', () => {
-  it('returns ok, a version string, the queue length and replication off without auth', async () => {
+  it('returns ok, a version string, the queue length, replication off and the active model without auth', async () => {
     const app = createTestApp();
 
     const response = await app.inject({ method: 'GET', url: '/api/health' });
@@ -13,7 +13,18 @@ describe('GET /api/health', () => {
       version: expect.any(String),
       queueLength: 0,
       replication: 'off',
+      model: 'kimi-k2.6',
     });
+
+    await app.close();
+  });
+
+  it('reports the grok model when LLM_PROVIDER=grok (T27)', async () => {
+    const app = createTestApp({ env: { LLM_PROVIDER: 'grok', XAI_API_KEY: 'xai-test-key' } });
+
+    const response = await app.inject({ method: 'GET', url: '/api/health' });
+
+    expect(response.json()).toMatchObject({ model: 'grok-4.6' });
 
     await app.close();
   });

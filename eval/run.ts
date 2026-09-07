@@ -6,7 +6,7 @@ import { loadConfig } from '../src/server/config.ts';
 import { normaliseImage } from '../src/server/lib/images.ts';
 import { runExtraction } from '../src/server/llm/extractReceipt.ts';
 import { EXTRACT_PROMPT_VERSION } from '../src/server/llm/prompts/extractReceipt.prompt.ts';
-import { KimiClient } from '../src/server/llm/KimiClient.ts';
+import { createLlmClient } from '../src/server/llm/OpenAiCompatibleClient.ts';
 import type { LlmClient } from '../src/server/llm/LlmClient.ts';
 import {
   aggregateMetrics,
@@ -188,14 +188,7 @@ export async function bootstrapExpected(llm: LlmClient, photoPath: string): Prom
 function buildRealLlmClient(): LlmClient {
   const config = loadConfig();
   const logger = pino({ level: config.logLevel });
-  return new KimiClient({
-    apiKey: config.moonshotApiKey,
-    baseURL: config.kimiBaseUrl,
-    model: config.kimiModel,
-    thinking: config.kimiThinking,
-    timeoutMs: config.kimiTimeoutMs,
-    logger,
-  });
+  return createLlmClient(config, logger);
 }
 
 async function main(): Promise<void> {

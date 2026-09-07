@@ -19,7 +19,7 @@ import {
   toErrorResponse,
 } from './lib/errors.ts';
 import { createReceiptProcessor, type ReceiptProcessor } from './jobs/receiptProcessor.ts';
-import { KimiClient } from './llm/KimiClient.ts';
+import { activeModel, createLlmClient } from './llm/OpenAiCompatibleClient.ts';
 import type { LlmClient } from './llm/LlmClient.ts';
 import authPlugin from './plugins/auth.ts';
 import healthRoutes from './routes/health.ts';
@@ -60,7 +60,7 @@ export type BuildAppOptions = {
   logStream?: LogStream;
   /** Overrides the directory `dist/client` is served from in production; tests point this at a fixture. */
   clientDir?: string;
-  /** Overrides the LLM client; otherwise a `KimiClient` is built from config. Tests inject a `FakeLlmClient`. */
+  /** Overrides the LLM client; otherwise `createLlmClient` builds one from config. Tests inject a `FakeLlmClient`. */
   llmClient?: LlmClient;
   /** Overrides the job runner's clock; tests pin it for deterministic `todayInOslo` results. */
   now?: () => Date;
@@ -154,16 +154,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     sqlite.close();
   });
 
-  const llmClient =
-    options.llmClient ??
-    new KimiClient({
-      apiKey: config.moonshotApiKey,
-      baseURL: config.kimiBaseUrl,
-      model: config.kimiModel,
-      thinking: config.kimiThinking,
-      timeoutMs: config.kimiTimeoutMs,
-      logger: app.log,
-    });
+  const llmClient = options.llmClient ?? createLlmClient(config, app.log);
   app.decorate('llm', llmClient);
 
   const receiptProcessor = createReceiptProcessor({
@@ -181,6 +172,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.register(healthRoutes, {
     version: readVersion(),
     replicationEnabled: config.litestreamBucket !== undefined,
+    model: activeModel(config),
   });
   app.register(authPlugin, { config });
   app.register(receiptsRoutes, { now: options.now ?? (() => new Date()) });

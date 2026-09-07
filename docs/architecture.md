@@ -610,6 +610,7 @@ Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`
 | `APP_PASSWORD` | yes | — | Min 8 chars. |
 | `SESSION_SECRET` | yes | — | Min 32 chars. |
 | `LLM_PROVIDER` | no | `kimi` | `kimi` or `grok` (ADR-0015). |
+| `LLM_MAX_RETRIES` | no | `0` | Retries for a failed call, whichever provider is active; explicit rather than the OpenAI SDK's default of 2, which could block the queue for several times the timeout on one bad call. |
 | `MOONSHOT_API_KEY` | if `LLM_PROVIDER=kimi` | — | Kimi API key. |
 | `KIMI_MODEL` | no | `kimi-k2.6` | Must support image input and JSON mode. |
 | `KIMI_BASE_URL` | no | `https://api.moonshot.ai/v1` | |
