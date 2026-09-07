@@ -20,6 +20,7 @@ To change a decision, write a new ADR that supersedes the old one and link both 
 | [0012](0012-structured-logging-and-error-format.md) | Structured logging with pino and one error format | Accepted |
 | [0013](0013-zod-schemas-shared-between-client-and-server.md) | zod schemas shared between client and server | Accepted |
 | [0014](0014-testing-strategy-with-llm-fake-and-eval-set.md) | Testing strategy: fake LLM client in tests, real-receipt eval set for prompts | Accepted |
+| [0015](0015-selectable-openai-compatible-llm-provider.md) | Selectable OpenAI-compatible LLM provider (Kimi or Grok) | Accepted |
 
 ## Template
 

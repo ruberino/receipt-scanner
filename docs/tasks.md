@@ -685,3 +685,27 @@ Acceptance criteria:
 - 45 distinct unmatched texts produce three LLM calls of 20, 20 and 5 texts with `maxTokens` 3200, 3200 and 950.
 - When the second batch answers with `finishReason: 'length'`, the matches from batches one and three are saved, the receipt gets `MATCHING_FAILED`, and the error log carries `finishReason` and `batchSize`.
 - A receipt with 5 unmatched texts behaves exactly as before.
+
+---
+
+## T27 — Grok (xAI) as a selectable LLM provider
+
+Goal: run extraction and matching on Kimi or Grok, chosen per installation, and compare them with the eval harness.
+
+Files: `src/server/config.ts`, `src/server/llm/OpenAiCompatibleClient.ts` (renamed from `KimiClient.ts`), `src/server/app.ts`, `eval/run.ts`, `src/server/routes/health.ts`, `.env.example`, `render.yaml`, `docs/adr/0015-*.md`, tests.
+
+Steps:
+
+1. Docs as in `docs/reviews/T27-plan.md`, own commit.
+2. Config: `LLM_PROVIDER`, `XAI_API_KEY`, `XAI_MODEL`, `XAI_BASE_URL`; the provider's key is required, the other's optional.
+3. Client: provider-aware request body (`thinking` only for Kimi), one factory used by `app.ts` and `eval/run.ts`.
+4. Health reports `model`.
+
+Acceptance criteria:
+
+- With `LLM_PROVIDER=kimi` the request body is unchanged from today, including `thinking`.
+- With `LLM_PROVIDER=grok` the request body has no `thinking` field, goes to `XAI_BASE_URL` with `XAI_MODEL`, and `GET /api/health` reports that model.
+- Starting with `LLM_PROVIDER=grok` and no `XAI_API_KEY` refuses to start with a clear message; the same for `kimi` without `MOONSHOT_API_KEY`.
+- The default is `kimi` and `npm test` passes without either key.
+
+Tests: config validation for both providers, request-body building for both, health `model`, eval client factory picking the provider.
