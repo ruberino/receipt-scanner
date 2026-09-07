@@ -61,6 +61,40 @@ function insertDoneReceiptWithLine(purchasedAt: string, productId: number): void
     .run();
 }
 
+function insertReceipt(overrides: Partial<typeof receipts.$inferInsert> = {}): number {
+  return app!.db
+    .insert(receipts)
+    .values({
+      status: 'done',
+      purchasedAt: '2026-09-04',
+      totalOre: 100,
+      warningsJson: '[]',
+      createdAt: NOW,
+      updatedAt: NOW,
+      ...overrides,
+    })
+    .returning()
+    .get().id;
+}
+
+function insertReceiptLine(
+  receiptId: number,
+  overrides: Partial<typeof receiptLines.$inferInsert> = {},
+): void {
+  app!.db
+    .insert(receiptLines)
+    .values({
+      receiptId,
+      lineNo: 1,
+      kind: 'item',
+      rawText: 'line',
+      totalOre: 100,
+      createdAt: NOW,
+      ...overrides,
+    })
+    .run();
+}
+
 function insertOpenList(weekStart = '2026-08-31'): number {
   return app!.db
     .insert(shoppingLists)
@@ -238,6 +272,7 @@ describe('GET /api/shopping-lists', () => {
       createdAt: NOW,
       completedAt: null,
       itemCount: 3,
+      tripCounts: null,
     });
     expect(body[1]).toMatchObject({ weekStart: '2026-08-24', status: 'done', itemCount: 2 });
     expect(body[2]).toMatchObject({ weekStart: '2026-08-17', status: 'done', itemCount: 1 });
@@ -361,6 +396,179 @@ describe('GET /api/shopping-lists/current', () => {
     expect(items[0]).toMatchObject({ name: 'Plommer', category: 'Frukt og grønt' });
     // The product's own category wins over the item's own, even though one was stored (T37 F2).
     expect(items[1]).toMatchObject({ name: 'Lettmelk 1 l', category: 'Meieri' });
+  });
+});
+
+describe('GET /api/shopping-lists/:id (T39)', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'GET', url: '/api/shopping-lists/1' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/shopping-lists/999',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('returns trip: null and receipts: [] for an open list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ trip: null, receipts: [] });
+  });
+
+  it('returns trip: null for a done list with no linked receipt', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    expect(response.json()).toMatchObject({ trip: null, receipts: [] });
+  });
+
+  it('computes the three groups and counts for a fixture of 6 planned items, 4 bought (one by name), 2 not bought, and 3 unplanned products across two receipts', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+
+    const milk = insertProduct('Lettmelk 1 l');
+    const coffee = insertProduct('Kaffe');
+    const yoghurt = insertProduct('Yoghurt');
+    const bread = insertProduct('Brød');
+    const banana = insertProduct('Banan');
+    const detergent = insertProduct('Vaskemiddel');
+
+    insertItem(listId, 1, { name: 'Lettmelk 1 l', productId: milk, source: 'suggested' });
+    insertItem(listId, 2, { name: 'Kaffe', productId: coffee, source: 'suggested' });
+    insertItem(listId, 3, { name: 'Yoghurt', productId: yoghurt, source: 'suggested' });
+    insertItem(listId, 4, { name: 'Handlenett', productId: null, source: 'manual' });
+    insertItem(listId, 5, { name: 'Brød', productId: bread, source: 'suggested' });
+    insertItem(listId, 6, { name: 'Servietter', productId: null, source: 'manual' });
+
+    const receiptA = insertReceipt({ purchasedAt: '2026-09-04', shoppingListId: listId });
+    insertReceiptLine(receiptA, { productId: milk, rawText: 'TINE LETTMELK 1L' });
+    insertReceiptLine(receiptA, { productId: coffee, rawText: 'KAFFE' });
+    insertReceiptLine(receiptA, { productId: banana, rawText: 'BANAN' });
+
+    const receiptB = insertReceipt({ purchasedAt: '2026-09-04', shoppingListId: listId });
+    insertReceiptLine(receiptB, { productId: yoghurt, rawText: 'YOGHURT' });
+    insertReceiptLine(receiptB, { productId: null, rawText: 'Handlenett' });
+    insertReceiptLine(receiptB, { productId: null, rawText: 'Kjeks' });
+    insertReceiptLine(receiptB, { productId: detergent, rawText: 'VASKEMIDDEL' });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const trip = response.json().trip;
+    expect(trip.counts).toEqual({ planned: 6, bought: 4, notBought: 2, unplanned: 3 });
+    expect(
+      trip.planned
+        .filter((row: { status: string }) => row.status === 'bought')
+        .map((row: { name: string }) => row.name)
+        .sort(),
+    ).toEqual(['Handlenett', 'Kaffe', 'Lettmelk 1 l', 'Yoghurt']);
+    expect(
+      trip.planned
+        .filter((row: { status: string }) => row.status === 'notBought')
+        .map((row: { name: string }) => row.name)
+        .sort(),
+    ).toEqual(['Brød', 'Servietter']);
+    expect(trip.unplanned.map((row: { name: string }) => row.name)).toEqual([
+      'Banan',
+      'Kjeks',
+      'Vaskemiddel',
+    ]);
+    expect(
+      response
+        .json()
+        .receipts.map((r: { id: number }) => r.id)
+        .sort(),
+    ).toEqual([receiptA, receiptB].sort());
+  });
+
+  it('removes a receipt from the trip once it is unlinked', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+    const milk = insertProduct('Lettmelk 1 l');
+    insertItem(listId, 1, { name: 'Lettmelk 1 l', productId: milk, source: 'suggested' });
+    const receiptId = insertReceipt({ purchasedAt: '2026-09-04', shoppingListId: listId });
+    insertReceiptLine(receiptId, { productId: milk, rawText: 'TINE LETTMELK 1L' });
+
+    const before = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+    expect(before.json().trip).toMatchObject({ counts: { bought: 1 } });
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/receipts/${receiptId}`,
+      payload: { shoppingListId: null },
+      headers: { cookie },
+    });
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+    // No receipt linked at all now, so trip is null again, the same rule as a list with none yet.
+    expect(after.json().trip).toBeNull();
+    expect(after.json().receipts).toEqual([]);
+  });
+
+  it('removes a receipt from the trip once it is deleted', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+    const milk = insertProduct('Lettmelk 1 l');
+    insertItem(listId, 1, { name: 'Lettmelk 1 l', productId: milk, source: 'suggested' });
+    const receiptId = insertReceipt({ purchasedAt: '2026-09-04', shoppingListId: listId });
+    insertReceiptLine(receiptId, { productId: milk, rawText: 'TINE LETTMELK 1L' });
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/receipts/${receiptId}`,
+      headers: { cookie },
+    });
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+    expect(after.json().trip).toBeNull();
+    expect(after.json().receipts).toEqual([]);
   });
 });
 
@@ -810,6 +1018,29 @@ describe('DELETE /api/shopping-lists/:id', () => {
       app.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
     ).toBeUndefined();
   });
+
+  it('leaves a linked receipt intact with no link when the (reopened) list is deleted (T39)', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertDoneList('2026-08-24', NOW);
+    const receiptId = insertReceipt({ purchasedAt: '2026-09-04', shoppingListId: listId });
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/reopen`,
+      headers: { cookie },
+    });
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(204);
+    const receipt = app.db.select().from(receipts).where(eq(receipts.id, receiptId)).get();
+    expect(receipt).toBeDefined();
+    expect(receipt?.shoppingListId).toBeNull();
+  });
 });
 
 describe('POST /api/shopping-lists/:id/refresh', () => {
@@ -1027,6 +1258,74 @@ describe('POST /api/shopping-lists/:id/complete', () => {
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().id).not.toBe(listId);
+  });
+
+  describe('automatic receipt link (T39)', () => {
+    it('links an unlinked done receipt purchased on the completion day', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const listId = insertOpenList();
+      const receiptId = insertReceipt({ purchasedAt: '2026-09-04' });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/shopping-lists/${listId}/complete`,
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().receipts.map((r: { id: number }) => r.id)).toEqual([receiptId]);
+    });
+
+    it('does not link a receipt from a different day, even one day off', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const listId = insertOpenList();
+      insertReceipt({ purchasedAt: '2026-09-03' });
+      insertReceipt({ purchasedAt: '2026-09-05' });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/shopping-lists/${listId}/complete`,
+        headers: { cookie },
+      });
+
+      expect(response.json().receipts).toEqual([]);
+    });
+
+    it('leaves a receipt already linked to another list alone', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const otherListId = insertDoneList('2026-08-24');
+      const receiptId = insertReceipt({ purchasedAt: '2026-09-04', shoppingListId: otherListId });
+      const listId = insertOpenList();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/shopping-lists/${listId}/complete`,
+        headers: { cookie },
+      });
+
+      expect(response.json().receipts).toEqual([]);
+      expect(
+        app.db.select().from(receipts).where(eq(receipts.id, receiptId)).get()?.shoppingListId,
+      ).toBe(otherListId);
+    });
+
+    it('does not link a receipt that is not done', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const listId = insertOpenList();
+      insertReceipt({ status: 'pending', purchasedAt: '2026-09-04' });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/shopping-lists/${listId}/complete`,
+        headers: { cookie },
+      });
+
+      expect(response.json().receipts).toEqual([]);
+    });
   });
 });
 

@@ -3,9 +3,10 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
-import { products, receipts, shoppingListProposals } from '../db/schema.ts';
+import { products, receipts, shoppingListProposals, shoppingLists } from '../db/schema.ts';
 import { loadProductStatsMap, type ProductStats } from '../domain/productStats.ts';
 import { toProduct } from './products.ts';
+import { computeTripForList } from './shoppingLists.ts';
 
 const NO_STATS: ProductStats = { timesBought: 0, lastBought: null, medianIntervalDays: null };
 const TOP_PRODUCTS_LIMIT = 10;
@@ -19,7 +20,10 @@ function monthKey(date: string): string {
 }
 
 /** All-time acceptance-rate inputs over every proposal ever made (T37, ADR-0016): small counts at
- * household scale, so summing in memory needs no extra columns or triggers. */
+ * household scale, so summing in memory needs no extra columns or triggers. `boughtItems` comes
+ * from `loadTripsAndAiPurchaseStats` (T39): every `source = 'ai'` list item is, by construction,
+ * an accepted proposal item, so summing "bought" ai items across every list's trip already is the
+ * count without linking a purchase back to the specific proposal it came from. */
 function loadAiProposalsStats(db: AppDatabase) {
   const rows = db
     .select({
@@ -42,6 +46,37 @@ function loadAiProposalsStats(db: AppDatabase) {
     },
     { proposals: 0, proposedItems: 0, acceptedItems: 0 },
   );
+}
+
+/** All-time trip counts over every `done` list (T39, ADR-0018), plus the ai-proposal purchase
+ * count `loadAiProposalsStats` needs; computed together so each list's trip is built only once. */
+function loadTripsAndAiPurchaseStats(db: AppDatabase) {
+  const doneLists = db.select().from(shoppingLists).where(eq(shoppingLists.status, 'done')).all();
+
+  const trips = {
+    completedLists: doneLists.length,
+    listsWithReceipt: 0,
+    plannedItems: 0,
+    boughtItems: 0,
+    unplannedItems: 0,
+  };
+  let aiBoughtItems = 0;
+
+  for (const list of doneLists) {
+    const trip = computeTripForList(db, list);
+    if (trip === null) {
+      continue;
+    }
+    trips.listsWithReceipt += 1;
+    trips.plannedItems += trip.counts.planned;
+    trips.boughtItems += trip.counts.bought;
+    trips.unplannedItems += trip.counts.unplanned;
+    aiBoughtItems += trip.planned.filter(
+      (row) => row.source === 'ai' && row.status === 'bought',
+    ).length;
+  }
+
+  return { trips, aiBoughtItems };
 }
 
 /** `count` calendar months as `YYYY-MM`, ascending, the last one being `endMonth` itself. */
@@ -104,8 +139,9 @@ export default async function statsRoutes(
       .sort((a, b) => b.timesBought - a.timesBought || a.name.localeCompare(b.name, 'nb'))
       .slice(0, TOP_PRODUCTS_LIMIT);
 
-    const aiProposals = loadAiProposalsStats(app.db);
+    const { trips, aiBoughtItems } = loadTripsAndAiPurchaseStats(app.db);
+    const aiProposals = { ...loadAiProposalsStats(app.db), boughtItems: aiBoughtItems };
 
-    return { months, topProducts, aiProposals };
+    return { months, topProducts, aiProposals, trips };
   });
 }

@@ -14,11 +14,17 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useReceipt: vi.fn(),
     useScanReceipt: vi.fn(),
     useDeleteReceipt: vi.fn(),
+    useInvalidateShoppingListsOnDone: vi.fn(),
   };
 });
 
-const { useReceipt, useScanReceipt, useDeleteReceipt, receiptRefetchInterval } =
-  await import('../../src/client/api/queries.ts');
+const {
+  useReceipt,
+  useScanReceipt,
+  useDeleteReceipt,
+  receiptRefetchInterval,
+  shouldInvalidateShoppingListsOnDone,
+} = await import('../../src/client/api/queries.ts');
 
 function renderReceiptPage(id = 42) {
   return render(
@@ -284,5 +290,20 @@ describe('receiptRefetchInterval', () => {
 
   it('stops polling when there is no data yet', () => {
     expect(receiptRefetchInterval(undefined)).toBe(false);
+  });
+});
+
+describe('shouldInvalidateShoppingListsOnDone (T39)', () => {
+  it('fires only on the actual pending/processing -> done transition', () => {
+    expect(shouldInvalidateShoppingListsOnDone('processing', 'done')).toBe(true);
+    expect(shouldInvalidateShoppingListsOnDone('pending', 'done')).toBe(true);
+    expect(shouldInvalidateShoppingListsOnDone(undefined, 'done')).toBe(true);
+  });
+
+  it('does not fire again once already done, or for any other status', () => {
+    expect(shouldInvalidateShoppingListsOnDone('done', 'done')).toBe(false);
+    expect(shouldInvalidateShoppingListsOnDone('pending', 'processing')).toBe(false);
+    expect(shouldInvalidateShoppingListsOnDone('processing', 'failed')).toBe(false);
+    expect(shouldInvalidateShoppingListsOnDone(undefined, undefined)).toBe(false);
   });
 });

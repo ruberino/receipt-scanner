@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import type {
+  AiProposalsStats,
   MonthlyStats,
   Product,
   ReceiptSummary,
   ShoppingListSummary,
+  TripsStats,
 } from '../../shared/schemas.ts';
 import { formatOre } from '../../shared/money.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
@@ -53,6 +55,15 @@ function shoppingListStatusLabel(status: ShoppingListSummary['status']): string 
   return status === 'open' ? 'Åpen' : 'Fullført';
 }
 
+/** `12 av 14 kjøpt · 5 utenom` (T39); `null` when the list is `open` or has no linked receipt yet. */
+function tripCountsLabel(tripCounts: ShoppingListSummary['tripCounts']): string | null {
+  if (tripCounts === null) {
+    return null;
+  }
+  const bought = `${tripCounts.bought} av ${tripCounts.planned} kjøpt`;
+  return tripCounts.unplanned > 0 ? `${bought} · ${tripCounts.unplanned} utenom` : bought;
+}
+
 function MonthlyBarsSection({ months }: { months: MonthlyStats[] }) {
   const maxOre = Math.max(0, ...months.map((month) => month.totalOre));
 
@@ -98,15 +109,90 @@ function ShoppingListHistorySection({ lists }: { lists: ShoppingListSummary[] })
     <section>
       <h3 className="mb-2 font-medium">Handlelistehistorikk</h3>
       <ul className="flex flex-col gap-1">
-        {lists.map((list) => (
-          <li key={list.id} className="flex justify-between gap-3 text-sm">
-            <span>{formatWeek(list.weekStart)}</span>
-            <span className="flex-shrink-0 text-gray-600">
-              {list.itemCount} {list.itemCount === 1 ? 'vare' : 'varer'}
-            </span>
-            <span className="flex-shrink-0">{shoppingListStatusLabel(list.status)}</span>
-          </li>
-        ))}
+        {lists.map((list) => {
+          const tripLabel = tripCountsLabel(list.tripCounts);
+          return (
+            <li key={list.id}>
+              <Link
+                to={`/shopping-lists/${list.id}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1 text-sm"
+              >
+                <span>{formatWeek(list.weekStart)}</span>
+                {tripLabel !== null && <span className="text-gray-600">{tripLabel}</span>}
+                <span className="flex-shrink-0 text-gray-600">
+                  {list.itemCount} {list.itemCount === 1 ? 'vare' : 'varer'}
+                </span>
+                <span className="flex-shrink-0">{shoppingListStatusLabel(list.status)}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** `Handleturer` (T39): completed lists, of which with a receipt, share of planned items bought,
+ * and unplanned items per trip — the outcome side of both engines, next to `AI-forslag` below. */
+function TripsSection({ trips }: { trips: TripsStats }) {
+  const boughtShare =
+    trips.plannedItems > 0
+      ? `${Math.round((trips.boughtItems / trips.plannedItems) * 100)} %`
+      : '–';
+  const unplannedPerTrip =
+    trips.listsWithReceipt > 0
+      ? (trips.unplannedItems / trips.listsWithReceipt).toFixed(1).replace('.', ',')
+      : '0';
+
+  return (
+    <section>
+      <h3 className="mb-2 font-medium">Handleturer</h3>
+      <ul className="flex flex-col gap-1 text-sm">
+        <li className="flex justify-between">
+          <span>Fullførte lister</span>
+          <span>{trips.completedLists}</span>
+        </li>
+        <li className="flex justify-between">
+          <span>Med kvittering</span>
+          <span>{trips.listsWithReceipt}</span>
+        </li>
+        <li className="flex justify-between">
+          <span>Andel planlagt kjøpt</span>
+          <span>{boughtShare}</span>
+        </li>
+        <li className="flex justify-between">
+          <span>Utenom lista per tur</span>
+          <span>{unplannedPerTrip}</span>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+/** `aiProposals` has been in the API since T37 but was not rendered anywhere until this task
+ * (T39): the T37 acceptance criterion for the statistics section is closed here, with `bought`
+ * (from the linked trip) added next to proposed and accepted. */
+function AiProposalsSection({ aiProposals }: { aiProposals: AiProposalsStats }) {
+  return (
+    <section>
+      <h3 className="mb-2 font-medium">AI-forslag</h3>
+      <ul className="flex flex-col gap-1 text-sm">
+        <li className="flex justify-between">
+          <span>Forslag</span>
+          <span>{aiProposals.proposals}</span>
+        </li>
+        <li className="flex justify-between">
+          <span>Foreslåtte varer</span>
+          <span>{aiProposals.proposedItems}</span>
+        </li>
+        <li className="flex justify-between">
+          <span>Godtatte varer</span>
+          <span>{aiProposals.acceptedItems}</span>
+        </li>
+        <li className="flex justify-between">
+          <span>Kjøpte varer</span>
+          <span>{aiProposals.boughtItems}</span>
+        </li>
       </ul>
     </section>
   );
@@ -131,6 +217,8 @@ function StatsAndHistory() {
             <>
               <MonthlyBarsSection months={stats.data.months} />
               <TopProductsSection products={stats.data.topProducts} />
+              <TripsSection trips={stats.data.trips} />
+              <AiProposalsSection aiProposals={stats.data.aiProposals} />
             </>
           )}
 

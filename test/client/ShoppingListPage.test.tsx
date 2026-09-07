@@ -91,6 +91,8 @@ function list(overrides: Partial<ShoppingList> = {}): ShoppingList {
     createdAt: '2026-09-06T00:00:00.000Z',
     completedAt: null,
     items: [item()],
+    receipts: [],
+    trip: null,
     ...overrides,
   };
 }
@@ -103,6 +105,7 @@ function listSummary(overrides: Partial<ShoppingListSummary> = {}): ShoppingList
     createdAt: '2026-09-06T00:00:00.000Z',
     completedAt: '2026-09-06T00:00:00.000Z',
     itemCount: 2,
+    tripCounts: null,
     ...overrides,
   };
 }
@@ -353,6 +356,10 @@ describe('ShoppingListPage', () => {
 
       expect(screen.getByText('Handleturen ble fullført kl. 14:12')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Gjenåpne listen' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Se handleturen' })).toHaveAttribute(
+        'href',
+        '/shopping-lists/9',
+      );
     });
 
     it('does not offer "Gjenåpne listen" for a list completed on an earlier day (T31)', () => {

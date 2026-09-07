@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   acceptProposalSchema,
@@ -11,6 +11,8 @@ import { mondayOf, todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import {
   products,
+  receiptLines,
+  receipts,
   shoppingListDismissals,
   shoppingListItems,
   shoppingListProposals,
@@ -23,8 +25,10 @@ import {
   type PreviousProposal,
   type PreviousProposalItem,
 } from '../domain/proposalContext.ts';
+import { computeTrip, type Trip, type TripItem, type TripLine } from '../domain/trip.ts';
 import { runProposal } from '../llm/proposeList.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
+import { loadLineCounts, toReceiptSummary } from './receipts.ts';
 
 export type ShoppingListsRouteOptions = {
   /** Same clock the receipts routes get, so `weekStart` is deterministic in tests. */
@@ -57,7 +61,11 @@ function loadItemCounts(db: AppDatabase, listIds: number[]): Map<number, number>
   return new Map(rows.map((row) => [row.listId, row.count]));
 }
 
-function toShoppingListSummary(list: typeof shoppingLists.$inferSelect, itemCount: number) {
+function toShoppingListSummary(
+  db: AppDatabase,
+  list: typeof shoppingLists.$inferSelect,
+  itemCount: number,
+) {
   return {
     id: list.id,
     weekStart: list.weekStart,
@@ -65,6 +73,7 @@ function toShoppingListSummary(list: typeof shoppingLists.$inferSelect, itemCoun
     createdAt: list.createdAt,
     completedAt: list.completedAt,
     itemCount,
+    tripCounts: computeTripForList(db, list)?.counts ?? null,
   };
 }
 
@@ -141,6 +150,91 @@ function toShoppingListItem(item: {
   };
 }
 
+function loadLinkedReceiptIds(db: AppDatabase, listId: number): number[] {
+  return db
+    .select({ id: receipts.id })
+    .from(receipts)
+    .where(eq(receipts.shoppingListId, listId))
+    .all()
+    .map((row) => row.id);
+}
+
+function loadLinkedReceipts(db: AppDatabase, listId: number) {
+  const rows = db
+    .select()
+    .from(receipts)
+    .where(eq(receipts.shoppingListId, listId))
+    .orderBy(desc(receipts.id))
+    .all();
+  const lineCounts = loadLineCounts(
+    db,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => toReceiptSummary(row, lineCounts.get(row.id) ?? 0));
+}
+
+/** `item`-kind lines of the given receipts, for the trip comparison (T39, ADR-0018). */
+function loadTripLines(db: AppDatabase, receiptIds: number[]): TripLine[] {
+  if (receiptIds.length === 0) {
+    return [];
+  }
+  return db
+    .select({
+      receiptId: receiptLines.receiptId,
+      productId: receiptLines.productId,
+      rawText: receiptLines.rawText,
+      quantity: receiptLines.quantity,
+      unit: receiptLines.unit,
+    })
+    .from(receiptLines)
+    .where(and(inArray(receiptLines.receiptId, receiptIds), eq(receiptLines.kind, 'item')))
+    .all()
+    .map((line) => ({ ...line, unit: line.unit as TripLine['unit'] }));
+}
+
+function loadProductNames(db: AppDatabase, productIds: number[]): Map<number, string> {
+  if (productIds.length === 0) {
+    return new Map();
+  }
+  const rows = db
+    .select({ id: products.id, name: products.name })
+    .from(products)
+    .where(inArray(products.id, productIds))
+    .all();
+  return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+/** `null` while the list is `open` or has no linked receipt (T39, ADR-0018); otherwise the
+ * comparison of the list's items against the linked receipts' item lines, computed fresh.
+ * Exported for the stats route, which sums trip counts across every `done` list. */
+export function computeTripForList(
+  db: AppDatabase,
+  list: typeof shoppingLists.$inferSelect,
+): Trip | null {
+  if (list.status !== 'done') {
+    return null;
+  }
+  const receiptIds = loadLinkedReceiptIds(db, list.id);
+  if (receiptIds.length === 0) {
+    return null;
+  }
+
+  const lines = loadTripLines(db, receiptIds);
+  const productIds = [
+    ...new Set(lines.map((line) => line.productId).filter((id): id is number => id !== null)),
+  ];
+  const items: TripItem[] = loadItems(db, list.id).map((item) => ({
+    id: item.id,
+    productId: item.productId,
+    name: item.name,
+    quantityText: item.quantityText,
+    source: item.source as TripItem['source'],
+    checked: item.checked === 1,
+  }));
+
+  return computeTrip({ items, lines, productNames: loadProductNames(db, productIds) });
+}
+
 function buildShoppingListDetail(db: AppDatabase, list: typeof shoppingLists.$inferSelect) {
   return {
     id: list.id,
@@ -149,6 +243,8 @@ function buildShoppingListDetail(db: AppDatabase, list: typeof shoppingLists.$in
     createdAt: list.createdAt,
     completedAt: list.completedAt,
     items: loadItems(db, list.id).map(toShoppingListItem),
+    receipts: loadLinkedReceipts(db, list.id),
+    trip: computeTripForList(db, list),
   };
 }
 
@@ -233,11 +329,22 @@ export default async function shoppingListsRoutes(
       app.db,
       lists.map((list) => list.id),
     );
-    return lists.map((list) => toShoppingListSummary(list, itemCounts.get(list.id) ?? 0));
+    return lists.map((list) => toShoppingListSummary(app.db, list, itemCounts.get(list.id) ?? 0));
   });
 
   app.get('/api/shopping-lists/current', async () => {
     const list = findOpenList(app.db);
+    if (!list) {
+      throw new NotFoundError();
+    }
+
+    return buildShoppingListDetail(app.db, list);
+  });
+
+  app.get('/api/shopping-lists/:id', async (request) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const list = app.db.select().from(shoppingLists).where(eq(shoppingLists.id, params.id)).get();
     if (!list) {
       throw new NotFoundError();
     }
@@ -621,12 +728,32 @@ export default async function shoppingListsRoutes(
     }
 
     const now = options.now().toISOString();
-    const updated = app.db
-      .update(shoppingLists)
-      .set({ status: 'done', completedAt: now })
-      .where(eq(shoppingLists.id, params.id))
-      .returning()
-      .get();
+    const completionDay = todayInOslo(options.now());
+    const updated = app.sqlite.transaction(() => {
+      const updatedList = app.db
+        .update(shoppingLists)
+        .set({ status: 'done', completedAt: now })
+        .where(eq(shoppingLists.id, params.id))
+        .returning()
+        .get();
+
+      // Same-day only, no one-day tolerance (T39, ADR-0018): the receipt was scanned before or
+      // after the button was pressed, but a receipt from yesterday belongs to yesterday's trip,
+      // and one from tomorrow cannot exist yet.
+      app.db
+        .update(receipts)
+        .set({ shoppingListId: params.id })
+        .where(
+          and(
+            eq(receipts.status, 'done'),
+            isNull(receipts.shoppingListId),
+            eq(receipts.purchasedAt, completionDay),
+          ),
+        )
+        .run();
+
+      return updatedList;
+    })();
 
     return buildShoppingListDetail(app.db, updated);
   });

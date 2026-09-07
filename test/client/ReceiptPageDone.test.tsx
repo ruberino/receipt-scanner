@@ -21,6 +21,8 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useUpdateReceiptLine: vi.fn(),
     useUpdateReceiptLineFields: vi.fn(),
     useDeleteReceiptLine: vi.fn(),
+    useRecentDoneShoppingLists: vi.fn(),
+    useInvalidateShoppingListsOnDone: vi.fn(),
   };
 });
 
@@ -34,6 +36,7 @@ const {
   useUpdateReceiptLine,
   useUpdateReceiptLineFields,
   useDeleteReceiptLine,
+  useRecentDoneShoppingLists,
 } = await import('../../src/client/api/queries.ts');
 
 function baseReceipt(overrides: Partial<ReceiptDetail> = {}): ReceiptDetail {
@@ -50,6 +53,8 @@ function baseReceipt(overrides: Partial<ReceiptDetail> = {}): ReceiptDetail {
     reviewedAt: null,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
+    shoppingListId: null,
+    shoppingList: null,
     imageUrl: '/api/receipts/1/image',
     lines: [
       {
@@ -134,6 +139,19 @@ describe('ReceiptPage — done state', () => {
       mutate: vi.fn(),
       isPending: false,
     } as unknown as ReturnType<typeof useDeleteReceiptLine>);
+    vi.mocked(useRecentDoneShoppingLists).mockReturnValue({
+      data: [
+        {
+          id: 5,
+          weekStart: '2026-08-31',
+          status: 'done',
+          createdAt: '2026-08-31T00:00:00.000Z',
+          completedAt: '2026-09-07T12:00:00.000Z',
+          itemCount: 4,
+          tripCounts: null,
+        },
+      ],
+    } as unknown as ReturnType<typeof useRecentDoneShoppingLists>);
   });
 
   afterEach(() => {
@@ -409,7 +427,54 @@ describe('ReceiptPage — done state', () => {
     );
     renderReceiptPage();
 
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    // Scoped by name: a native <select> (the T39 Handleliste selector) also has an implicit
+    // combobox role, so an unscoped query would now match both.
+    expect(screen.getByRole('combobox', { name: 'Vare' })).toBeInTheDocument();
     expect(screen.getByText('Rabatt')).toBeInTheDocument();
+  });
+
+  describe('Handleliste selector (T39)', () => {
+    it('shows "Ingen" and the recent completed lists, with the note about automatic linking', () => {
+      mockReceipt(baseReceipt());
+      renderReceiptPage();
+
+      const select = screen.getByLabelText('Handleliste') as HTMLSelectElement;
+      expect(select).toHaveValue('');
+      expect(screen.getByText('Uke 36, fullført 7. sep.')).toBeInTheDocument();
+      expect(screen.getByText('Knyttes automatisk når datoene stemmer')).toBeInTheDocument();
+    });
+
+    it('links the receipt by selecting a list, through the existing PATCH', async () => {
+      mockReceipt(baseReceipt());
+      renderReceiptPage();
+      const user = userEvent.setup();
+
+      await user.selectOptions(screen.getByLabelText('Handleliste'), '5');
+
+      expect(updateMutate).toHaveBeenCalledWith({ shoppingListId: 5 }, expect.anything());
+    });
+
+    it('unlinks the receipt by selecting "Ingen"', async () => {
+      mockReceipt(
+        baseReceipt({ shoppingListId: 5, shoppingList: { id: 5, weekStart: '2026-08-31' } }),
+      );
+      renderReceiptPage();
+      const user = userEvent.setup();
+
+      await user.selectOptions(screen.getByLabelText('Handleliste'), 'Ingen');
+
+      expect(updateMutate).toHaveBeenCalledWith({ shoppingListId: null }, expect.anything());
+    });
+
+    it('shows a link to the linked list when shoppingList is set', () => {
+      mockReceipt(
+        baseReceipt({ shoppingListId: 5, shoppingList: { id: 5, weekStart: '2026-08-31' } }),
+      );
+      renderReceiptPage();
+
+      const link = screen.getByRole('link', { name: 'Handleliste uke 36' });
+      expect(link).toHaveAttribute('href', '/shopping-lists/5');
+      expect((screen.getByLabelText('Handleliste') as HTMLSelectElement).value).toBe('5');
+    });
   });
 });

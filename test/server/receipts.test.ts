@@ -1,7 +1,12 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { receiptImages, receiptLines, receipts } from '../../src/server/db/schema.ts';
+import {
+  receiptImages,
+  receiptLines,
+  receipts,
+  shoppingLists,
+} from '../../src/server/db/schema.ts';
 import { createTestApp } from '../helpers/createTestApp.ts';
 import { loginCookie } from '../helpers/login.ts';
 
@@ -63,6 +68,14 @@ function insertImage(receiptId: number, sha256: string) {
 
 function getReceipt(id: number) {
   return app!.db.select().from(receipts).where(eq(receipts.id, id)).get();
+}
+
+function insertDoneList(weekStart = '2026-09-07', completedAt = NOW): number {
+  return app!.db
+    .insert(shoppingLists)
+    .values({ weekStart, status: 'done', createdAt: NOW, completedAt })
+    .returning()
+    .get().id;
 }
 
 afterEach(async () => {
@@ -339,6 +352,79 @@ describe('PATCH /api/receipts/:id', () => {
       headers: { cookie },
     });
     expect(backToToday.json().warnings).not.toContain('FUTURE_DATE');
+  });
+
+  describe('shoppingListId (T39)', () => {
+    it('links the receipt to a list and returns it in shoppingList and shoppingListId', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const id = insertDoneReceipt();
+      const listId = insertDoneList('2026-09-07');
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/api/receipts/${id}`,
+        payload: { shoppingListId: listId },
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        shoppingListId: listId,
+        shoppingList: { id: listId, weekStart: '2026-09-07' },
+      });
+      expect(getReceipt(id)?.shoppingListId).toBe(listId);
+    });
+
+    it('unlinks the receipt when shoppingListId is null', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const listId = insertDoneList();
+      const id = insertDoneReceipt({ shoppingListId: listId });
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/api/receipts/${id}`,
+        payload: { shoppingListId: null },
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ shoppingListId: null, shoppingList: null });
+      expect(getReceipt(id)?.shoppingListId).toBeNull();
+    });
+
+    it('gives 404 Handlelisten finnes ikke for an unknown list id', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const id = insertDoneReceipt();
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/api/receipts/${id}`,
+        payload: { shoppingListId: 999 },
+        headers: { cookie },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json().error.message).toBe('Handlelisten finnes ikke');
+    });
+
+    it('leaves shoppingListId untouched when not provided', async () => {
+      app = createTestApp({ now: () => new Date(NOW) });
+      cookie = await loginCookie(app);
+      const listId = insertDoneList();
+      const id = insertDoneReceipt({ shoppingListId: listId });
+
+      const response = await app.inject({
+        method: 'PATCH',
+        url: `/api/receipts/${id}`,
+        payload: { reviewed: true },
+        headers: { cookie },
+      });
+
+      expect(response.json().shoppingListId).toBe(listId);
+    });
   });
 });
 

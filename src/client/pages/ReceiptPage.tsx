@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { ReceiptDetail } from '../../shared/schemas.ts';
 import { parseNok } from '../../shared/money.ts';
+import { isoWeekKey, todayInOslo } from '../../shared/dates.ts';
 import { apiErrorMessage } from '../lib/errorMessage.ts';
+import { formatShortDate } from '../lib/format.ts';
 import {
   useDeleteReceipt,
+  useInvalidateShoppingListsOnDone,
   useReceipt,
+  useRecentDoneShoppingLists,
   useRematch,
   useScanReceipt,
   useUpdateReceipt,
@@ -326,6 +330,66 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
   );
 }
 
+function weekNumber(date: string): number {
+  return Number(isoWeekKey(date).split('-W')[1]);
+}
+
+function shoppingListOptionLabel(list: { weekStart: string; completedAt: string | null }): string {
+  const week = weekNumber(list.weekStart);
+  if (list.completedAt === null) {
+    return `Uke ${week}`;
+  }
+  return `Uke ${week}, fullført ${formatShortDate(todayInOslo(new Date(list.completedAt)))}`;
+}
+
+/** `Ingen` plus the eight most recent completed lists; saving goes through the existing receipt
+ * `PATCH` (T39). Linking is automatic on most receipts (`Knyttes automatisk …`), so this select is
+ * mainly for the exceptions: a receipt bought a couple of days off, or two shops on one trip. */
+function ShoppingListSelector({ receipt }: { receipt: ReceiptDetail }) {
+  const { data: lists } = useRecentDoneShoppingLists();
+  const updateReceipt = useUpdateReceipt(receipt.id);
+  const { showToast } = useToast();
+
+  function handleChange(event: ChangeEvent<HTMLSelectElement>) {
+    const shoppingListId = event.target.value === '' ? null : Number(event.target.value);
+    updateReceipt.mutate(
+      { shoppingListId },
+      { onError: (mutationError) => showToast(apiErrorMessage(mutationError)) },
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1 px-4 pb-4">
+      <label htmlFor="shopping-list" className="text-sm font-medium">
+        Handleliste
+      </label>
+      {receipt.shoppingList !== null && (
+        <Link
+          to={`/shopping-lists/${receipt.shoppingList.id}`}
+          className="text-sm text-blue-600 underline"
+        >
+          Handleliste uke {weekNumber(receipt.shoppingList.weekStart)}
+        </Link>
+      )}
+      <select
+        id="shopping-list"
+        value={receipt.shoppingListId ?? ''}
+        onChange={handleChange}
+        disabled={updateReceipt.isPending}
+        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+      >
+        <option value="">Ingen</option>
+        {(lists ?? []).map((list) => (
+          <option key={list.id} value={list.id}>
+            {shoppingListOptionLabel(list)}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-gray-500">Knyttes automatisk når datoene stemmer</p>
+    </div>
+  );
+}
+
 const UNMATCHED_WARNINGS = new Set(['UNMATCHED_LINES', 'MATCHING_FAILED']);
 
 function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
@@ -382,6 +446,7 @@ export default function ReceiptPage() {
   const { data, isPending, isError } = useReceipt(id);
   const scan = useScanReceipt();
   const { showToast } = useToast();
+  useInvalidateShoppingListsOnDone(data?.status);
 
   if (isPending) {
     return <p className="p-4">Laster …</p>;
@@ -438,6 +503,7 @@ export default function ReceiptPage() {
       </div>
       <div className="flex flex-col md:w-1/2">
         <ReceiptHeader key={data.id} receipt={data} />
+        <ShoppingListSelector receipt={data} />
         <ReceiptImageToggle imageUrl={data.imageUrl} />
         <div className="px-4">
           {data.lines.map((line) => (

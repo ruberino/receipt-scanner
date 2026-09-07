@@ -32,6 +32,13 @@ export const receipts = sqliteTable(
       { onDelete: 'set null' },
     ),
     reviewedAt: text('reviewed_at'),
+    /** The list this receipt was bought for (T39, ADR-0018); set automatically by
+     * `findTripList` when the receipt reaches `done` or the list is completed, overridable on
+     * the receipt page. Several receipts can point at one list; a receipt at most one list. */
+    shoppingListId: integer('shopping_list_id').references(
+      (): AnySQLiteColumn => shoppingLists.id,
+      { onDelete: 'set null' },
+    ),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
   },
@@ -40,6 +47,7 @@ export const receipts = sqliteTable(
       'receipts_status_check',
       sql`${table.status} in ('uploaded', 'pending', 'processing', 'done', 'failed')`,
     ),
+    index('receipts_shopping_list').on(table.shoppingListId),
   ],
 );
 

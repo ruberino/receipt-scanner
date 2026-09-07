@@ -6,7 +6,12 @@ import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase, type OpenedDatabase } from '../../../src/server/db/client.ts';
 import { runMigrations } from '../../../src/server/db/migrate.ts';
-import { receiptImages, receiptLines, receipts } from '../../../src/server/db/schema.ts';
+import {
+  receiptImages,
+  receiptLines,
+  receipts,
+  shoppingLists,
+} from '../../../src/server/db/schema.ts';
 import { createReceiptProcessor } from '../../../src/server/jobs/receiptProcessor.ts';
 import { FakeLlmClient } from '../../../src/server/llm/FakeLlmClient.ts';
 import type { JsonCompletionResult } from '../../../src/server/llm/LlmClient.ts';
@@ -104,8 +109,16 @@ function getReceipt(id: number) {
   return opened.db.select().from(receipts).where(eq(receipts.id, id)).get();
 }
 
+function insertDoneList(weekStart: string, completedAt: string): number {
+  return opened.db
+    .insert(shoppingLists)
+    .values({ weekStart, status: 'done', createdAt: NOW, completedAt })
+    .returning()
+    .get().id;
+}
+
 function stubLogger(): FastifyBaseLogger {
-  return { error: vi.fn() } as unknown as FastifyBaseLogger;
+  return { error: vi.fn(), info: vi.fn() } as unknown as FastifyBaseLogger;
 }
 
 afterEach(() => {
@@ -316,5 +329,62 @@ describe('receiptProcessor', () => {
     const second = getReceipt(secondId);
     expect(second?.possibleDuplicateOf).toBeNull();
     expect(JSON.parse(second?.warningsJson ?? '[]')).not.toContain('POSSIBLE_DUPLICATE');
+  });
+});
+
+describe('automatic trip link at the done transition (T39)', () => {
+  it('links the receipt to a list completed within one day of the purchase date, logging one info line', async () => {
+    opened = createDb();
+    const id = insertPendingReceipt();
+    const listId = insertDoneList('2026-08-31', '2026-09-04T18:00:00.000Z');
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch()]); // purchasedAt 2026-09-03
+    const logger = stubLogger();
+    const processor = createReceiptProcessor({ ...opened, llm, logger, now: FIXED_NOW });
+
+    processor.enqueue(id);
+    await processor.drain();
+
+    expect(getReceipt(id)?.shoppingListId).toBe(listId);
+    expect(logger.info).toHaveBeenCalledWith(
+      { receiptId: id, shoppingListId: listId },
+      'Linked receipt to shopping list',
+    );
+  });
+
+  it('does not link a receipt two days away from the nearest completed list', async () => {
+    opened = createDb();
+    const id = insertPendingReceipt();
+    insertDoneList('2026-08-24', '2026-09-01T18:00:00.000Z'); // 2 days from 2026-09-03
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch()]);
+    const processor = createReceiptProcessor({
+      ...opened,
+      llm,
+      logger: stubLogger(),
+      now: FIXED_NOW,
+    });
+
+    processor.enqueue(id);
+    await processor.drain();
+
+    expect(getReceipt(id)?.shoppingListId).toBeNull();
+  });
+
+  it('never overrides a receipt that already has a shoppingListId', async () => {
+    opened = createDb();
+    const otherListId = insertDoneList('2026-08-17', '2026-08-18T18:00:00.000Z');
+    const id = insertPendingReceipt({ shoppingListId: otherListId });
+    insertDoneList('2026-08-31', '2026-09-04T18:00:00.000Z'); // would otherwise qualify
+    const llm = new FakeLlmClient([fakeExtraction(), fakeMatch()]);
+    const processor = createReceiptProcessor({
+      ...opened,
+      llm,
+      logger: stubLogger(),
+      now: FIXED_NOW,
+    });
+
+    processor.enqueue(id);
+    await processor.drain();
+
+    expect(getReceipt(id)?.shoppingListId).toBe(otherListId);
   });
 });

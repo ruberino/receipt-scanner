@@ -75,10 +75,15 @@ describe('App', () => {
             possibleDuplicateOf: null,
             reviewedAt: null,
             createdAt: '2026-09-01T00:00:00.000Z',
+            shoppingListId: null,
+            shoppingList: null,
             imageUrl: '/api/receipts/42/image',
             lines: [],
           }),
         );
+      }
+      if (url.includes('/api/shopping-lists')) {
+        return Promise.resolve(jsonResponse([]));
       }
       return Promise.resolve(jsonResponse({ authenticated: true }));
     });

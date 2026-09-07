@@ -5,7 +5,7 @@ import { patchReceiptSchema } from '../../shared/schemas.ts';
 import { diffDays, todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { isUniqueViolation } from '../db/client.ts';
-import { products, receiptImages, receiptLines, receipts } from '../db/schema.ts';
+import { products, receiptImages, receiptLines, receipts, shoppingLists } from '../db/schema.ts';
 import { findPossibleDuplicate } from '../domain/extraction.ts';
 import { matchLines, type MatchLinesWarning } from '../domain/matching.ts';
 import { computeLineSum, TOTAL_MATCH_TOLERANCE_ORE } from '../domain/receiptWarnings.ts';
@@ -24,7 +24,9 @@ const listQuerySchema = z.object({
 });
 const MATCHING_WARNINGS: readonly MatchLinesWarning[] = ['UNMATCHED_LINES', 'MATCHING_FAILED'];
 
-function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: number) {
+/** Exported for the shopping list routes, which build a receipt summary for each linked receipt
+ * (T39, ADR-0018). */
+export function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: number) {
   return {
     id: receipt.id,
     status: receipt.status,
@@ -38,11 +40,29 @@ function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: numb
     reviewedAt: receipt.reviewedAt,
     createdAt: receipt.createdAt,
     updatedAt: receipt.updatedAt,
+    shoppingListId: receipt.shoppingListId,
   };
 }
 
-/** One `count(*) ... group by receipt_id` for however many receipts are asked about, instead of a query per receipt. */
-function loadLineCounts(db: AppDatabase, receiptIds: number[]): Map<number, number> {
+/** The linked list's id and week for the receipt detail, or null (T39, ADR-0018). */
+function loadShoppingListSummary(
+  db: AppDatabase,
+  shoppingListId: number | null,
+): { id: number; weekStart: string } | null {
+  if (shoppingListId === null) {
+    return null;
+  }
+  const list = db
+    .select({ id: shoppingLists.id, weekStart: shoppingLists.weekStart })
+    .from(shoppingLists)
+    .where(eq(shoppingLists.id, shoppingListId))
+    .get();
+  return list ?? null;
+}
+
+/** One `count(*) ... group by receipt_id` for however many receipts are asked about, instead of a
+ * query per receipt. Exported for the shopping list routes (T39, ADR-0018). */
+export function loadLineCounts(db: AppDatabase, receiptIds: number[]): Map<number, number> {
   if (receiptIds.length === 0) {
     return new Map();
   }
@@ -86,6 +106,7 @@ function buildReceiptDetail(app: FastifyInstance, receipt: typeof receipts.$infe
       ...line,
       product: line.product?.id == null ? null : line.product,
     })),
+    shoppingList: loadShoppingListSummary(app.db, receipt.shoppingListId),
   };
 }
 
@@ -238,6 +259,19 @@ export default async function receiptsRoutes(
       }
     }
 
+    if (body.shoppingListId !== undefined && body.shoppingListId !== null) {
+      const list = app.db
+        .select({ id: shoppingLists.id })
+        .from(shoppingLists)
+        .where(eq(shoppingLists.id, body.shoppingListId))
+        .get();
+      if (!list) {
+        throw new NotFoundError('Handlelisten finnes ikke');
+      }
+    }
+    const nextShoppingListId =
+      body.shoppingListId !== undefined ? body.shoppingListId : receipt.shoppingListId;
+
     const now = new Date().toISOString();
     const updated = app.db
       .update(receipts)
@@ -248,6 +282,7 @@ export default async function receiptsRoutes(
         warningsJson: JSON.stringify(warnings),
         possibleDuplicateOf,
         reviewedAt: body.reviewed === true ? now : receipt.reviewedAt,
+        shoppingListId: nextShoppingListId,
         updatedAt: now,
       })
       .where(eq(receipts.id, params.id))
