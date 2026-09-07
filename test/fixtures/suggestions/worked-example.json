@@ -44,6 +44,16 @@
       ]
     },
     {
+      "productId": 6,
+      "name": "Egg",
+      "category": "Meieri",
+      "suppressed": false,
+      "purchases": [
+        { "date": "2026-08-27", "quantity": 1, "unit": "stk" },
+        { "date": "2026-09-03", "quantity": 1, "unit": "stk" }
+      ]
+    },
+    {
       "productId": 5,
       "name": "Chips",
       "category": "Snacks",

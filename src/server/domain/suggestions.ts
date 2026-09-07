@@ -2,12 +2,13 @@ import { diffDays, isoWeekKey, mondayOf } from '../../shared/dates.ts';
 import type { ProductHistory, ProductPurchase } from './productStats.ts';
 
 /** A product bought within this many days of `today` was already bought "this trip". */
-const RECENT_PURCHASE_DAYS = 3;
+const RECENT_PURCHASE_DAYS = 1;
 /** A product not bought for longer than this (and not within 3x its own median gap) is stale. */
 const STALE_MAX_DAYS = 60;
 const STALE_MEDIAN_GAP_FACTOR = 3;
-/** `dueIn = medianGap - daysSinceLast`; at or below this many days out counts as due. */
-const DUE_SOON_DAYS = 3;
+/** `dueIn = medianGap - daysSinceLast`; due strictly before the next weekly trip counts as due —
+ * the list is the week's shopping, not just what is needed right now (T36, ADR-0008 amendment). */
+const HORIZON_DAYS = 7;
 const FREQUENCY_WINDOW_DAYS = 84;
 const FREQUENCY_WINDOW_WEEKS = 12;
 const FREQUENCY_THRESHOLD = 0.5;
@@ -34,9 +35,17 @@ function formatMedianGap(medianGap: number): string {
   return Number.isInteger(medianGap) ? String(medianGap) : medianGap.toFixed(1).replace('.', ',');
 }
 
-/** Section 8, step 11: only `kg` gets a decimal; `stk` and `l` (and no unit) round to a whole count. */
+/** Section 8, step 11: the median of the week's total, not of a single purchase, since the list
+ * is a week's shopping (T36) — two purchases in the same week (e.g. milk on Monday and Thursday)
+ * count as one week's worth. Only `kg` gets a decimal; `stk` and `l` (and no unit) round to a
+ * whole count. */
 function formatQuantityText(purchases: ProductPurchase[]): string {
-  const medianQuantity = median(purchases.map((purchase) => purchase.quantity));
+  const weeklySums = new Map<string, number>();
+  for (const purchase of purchases) {
+    const weekKey = isoWeekKey(purchase.date);
+    weeklySums.set(weekKey, (weeklySums.get(weekKey) ?? 0) + purchase.quantity);
+  }
+  const medianQuantity = median([...weeklySums.values()]);
   const mostRecentUnit = purchases.reduce((latest, purchase) =>
     purchase.date > latest.date ? purchase : latest,
   ).unit;
@@ -93,7 +102,7 @@ export function computeSuggestions(histories: ProductHistory[], today: string): 
     }
 
     const dueIn = medianGap - daysSinceLast;
-    const dueRule = dueIn <= DUE_SOON_DAYS;
+    const dueRule = dueIn < HORIZON_DAYS;
 
     const weeksBought = new Set(
       dates
