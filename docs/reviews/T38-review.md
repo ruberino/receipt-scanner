@@ -36,3 +36,19 @@ All five scripts exit 0 in a clean worktree at `2a9c7ab`, 697 tests, Vitest at t
 Approved: re-read this file, commit it on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
 After the merge the foreman updates the demo (`LLM_PROVIDER_PROPOSE=kimi`, restart when the queue is empty) and runs the real-data check described in the plan.
 The Kvitteringer queue is empty after this task.
+
+## Real-data check, 2026-09-07
+
+Run by the foreman on the demo at `e357282` with `LLM_PROVIDER=grok` and `LLM_PROVIDER_PROPOSE=kimi`, against the household database (26 receipts, 234 products, a fresh list with 35 engine suggestions).
+`GET /api/health` reported `model: grok-4.6` and `proposalModel: kimi-k2.6` locally and through the tunnel; the start-up log has no error lines.
+One proposal through `POST /api/shopping-lists/:id/proposals` on a temporary list, deleted afterwards.
+
+| Provider reached | Duration | Prompt / completion tokens | Items | Kinds | New products |
+| --- | --- | --- | --- | --- | --- |
+| Kimi K2.6, thinking off | 15 s | 17 132 / 862 | 6 | sesong 4, vane 1, variasjon 1 | 3 |
+
+The usage log line carries `purpose: propose`, `model: kimi-k2.6` and `finishReason: stop`, which is the routing working on real configuration; receipts keep `grok-4.6` and the next scan will record it in `receipts.model`.
+Judgement: the split behaves as designed and the wait is in the range a person tolerates in a shop.
+Two of the six reasons lean on a purchase made three days ago ("godt å ha mer"), which the today-or-yesterday filter allows by design; whether that is useful is what the acceptance rate will show (ADR-0016), not something to tune blind.
+The size guard fired again without effect (234 of 234 products), as in issue #15.
+Item names and reasons went to Ruben directly, not into this file (architecture section 11).
