@@ -12,8 +12,9 @@ type ShoppingListItemRowProps = {
 
 /** Removal itself is deferred by `OpenListView` (T31): tapping the `×` here only tells the parent,
  * which hides the row, offers `Angre`, and sends the delete once the undo window passes.
- * Tapping the item's text opens inline editing of its name and quantity (T32), replacing the
- * earlier tap-to-toggle behaviour on the text; the checkbox keeps its own 44 px tap target.
+ * The whole row (checkbox and text) toggles checked, as it did before T32 (T18 F1): checking off
+ * is done many times per trip, one-handed, and deserves the row as its target. A dedicated pencil
+ * button opens inline editing of the name and quantity instead (T32 review F1) — editing is rare.
  */
 export default function ShoppingListItemRow({
   item,
@@ -120,21 +121,31 @@ export default function ShoppingListItemRow({
 
   return (
     <li className="flex items-center gap-1 border-b border-gray-200 py-1">
-      <label className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
+      <label className="flex min-h-11 flex-1 items-center gap-3 py-1">
         <input
           type="checkbox"
           checked={item.checked}
           onChange={onToggle}
           aria-label={`Merk ${item.name} som kjøpt`}
-          className="h-5 w-5"
+          className="h-5 w-5 flex-shrink-0"
         />
+        <div className="min-w-0 flex-1">
+          <p className={`truncate ${item.checked ? 'text-gray-400 line-through' : ''}`}>
+            {item.name}
+          </p>
+          {item.quantityText !== null && (
+            <p className="text-sm text-gray-500">{item.quantityText}</p>
+          )}
+          {item.reason !== null && <p className="text-xs text-gray-500">{item.reason}</p>}
+        </div>
       </label>
-      <button type="button" onClick={openEdit} className="min-h-11 min-w-0 flex-1 py-1 text-left">
-        <p className={`truncate ${item.checked ? 'text-gray-400 line-through' : ''}`}>
-          {item.name}
-        </p>
-        {item.quantityText !== null && <p className="text-sm text-gray-500">{item.quantityText}</p>}
-        {item.reason !== null && <p className="text-xs text-gray-500">{item.reason}</p>}
+      <button
+        type="button"
+        onClick={openEdit}
+        aria-label={`Rediger ${item.name}`}
+        className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-gray-400"
+      >
+        ✎
       </button>
       <button
         type="button"

@@ -22,7 +22,8 @@ The `Kjøpt (n)` section from T31 stays flat at the bottom.
 - Header at the top of the open list: `Handleliste uke 37` (ISO week of `weekStart` through `src/shared/dates.ts`) and `3 av 18 kjøpt`; the same header, without progress, on the preview: `Forslag til uke 37`.
 - Unchecked items grouped by `category ?? 'Annet'` in `SHOPPING_CATEGORY_ORDER`, alphabetical within a group by `localeCompare(…, 'nb')`; a group heading is small grey uppercase text; empty groups are not rendered.
   The `position` column is kept and untouched; the UI no longer orders by it.
-- Tapping an item's text opens inline editing: `Navn` (text) and `Antall` (text, e.g. `2 stk`, `1 kg`, may be empty), `Lagre` and `Avbryt`, 44 px each.
+- A 44×44 px pencil icon button on each row (`aria-label="Rediger {name}"`, between the text and the `×`) opens inline editing: `Navn` (text) and `Antall` (text, e.g. `2 stk`, `1 kg`, may be empty), `Lagre` and `Avbryt`, 44 px each.
+  The row's text stays part of the checkbox label, so tapping the row checks the item off as before (T18 F1); corrected during review, the first version of this line opened the editor from the text.
   `Lagre` sends only the changed fields through `PATCH /api/shopping-list-items/:id`; an empty name shows `Navnet kan ikke være tomt` inline and sends nothing; success shows `Varen er oppdatert`.
   Editing does not change `checked`, `productId` or `category`.
 - `Fjern` becomes a 44×44 px icon button (an ×) with `aria-label="Fjern {name}"`, grey, right-aligned; the T31 undo behaviour is unchanged.
