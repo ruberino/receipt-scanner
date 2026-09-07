@@ -16,3 +16,10 @@ CI is green on `9fcadee`.
 ## Noted, no action
 
 - `reason` and `quantityText` on items already on the list are not refreshed, as the plan decided; a stale reason on an old item is accepted.
+
+## Go-ahead, 2026-09-07
+
+All five scripts exit 0 in a clean worktree at `9fcadee`, 617 tests, Vitest at two workers; CI is green on both jobs.
+Approved: re-read this file, commit it on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
+After the merge the foreman updates the demo once its scan queue is empty and presses `Oppdater forslag` on Ruben's open list as the real-data check.
+T37 is next: push its docs commit and wait for the foreman's read before implementing.

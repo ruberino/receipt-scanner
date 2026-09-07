@@ -873,3 +873,25 @@ Acceptance criteria:
 - The button is 44 px at 360 px width; screenshots under `docs/reviews/screenshots/T34/`.
 
 Tests: route tests for adds-missing, skips-present-including-checked, skips-dismissed, appends-after-max-position, 409 when done, 404, 401; the dismissal is written on item delete with a product and not without; migration test that existing lists and items survive; client test for the three toast texts.
+
+---
+
+## T37 — An AI proposal for the week's shopping list
+
+Goal: one tap gives a reviewed set of additions that the rule engine cannot know: season, holidays, variation, and only from the recent past.
+
+Files: `src/shared/calendar.ts`, `src/server/domain/proposalContext.ts`, `src/server/llm/proposeList.ts`, `src/server/llm/prompts/proposeList.prompt.ts`, `src/server/llm/LlmClient.ts`, `src/server/llm/OpenAiCompatibleClient.ts`, `src/server/db/schema.ts`, two migrations, `src/server/routes/shoppingLists.ts`, `src/server/routes/stats.ts`, `src/shared/schemas.ts`, `src/client/pages/ShoppingListPage.tsx`, `src/client/api/queries.ts`, `docs/adr/0016-*.md`, tests.
+
+Steps: see `docs/reviews/T37-plan.md`.
+
+Acceptance criteria:
+
+- `Foreslå med AI` on an open list produces a proposal of 5 to 15 items with Norwegian reasons and kinds, none of which is on the list, dismissed, rejected earlier on this list, or bought in the last 3 days.
+- Products with no purchase in the last 26 weeks are not in the context sent to the model.
+- On 2026-10-15 the calendar context contains Halloween; on 2026-09-07 it does not; Easter 2026 falls on 5 April.
+- Accepting three of seven items adds exactly those three as `source = 'ai'` with their reasons, records the accepted indexes, and a second accept gives `409`.
+- The statistics section shows proposals, proposed items and accepted items.
+- Existing lists and items survive the `source` migration with their ids.
+- 44 px targets at 360 px width; Playwright walk with screenshots (pending, proposal, after accept) under `docs/reviews/screenshots/T37/`.
+
+Tests: calendar dates; context builder (26-week scope, flags, size guard); prompt parse fixtures (valid, unknown product dropped, duplicate collapsed, on-list filtered, invalid category dropped, `finishReason` length); routes with `FakeLlmClient` (201, 409 not open, 404, 401, accept, double accept, empty accept); stats field; migration survival; client (pending timer, pre-checked rows, uncheck, add selected, cancel, error toast).
