@@ -96,8 +96,7 @@ export async function listPhotosWithExpected(
 async function extractPhoto(llm: LlmClient, photoPath: string) {
   const buffer = await readFile(photoPath);
   const normalised = await normaliseImage(buffer);
-  const imageDataUrl = `data:image/jpeg;base64,${normalised.bytes.toString('base64')}`;
-  return runExtraction(llm, imageDataUrl);
+  return runExtraction(llm, normalised.bytes);
 }
 
 export type RunEvalOptions = {

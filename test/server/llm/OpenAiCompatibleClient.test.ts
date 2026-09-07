@@ -51,7 +51,7 @@ describe('buildRequestBody', () => {
   it('puts the image part before the text part when an image is present', () => {
     const withImage: JsonCompletionRequest = {
       ...baseRequest,
-      imageDataUrl: 'data:image/jpeg;base64,AAAA',
+      imageDataUrls: ['data:image/jpeg;base64,AAAA'],
     };
 
     const body = buildRequestBody(withImage, {
@@ -62,6 +62,25 @@ describe('buildRequestBody', () => {
 
     expect(body.messages[1].content).toEqual([
       { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
+      { type: 'text', text: baseRequest.userText },
+    ]);
+  });
+
+  it('sends one image_url part per segment, in order, before the text part (T28)', () => {
+    const withSegments: JsonCompletionRequest = {
+      ...baseRequest,
+      imageDataUrls: ['data:image/jpeg;base64,SEG1', 'data:image/jpeg;base64,SEG2'],
+    };
+
+    const body = buildRequestBody(withSegments, {
+      provider: 'kimi',
+      model: 'kimi-k2.6',
+      thinking: 'disabled',
+    });
+
+    expect(body.messages[1].content).toEqual([
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,SEG1' } },
+      { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,SEG2' } },
       { type: 'text', text: baseRequest.userText },
     ]);
   });

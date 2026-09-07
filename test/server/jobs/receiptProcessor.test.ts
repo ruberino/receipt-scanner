@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +14,13 @@ import type { JsonCompletionResult } from '../../../src/server/llm/LlmClient.ts'
 const NOW = '2026-09-03T12:00:00.000Z';
 const FIXED_NOW = () => new Date(NOW);
 const LINE_TEXT = 'TINE LETTMELK 1L';
+
+// A real, small JPEG: segmentImage() (T28) reads the image's actual dimensions, so a fake buffer
+// like the old `Buffer.from('fake-image')` no longer round-trips through extraction.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const FIXTURE_IMAGE_BYTES = readFileSync(
+  path.resolve(here, '..', '..', 'fixtures', 'images', 'receipt-small.jpg'),
+);
 
 function extractionText(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -81,9 +91,9 @@ function insertPendingReceipt(overrides: Partial<typeof receipts.$inferInsert> =
     .values({
       receiptId: receipt.id,
       mimeType: 'image/jpeg',
-      bytes: Buffer.from(`fake-image-${receipt.id}`),
-      width: 100,
-      height: 100,
+      bytes: FIXTURE_IMAGE_BYTES,
+      width: 300,
+      height: 500,
       sha256: `${'a'.repeat(63)}${receipt.id}`,
     })
     .run();

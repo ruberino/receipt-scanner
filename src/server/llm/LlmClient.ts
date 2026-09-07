@@ -4,8 +4,9 @@ export type JsonCompletionRequest = {
   purpose: LlmPurpose;
   system: string;
   userText: string;
-  /** `data:image/jpeg;base64,...` */
-  imageDataUrl?: string;
+  /** `data:image/jpeg;base64,...`, one per consecutive top-to-bottom segment of a tall receipt
+   * (T28); sent as consecutive `image_url` parts in the order given. */
+  imageDataUrls?: string[];
   maxTokens: number;
   promptVersion: number;
   receiptId?: number;
