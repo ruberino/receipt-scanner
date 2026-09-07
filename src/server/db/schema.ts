@@ -5,6 +5,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -145,4 +146,19 @@ export const shoppingListItems = sqliteTable(
     check('shopping_list_items_source_check', sql`${table.source} in ('suggested', 'manual')`),
     index('shopping_list_items_list').on(table.listId, table.position),
   ],
+);
+
+/** A product removed from a list is never re-suggested to that same list by a refresh (T34). */
+export const shoppingListDismissals = sqliteTable(
+  'shopping_list_dismissals',
+  {
+    listId: integer('list_id')
+      .notNull()
+      .references(() => shoppingLists.id, { onDelete: 'cascade' }),
+    productId: integer('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.listId, table.productId] })],
 );

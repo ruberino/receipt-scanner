@@ -4,7 +4,12 @@ import { z } from 'zod';
 import { createShoppingListItemSchema, patchShoppingListItemSchema } from '../../shared/schemas.ts';
 import { mondayOf, todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
-import { products, shoppingListItems, shoppingLists } from '../db/schema.ts';
+import {
+  products,
+  shoppingListDismissals,
+  shoppingListItems,
+  shoppingLists,
+} from '../db/schema.ts';
 import { computeSuggestions } from '../domain/suggestions.ts';
 import { loadProductHistories } from '../domain/productStats.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
@@ -292,7 +297,20 @@ export default async function shoppingListsRoutes(
       throw new ConflictError('Handlelisten er fullført');
     }
 
-    app.db.delete(shoppingListItems).where(eq(shoppingListItems.id, params.id)).run();
+    // A removed product is dismissed for this list (T34), so a later refresh never re-adds it; a
+    // manual item without a product leaves no trace. `onConflictDoNothing` since the same product
+    // can only be dismissed once per list (the primary key), and re-removing it is not an error.
+    const now = options.now().toISOString();
+    app.sqlite.transaction(() => {
+      app.db.delete(shoppingListItems).where(eq(shoppingListItems.id, params.id)).run();
+      if (item.productId !== null) {
+        app.db
+          .insert(shoppingListDismissals)
+          .values({ listId: item.listId, productId: item.productId, createdAt: now })
+          .onConflictDoNothing()
+          .run();
+      }
+    })();
 
     reply.status(204).send();
   });
@@ -336,6 +354,69 @@ export default async function shoppingListsRoutes(
     app.db.delete(shoppingLists).where(eq(shoppingLists.id, params.id)).run();
 
     reply.status(204).send();
+  });
+
+  app.post('/api/shopping-lists/:id/refresh', async (request) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const list = app.db.select().from(shoppingLists).where(eq(shoppingLists.id, params.id)).get();
+    if (!list) {
+      throw new NotFoundError();
+    }
+    if (list.status !== 'open') {
+      throw new ConflictError('Listen er ikke åpen');
+    }
+
+    const today = todayInOslo(options.now());
+    const suggestions = computeSuggestions(loadProductHistories(app.db), today);
+
+    const existingProductIds = new Set(
+      app.db
+        .select({ productId: shoppingListItems.productId })
+        .from(shoppingListItems)
+        .where(eq(shoppingListItems.listId, params.id))
+        .all()
+        .map((row) => row.productId)
+        .filter((productId): productId is number => productId !== null),
+    );
+    const dismissedProductIds = new Set(
+      app.db
+        .select({ productId: shoppingListDismissals.productId })
+        .from(shoppingListDismissals)
+        .where(eq(shoppingListDismissals.listId, params.id))
+        .all()
+        .map((row) => row.productId),
+    );
+
+    const now = options.now().toISOString();
+    app.sqlite.transaction(() => {
+      let position = nextPosition(app.db, params.id);
+      for (const suggestion of suggestions) {
+        if (
+          existingProductIds.has(suggestion.productId) ||
+          dismissedProductIds.has(suggestion.productId)
+        ) {
+          continue;
+        }
+        app.db
+          .insert(shoppingListItems)
+          .values({
+            listId: params.id,
+            productId: suggestion.productId,
+            name: suggestion.name,
+            quantityText: suggestion.quantityText,
+            source: 'suggested',
+            reason: suggestion.reason,
+            checked: 0,
+            position,
+            createdAt: now,
+          })
+          .run();
+        position += 1;
+      }
+    })();
+
+    return buildShoppingListDetail(app.db, list);
   });
 
   app.post('/api/shopping-lists/:id/complete', async (request) => {

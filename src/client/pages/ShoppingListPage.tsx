@@ -14,6 +14,7 @@ import {
   useDeleteShoppingListItem,
   useLatestShoppingList,
   useProductSearch,
+  useRefreshShoppingList,
   useReopenShoppingList,
   useSuggestions,
   useToggleShoppingListItem,
@@ -202,12 +203,21 @@ function boughtLabel(count: number): string {
   return count === 1 ? 'Kjøpt (1)' : `Kjøpt (${count})`;
 }
 
+/** T34: the toast after "Oppdater forslag". */
+function addedItemsLabel(count: number): string {
+  if (count === 0) {
+    return 'Ingen nye forslag';
+  }
+  return count === 1 ? '1 vare lagt til' : `${count} varer lagt til`;
+}
+
 type PendingRemoval = { item: ShoppingListItem; timeoutId: ReturnType<typeof setTimeout> };
 
 function OpenListView({ list }: { list: ShoppingList }) {
   const completeList = useCompleteShoppingList(list.id);
   const reopen = useReopenShoppingList(list.id);
   const deleteList = useDeleteShoppingList(list.id);
+  const refresh = useRefreshShoppingList(list.id);
   const toggle = useToggleShoppingListItem();
   const deleteItem = useDeleteShoppingListItem();
   const { showToast } = useToast();
@@ -332,6 +342,17 @@ function OpenListView({ list }: { list: ShoppingList }) {
     });
   }
 
+  function handleRefresh() {
+    const previousItemIds = new Set(list.items.map((item) => item.id));
+    refresh.mutate(undefined, {
+      onSuccess: (updated) => {
+        const addedCount = updated.items.filter((item) => !previousItemIds.has(item.id)).length;
+        showToast(addedItemsLabel(addedCount));
+      },
+      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+    });
+  }
+
   return (
     <div className="flex flex-col">
       <div className="p-4">
@@ -381,6 +402,14 @@ function OpenListView({ list }: { list: ShoppingList }) {
 
       <div className="flex flex-col gap-4 p-4">
         <AddItemField listId={list.id} />
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refresh.isPending}
+          className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium disabled:opacity-50"
+        >
+          Oppdater forslag
+        </button>
         <button
           type="button"
           onClick={handleComplete}

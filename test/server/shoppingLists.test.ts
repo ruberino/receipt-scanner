@@ -5,6 +5,7 @@ import {
   products,
   receiptLines,
   receipts,
+  shoppingListDismissals,
   shoppingListItems,
   shoppingLists,
 } from '../../src/server/db/schema.ts';
@@ -552,6 +553,43 @@ describe('DELETE /api/shopping-list-items/:id', () => {
       app.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
     ).toBeUndefined();
   });
+
+  it('records a dismissal when the deleted item has a product (T34)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const milk = insertProduct('Lettmelk 1 l');
+    const itemId = insertItem(listId, 1, { productId: milk });
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/shopping-list-items/${itemId}`,
+      headers: { cookie },
+    });
+
+    expect(
+      app.db
+        .select()
+        .from(shoppingListDismissals)
+        .where(eq(shoppingListDismissals.listId, listId))
+        .all(),
+    ).toEqual([{ listId, productId: milk, createdAt: expect.any(String) }]);
+  });
+
+  it('records no dismissal for a manual item without a product (T34)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const itemId = insertItem(listId, 1);
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/shopping-list-items/${itemId}`,
+      headers: { cookie },
+    });
+
+    expect(app.db.select().from(shoppingListDismissals).all()).toHaveLength(0);
+  });
 });
 
 describe('POST /api/shopping-lists/:id/reopen', () => {
@@ -709,6 +747,158 @@ describe('DELETE /api/shopping-lists/:id', () => {
     expect(
       app.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
     ).toBeUndefined();
+  });
+});
+
+describe('POST /api/shopping-lists/:id/refresh', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'POST', url: '/api/shopping-lists/1/refresh' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown list', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/shopping-lists/999/refresh',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('gives 409 when the list is done', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('adds a product the engine suggests today that is not yet on the list', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    for (const date of ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28']) {
+      insertDoneReceiptWithLine(date, milk);
+    }
+    const listId = insertOpenList();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const items = response.json().items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      productId: milk,
+      name: 'Lettmelk 1 l',
+      source: 'suggested',
+      reason: 'Kjøpes ca. hver 7. dag, sist for 7 dager siden',
+    });
+  });
+
+  it('adds nothing a second time once the suggestion is already on the list', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    for (const date of ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28']) {
+      insertDoneReceiptWithLine(date, milk);
+    }
+    const listId = insertOpenList();
+    await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    expect(second.json().items).toHaveLength(1);
+  });
+
+  it('skips a suggested product already on the list even when checked', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    for (const date of ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28']) {
+      insertDoneReceiptWithLine(date, milk);
+    }
+    const listId = insertOpenList();
+    insertItem(listId, 1, { productId: milk, name: 'Lettmelk 1 l', checked: 1 });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    const items = response.json().items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ checked: true });
+  });
+
+  it('never re-adds a product dismissed from this list', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    for (const date of ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28']) {
+      insertDoneReceiptWithLine(date, milk);
+    }
+    const listId = insertOpenList();
+    app.db.insert(shoppingListDismissals).values({ listId, productId: milk, createdAt: NOW }).run();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    expect(response.json().items).toEqual([]);
+  });
+
+  it('appends new items after the current maximum position, leaving existing items untouched', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    for (const date of ['2026-08-07', '2026-08-14', '2026-08-21', '2026-08-28']) {
+      insertDoneReceiptWithLine(date, milk);
+    }
+    const listId = insertOpenList();
+    insertItem(listId, 5, { name: 'Handlenett' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/refresh`,
+      headers: { cookie },
+    });
+
+    const items = response.json().items;
+    expect(items).toHaveLength(2);
+    expect(items.find((item: { name: string }) => item.name === 'Handlenett')).toMatchObject({
+      position: 5,
+    });
+    expect(items.find((item: { name: string }) => item.name === 'Lettmelk 1 l')).toMatchObject({
+      position: 6,
+    });
   });
 });
 
