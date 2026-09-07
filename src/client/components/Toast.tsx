@@ -9,26 +9,42 @@ import {
 } from 'react';
 
 const TOAST_DURATION_MS = 3000;
+// A toast with an action (usually "Angre") stays up twice as long, so there is time to read it,
+// decide, and reach the button (T31).
+const TOAST_WITH_ACTION_DURATION_MS = 6000;
+
+export type ToastAction = {
+  actionLabel: string;
+  onAction: () => void;
+};
+
+type ToastState = {
+  text: string;
+  action?: ToastAction;
+};
 
 type ToastContextValue = {
-  showToast: (text: string) => void;
+  showToast: (text: string, action?: ToastAction) => void;
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [text, setText] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const timeoutId = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = useCallback((value: string) => {
+  const showToast = useCallback((text: string, action?: ToastAction) => {
     if (timeoutId.current !== null) {
       clearTimeout(timeoutId.current);
     }
-    setText(value);
-    timeoutId.current = setTimeout(() => {
-      setText(null);
-      timeoutId.current = null;
-    }, TOAST_DURATION_MS);
+    setToast({ text, action });
+    timeoutId.current = setTimeout(
+      () => {
+        setToast(null);
+        timeoutId.current = null;
+      },
+      action ? TOAST_WITH_ACTION_DURATION_MS : TOAST_DURATION_MS,
+    );
   }, []);
 
   useEffect(
@@ -40,15 +56,33 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  function handleAction() {
+    if (timeoutId.current !== null) {
+      clearTimeout(timeoutId.current);
+      timeoutId.current = null;
+    }
+    toast?.action?.onAction();
+    setToast(null);
+  }
+
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      {text !== null && (
+      {toast !== null && (
         <div
           role="status"
-          className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 mx-auto w-fit rounded bg-gray-900 px-4 py-2 text-center text-white shadow-lg"
+          className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 mx-auto flex w-fit items-center gap-3 rounded bg-gray-900 px-4 py-2 text-white shadow-lg"
         >
-          {text}
+          <span>{toast.text}</span>
+          {toast.action && (
+            <button
+              type="button"
+              onClick={handleAction}
+              className="min-h-11 min-w-11 font-medium text-blue-300"
+            >
+              {toast.action.actionLabel}
+            </button>
+          )}
         </div>
       )}
     </ToastContext.Provider>

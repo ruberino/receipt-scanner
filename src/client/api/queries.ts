@@ -409,3 +409,41 @@ export function useCompleteShoppingList(listId: number) {
     },
   });
 }
+
+function invalidateShoppingListQueries(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ['shopping-list'] });
+  void queryClient.invalidateQueries({ queryKey: ['shopping-lists'] });
+  void queryClient.invalidateQueries({ queryKey: ['suggestions'] });
+}
+
+export function useReopenShoppingList(listId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<ShoppingList>(`/api/shopping-lists/${listId}/reopen`, { method: 'POST' }),
+    onSuccess: () => invalidateShoppingListQueries(queryClient),
+  });
+}
+
+export function useDeleteShoppingList(listId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => fetchJson<void>(`/api/shopping-lists/${listId}`, { method: 'DELETE' }),
+    onSuccess: () => invalidateShoppingListQueries(queryClient),
+  });
+}
+
+/** The latest list regardless of status, so the preview can offer `Gjenåpne listen` when it was
+ * completed today (T31); `useShoppingListHistory` is gated behind the collapsed stats section and
+ * not always fetched, so this is its own always-on query. */
+export function useLatestShoppingList() {
+  return useQuery({
+    queryKey: ['shopping-lists', 'latest'],
+    queryFn: async () => {
+      const lists = await fetchJson<ShoppingListSummary[]>('/api/shopping-lists?limit=1');
+      return lists[0] ?? null;
+    },
+  });
+}

@@ -254,6 +254,47 @@ export default async function shoppingListsRoutes(
     reply.status(204).send();
   });
 
+  app.post('/api/shopping-lists/:id/reopen', async (request) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const list = app.db.select().from(shoppingLists).where(eq(shoppingLists.id, params.id)).get();
+    if (!list) {
+      throw new NotFoundError();
+    }
+
+    const today = todayInOslo(options.now());
+    const completedToday =
+      list.completedAt !== null && todayInOslo(new Date(list.completedAt)) === today;
+    if (list.status !== 'done' || !completedToday || findOpenList(app.db)) {
+      throw new ConflictError('Listen kan ikke gjenåpnes');
+    }
+
+    const updated = app.db
+      .update(shoppingLists)
+      .set({ status: 'open', completedAt: null })
+      .where(eq(shoppingLists.id, params.id))
+      .returning()
+      .get();
+
+    return buildShoppingListDetail(app.db, updated);
+  });
+
+  app.delete('/api/shopping-lists/:id', async (request, reply) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const list = app.db.select().from(shoppingLists).where(eq(shoppingLists.id, params.id)).get();
+    if (!list) {
+      throw new NotFoundError();
+    }
+    if (list.status !== 'open') {
+      throw new ConflictError('En fullført liste kan ikke slettes');
+    }
+
+    app.db.delete(shoppingLists).where(eq(shoppingLists.id, params.id)).run();
+
+    reply.status(204).send();
+  });
+
   app.post('/api/shopping-lists/:id/complete', async (request) => {
     const params = idParamsSchema.parse(request.params);
 

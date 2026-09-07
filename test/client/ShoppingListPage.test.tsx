@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act } from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +8,7 @@ import type {
   Product,
   ShoppingList,
   ShoppingListItem,
+  ShoppingListSummary,
   Suggestion,
 } from '../../src/shared/schemas.ts';
 import ShoppingListPage from '../../src/client/pages/ShoppingListPage.tsx';
@@ -18,9 +20,12 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     ...actual,
     useSuggestions: vi.fn(),
     useCurrentShoppingList: vi.fn(),
+    useLatestShoppingList: vi.fn(),
     useCreateShoppingList: vi.fn(),
     useCreateShoppingListItem: vi.fn(),
     useCompleteShoppingList: vi.fn(),
+    useReopenShoppingList: vi.fn(),
+    useDeleteShoppingList: vi.fn(),
     useToggleShoppingListItem: vi.fn(),
     useDeleteShoppingListItem: vi.fn(),
     useProductSearch: vi.fn(),
@@ -30,9 +35,12 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
 const {
   useSuggestions,
   useCurrentShoppingList,
+  useLatestShoppingList,
   useCreateShoppingList,
   useCreateShoppingListItem,
   useCompleteShoppingList,
+  useReopenShoppingList,
+  useDeleteShoppingList,
   useToggleShoppingListItem,
   useDeleteShoppingListItem,
   useProductSearch,
@@ -76,6 +84,18 @@ function list(overrides: Partial<ShoppingList> = {}): ShoppingList {
   };
 }
 
+function listSummary(overrides: Partial<ShoppingListSummary> = {}): ShoppingListSummary {
+  return {
+    id: 1,
+    weekStart: '2026-08-31',
+    status: 'done',
+    createdAt: '2026-09-06T00:00:00.000Z',
+    completedAt: '2026-09-06T00:00:00.000Z',
+    itemCount: 2,
+    ...overrides,
+  };
+}
+
 function product(overrides: Partial<Product> = {}): Product {
   return {
     id: 5,
@@ -113,6 +133,14 @@ function mockSuggestions(suggestions: Suggestion[]) {
   } as unknown as ReturnType<typeof useSuggestions>);
 }
 
+function mockLatestList(summary: ShoppingListSummary | null) {
+  vi.mocked(useLatestShoppingList).mockReturnValue({
+    data: summary,
+    isPending: false,
+    isError: false,
+  } as unknown as ReturnType<typeof useLatestShoppingList>);
+}
+
 function renderPage() {
   render(
     <ToastProvider>
@@ -127,6 +155,8 @@ describe('ShoppingListPage', () => {
   let createListMutate: ReturnType<typeof vi.fn>;
   let createItemMutate: ReturnType<typeof vi.fn>;
   let completeMutate: ReturnType<typeof vi.fn>;
+  let reopenMutate: ReturnType<typeof vi.fn>;
+  let deleteListMutate: ReturnType<typeof vi.fn>;
   let toggleMutate: ReturnType<typeof vi.fn>;
   let deleteItemMutate: ReturnType<typeof vi.fn>;
 
@@ -134,8 +164,11 @@ describe('ShoppingListPage', () => {
     createListMutate = vi.fn();
     createItemMutate = vi.fn();
     completeMutate = vi.fn();
+    reopenMutate = vi.fn();
+    deleteListMutate = vi.fn();
     toggleMutate = vi.fn();
     deleteItemMutate = vi.fn();
+    mockLatestList(null);
     vi.mocked(useCreateShoppingList).mockReturnValue({
       mutate: createListMutate,
       isPending: false,
@@ -148,6 +181,14 @@ describe('ShoppingListPage', () => {
       mutate: completeMutate,
       isPending: false,
     } as unknown as ReturnType<typeof useCompleteShoppingList>);
+    vi.mocked(useReopenShoppingList).mockReturnValue({
+      mutate: reopenMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useReopenShoppingList>);
+    vi.mocked(useDeleteShoppingList).mockReturnValue({
+      mutate: deleteListMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteShoppingList>);
     vi.mocked(useToggleShoppingListItem).mockReturnValue({
       mutate: toggleMutate,
       isPending: false,
@@ -229,10 +270,66 @@ describe('ShoppingListPage', () => {
       expect(screen.getByText('Lettmelk 1 l')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Ferdig handlet' })).toBeInTheDocument();
     });
+
+    it('offers "Gjenåpne listen" when the latest list was completed today in Oslo (T31)', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-06T15:00:00.000Z'));
+      mockNoList();
+      mockSuggestions([]);
+      mockLatestList(
+        listSummary({ id: 9, status: 'done', completedAt: '2026-09-06T12:12:00.000Z' }),
+      );
+
+      renderPage();
+
+      expect(screen.getByText('Handleturen ble fullført kl. 14:12')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Gjenåpne listen' })).toBeInTheDocument();
+    });
+
+    it('does not offer "Gjenåpne listen" for a list completed on an earlier day (T31)', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-07T10:00:00.000Z'));
+      mockNoList();
+      mockSuggestions([]);
+      mockLatestList(
+        listSummary({ id: 9, status: 'done', completedAt: '2026-09-06T12:12:00.000Z' }),
+      );
+
+      renderPage();
+
+      expect(screen.queryByRole('button', { name: 'Gjenåpne listen' })).not.toBeInTheDocument();
+    });
+
+    it('does not offer "Gjenåpne listen" when the latest list is still open', () => {
+      mockNoList();
+      mockSuggestions([]);
+      mockLatestList(listSummary({ status: 'open', completedAt: null }));
+
+      renderPage();
+
+      expect(screen.queryByRole('button', { name: 'Gjenåpne listen' })).not.toBeInTheDocument();
+    });
+
+    it('calls reopen when "Gjenåpne listen" is tapped', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-06T15:00:00.000Z'));
+      mockNoList();
+      mockSuggestions([]);
+      mockLatestList(
+        listSummary({ id: 9, status: 'done', completedAt: '2026-09-06T12:12:00.000Z' }),
+      );
+      renderPage();
+
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Gjenåpne listen' }));
+      });
+
+      expect(reopenMutate).toHaveBeenCalledWith(undefined, expect.anything());
+    });
   });
 
   describe('with an open list', () => {
-    it('shows unchecked items first and checked items in a collapsed group below', () => {
+    it('shows unchecked items first and checked items in a plain "Kjøpt" section below (T31)', () => {
       mockList(
         list({
           items: [
@@ -245,14 +342,13 @@ describe('ShoppingListPage', () => {
       renderPage();
 
       expect(screen.getByText('Kaffe')).toBeInTheDocument();
-      expect(screen.getByText('1 fullført')).toBeInTheDocument();
-      const details = screen.getByText('1 fullført').closest('details');
-      expect(details).not.toBeNull();
-      expect(details).not.toHaveAttribute('open');
+      expect(screen.getByText('Kjøpt (1)')).toBeInTheDocument();
       expect(screen.getByText('Lettmelk 1 l')).toBeInTheDocument();
+      // Plain section, not a collapsed <details>: the checked item is visible without opening anything.
+      expect(screen.getByText('Kjøpt (1)').closest('details')).toBeNull();
     });
 
-    it('toggles an item to checked immediately', async () => {
+    it('toggles an item to checked immediately, and one tap on a checked item unchecks it', async () => {
       mockList(list({ items: [item({ id: 1, checked: false })] }));
       renderPage();
       const user = userEvent.setup();
@@ -280,7 +376,6 @@ describe('ShoppingListPage', () => {
       await user.click(screen.getByLabelText('Fjern Lettmelk 1 l'));
 
       expect(toggleMutate).not.toHaveBeenCalled();
-      expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
     });
 
     it('reverts and shows a toast when toggling fails', async () => {
@@ -294,16 +389,6 @@ describe('ShoppingListPage', () => {
       await user.click(screen.getByLabelText('Merk Lettmelk 1 l som kjøpt'));
 
       expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
-    });
-
-    it('removes an item', async () => {
-      mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
-      renderPage();
-      const user = userEvent.setup();
-
-      await user.click(screen.getByLabelText('Fjern Kaffe'));
-
-      expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
     });
 
     it('adds an item from a search result with its product id', async () => {
@@ -339,8 +424,124 @@ describe('ShoppingListPage', () => {
       );
     });
 
-    it('completes the list after confirmation', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
+    describe('removing an item (T31)', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      it('hides the row at once and shows "Angre" instead of deleting immediately', () => {
+        mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+        renderPage();
+
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+        });
+
+        expect(screen.queryByText('Kaffe')).not.toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('«Kaffe» fjernet');
+        expect(screen.getByRole('button', { name: 'Angre' })).toBeInTheDocument();
+        expect(deleteItemMutate).not.toHaveBeenCalled();
+      });
+
+      it('"Angre" brings the row back and sends nothing', () => {
+        mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+        renderPage();
+
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+        });
+        act(() => {
+          fireEvent.click(screen.getByRole('button', { name: 'Angre' }));
+        });
+
+        expect(screen.getByText('Kaffe')).toBeInTheDocument();
+        act(() => {
+          vi.advanceTimersByTime(6000);
+        });
+        expect(deleteItemMutate).not.toHaveBeenCalled();
+      });
+
+      it('sends the delete once 6 seconds pass without "Angre"', () => {
+        mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+        renderPage();
+
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+        });
+        act(() => {
+          vi.advanceTimersByTime(6000);
+        });
+
+        expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
+      });
+
+      it('removing a second item flushes the first one immediately', () => {
+        mockList(
+          list({
+            items: [item({ id: 1, name: 'Kaffe' }), item({ id: 2, name: 'Banan', position: 2 })],
+          }),
+        );
+        renderPage();
+
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+        });
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Banan'));
+        });
+
+        expect(deleteItemMutate).toHaveBeenCalledTimes(1);
+        expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
+      });
+
+      it('unmounting the list view flushes a pending removal', () => {
+        mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+        const { rerender } = render(
+          <ToastProvider>
+            <MemoryRouter>
+              <ShoppingListPage />
+            </MemoryRouter>
+          </ToastProvider>,
+        );
+
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+        });
+        expect(deleteItemMutate).not.toHaveBeenCalled();
+
+        mockNoList();
+        mockSuggestions([]);
+        rerender(
+          <ToastProvider>
+            <MemoryRouter>
+              <ShoppingListPage />
+            </MemoryRouter>
+          </ToastProvider>,
+        );
+
+        expect(deleteItemMutate).toHaveBeenCalledWith(1, expect.anything());
+      });
+
+      it('a failed delete unhides the row and shows the error toast', () => {
+        deleteItemMutate.mockImplementation((_id, options) => {
+          options?.onError?.(new Error('nettverksfeil'));
+        });
+        mockList(list({ items: [item({ id: 1, name: 'Kaffe' })] }));
+        renderPage();
+
+        act(() => {
+          fireEvent.click(screen.getByLabelText('Fjern Kaffe'));
+        });
+        act(() => {
+          vi.advanceTimersByTime(6000);
+        });
+
+        expect(screen.getByText('Kaffe')).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
+      });
+    });
+
+    it('completes the list at once, with no confirmation (T31)', async () => {
       mockList(list());
       renderPage();
       const user = userEvent.setup();
@@ -350,19 +551,26 @@ describe('ShoppingListPage', () => {
       expect(completeMutate).toHaveBeenCalledWith(undefined, expect.anything());
     });
 
-    it('does not complete when the confirmation is dismissed', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(false);
+    it('shows "Handleturen er fullført" with "Angre" that reopens the list (T31)', async () => {
+      completeMutate.mockImplementation((_body, options) => {
+        options?.onSuccess?.();
+      });
       mockList(list());
       renderPage();
       const user = userEvent.setup();
 
       await user.click(screen.getByRole('button', { name: 'Ferdig handlet' }));
 
-      expect(completeMutate).not.toHaveBeenCalled();
+      expect(screen.getByRole('status')).toHaveTextContent('Handleturen er fullført');
+      await user.click(screen.getByRole('button', { name: 'Angre' }));
+
+      expect(reopenMutate).toHaveBeenCalledWith(undefined, expect.anything());
     });
 
     it('returns to the suggestions preview once the list completes (T18 acceptance)', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      completeMutate.mockImplementation((_body, options) => {
+        options?.onSuccess?.();
+      });
       mockList(list());
       mockSuggestions([]);
       const { rerender } = render(
@@ -388,6 +596,28 @@ describe('ShoppingListPage', () => {
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Lag handleliste' })).toBeInTheDocument();
       });
+    });
+
+    it('deletes the list after confirmation', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true);
+      mockList(list());
+      renderPage();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Slett listen' }));
+
+      expect(deleteListMutate).toHaveBeenCalledWith(undefined, expect.anything());
+    });
+
+    it('does not delete the list when the confirmation is dismissed', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false);
+      mockList(list());
+      renderPage();
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Slett listen' }));
+
+      expect(deleteListMutate).not.toHaveBeenCalled();
     });
   });
 });
