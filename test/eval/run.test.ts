@@ -78,6 +78,8 @@ describe('runEval', () => {
 
     const results = await runEval({
       llm,
+      provider: 'kimi',
+      thinking: 'disabled',
       receiptsDir,
       resultsDir,
       promptVersion: 1,
@@ -101,23 +103,71 @@ describe('runEval', () => {
     ]);
     expect(results.aggregate.receiptCount).toBe(1);
     expect(results.model).toBe('kimi-k2.6');
+    expect(results.provider).toBe('kimi');
+    expect(results.thinking).toBe('disabled');
     expect(results.date).toBe('2026-09-10');
 
-    const resultFile = path.join(resultsDir, '2026-09-10-v1-kimi-k2.6.json');
+    // T27: the thinking mode is part of the filename for kimi, so the two modes never overwrite
+    // each other's results.
+    const resultFile = path.join(resultsDir, '2026-09-10-v1-kimi-k2.6-nothinking.json');
     const written = JSON.parse(await readFile(resultFile, 'utf-8')) as unknown;
     expect(written).toEqual(results);
-    // Privacy: results hold only numbers/booleans/filename/tokens/duration/model/promptVersion,
-    // never the extracted store name or item texts as text.
+    // Privacy: results hold only numbers/booleans/short strings (filename, model, provider,
+    // thinking), never the extracted store name or item texts as text.
     const serialised = JSON.stringify(written);
     expect(serialised).not.toContain('KIWI');
     expect(serialised).not.toContain('LETTMELK');
+  });
+
+  it('names the file with a "-thinking" suffix when KIMI_THINKING is enabled (T27)', async () => {
+    await copyFile(FIXTURE_PHOTO, path.join(receiptsDir, 'a.jpg'));
+    await writeFile(path.join(receiptsDir, 'a.jpg.expected.json'), basicExpectedJson());
+    const llm = new FakeLlmClient([fakeCompletion(BASIC_EXTRACTION)]);
+
+    await runEval({
+      llm,
+      provider: 'kimi',
+      thinking: 'enabled',
+      receiptsDir,
+      resultsDir,
+      promptVersion: 1,
+      now: () => new Date('2026-09-10T00:00:00.000Z'),
+    });
+
+    expect(await readdir(resultsDir)).toEqual(['2026-09-10-v1-kimi-k2.6-thinking.json']);
+  });
+
+  it('names the file with no thinking suffix for a provider without a thinking mode (T27)', async () => {
+    await copyFile(FIXTURE_PHOTO, path.join(receiptsDir, 'a.jpg'));
+    await writeFile(path.join(receiptsDir, 'a.jpg.expected.json'), basicExpectedJson());
+    const llm = new FakeLlmClient([{ ...fakeCompletion(BASIC_EXTRACTION), model: 'grok-4.6' }]);
+
+    const results = await runEval({
+      llm,
+      provider: 'grok',
+      thinking: null,
+      receiptsDir,
+      resultsDir,
+      promptVersion: 1,
+      now: () => new Date('2026-09-10T00:00:00.000Z'),
+    });
+
+    expect(results.provider).toBe('grok');
+    expect(results.thinking).toBeNull();
+    expect(await readdir(resultsDir)).toEqual(['2026-09-10-v1-grok-4.6.json']);
   });
 
   it('returns no receipts and writes nothing when no photo has a matching .expected.json', async () => {
     await copyFile(FIXTURE_PHOTO, path.join(receiptsDir, 'a.jpg'));
 
     const llm = new FakeLlmClient([]);
-    const results = await runEval({ llm, receiptsDir, resultsDir });
+    const results = await runEval({
+      llm,
+      provider: 'kimi',
+      thinking: 'disabled',
+      receiptsDir,
+      resultsDir,
+    });
 
     expect(llm.requests).toHaveLength(0);
     expect(results.receipts).toEqual([]);
@@ -128,6 +178,8 @@ describe('runEval', () => {
     const llm = new FakeLlmClient([]);
     const results = await runEval({
       llm,
+      provider: 'kimi',
+      thinking: 'disabled',
       receiptsDir: path.join(dir, 'does-not-exist'),
       resultsDir,
     });
@@ -191,7 +243,13 @@ describe('bootstrapExpected', () => {
     await bootstrapExpected(bootstrapLlm, photoPath);
 
     const runLlm = new FakeLlmClient([]);
-    const results = await runEval({ llm: runLlm, receiptsDir, resultsDir });
+    const results = await runEval({
+      llm: runLlm,
+      provider: 'kimi',
+      thinking: 'disabled',
+      receiptsDir,
+      resultsDir,
+    });
 
     expect(runLlm.requests).toHaveLength(0);
     expect(results.receipts).toEqual([]);

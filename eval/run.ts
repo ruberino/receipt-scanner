@@ -2,7 +2,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pino from 'pino';
-import { loadConfig } from '../src/server/config.ts';
+import { loadConfig, type KimiThinking, type LlmProvider } from '../src/server/config.ts';
 import { normaliseImage } from '../src/server/lib/images.ts';
 import { runExtraction } from '../src/server/llm/extractReceipt.ts';
 import { EXTRACT_PROMPT_VERSION } from '../src/server/llm/prompts/extractReceipt.prompt.ts';
@@ -40,9 +40,29 @@ export type EvalResults = {
   date: string;
   promptVersion: number;
   model: string;
+  /** `null` for a provider without a thinking mode (grok); T27. */
+  provider: LlmProvider;
+  thinking: KimiThinking | null;
   receipts: ReceiptResultRow[];
   aggregate: AggregateMetrics;
 };
+
+/**
+ * `<date>-v<promptVersion>-<model>.json`, plus `-thinking`/`-nothinking` for kimi so the two
+ * thinking modes never overwrite each other's results (a provider without a thinking mode gets no
+ * such suffix, since there is only one setting to compare).
+ */
+function resultsFilename(
+  date: string,
+  promptVersion: number,
+  model: string,
+  provider: LlmProvider,
+  thinking: KimiThinking | null,
+): string {
+  const thinkingSuffix =
+    provider === 'kimi' ? `-${thinking === 'enabled' ? 'thinking' : 'nothinking'}` : '';
+  return `${date}-v${promptVersion}-${model}${thinkingSuffix}.json`;
+}
 
 async function loadExpected(filePath: string): Promise<ExpectedReceipt> {
   const raw = await readFile(filePath, 'utf-8');
@@ -82,6 +102,9 @@ async function extractPhoto(llm: LlmClient, photoPath: string) {
 
 export type RunEvalOptions = {
   llm: LlmClient;
+  provider: LlmProvider;
+  /** `null` when `provider` has no thinking mode (grok); T27. */
+  thinking: KimiThinking | null;
   receiptsDir?: string;
   resultsDir?: string;
   promptVersion?: number;
@@ -125,10 +148,25 @@ export async function runEval(options: RunEvalOptions): Promise<EvalResults> {
   printAggregate(aggregate);
 
   const date = now().toISOString().slice(0, 10);
-  const results: EvalResults = { date, promptVersion, model, receipts: rows, aggregate };
+  const results: EvalResults = {
+    date,
+    promptVersion,
+    model,
+    provider: options.provider,
+    thinking: options.thinking,
+    receipts: rows,
+    aggregate,
+  };
 
   if (rows.length > 0) {
-    const resultsPath = path.join(resultsDir, `${date}-v${promptVersion}-${model}.json`);
+    const filename = resultsFilename(
+      date,
+      promptVersion,
+      model,
+      options.provider,
+      options.thinking,
+    );
+    const resultsPath = path.join(resultsDir, filename);
     await writeFile(resultsPath, `${JSON.stringify(results, null, 2)}\n`, 'utf-8');
     console.log(`\nWrote ${resultsPath}`);
   }
@@ -185,10 +223,18 @@ export async function bootstrapExpected(llm: LlmClient, photoPath: string): Prom
   return draftPath;
 }
 
-function buildRealLlmClient(): LlmClient {
+function buildRealLlmClient(): {
+  llm: LlmClient;
+  provider: LlmProvider;
+  thinking: KimiThinking | null;
+} {
   const config = loadConfig();
   const logger = pino({ level: config.logLevel });
-  return createLlmClient(config, logger);
+  return {
+    llm: createLlmClient(config, logger),
+    provider: config.llmProvider,
+    thinking: config.llmProvider === 'kimi' ? config.kimiThinking : null,
+  };
 }
 
 async function main(): Promise<void> {
@@ -201,7 +247,7 @@ async function main(): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    const llm = buildRealLlmClient();
+    const { llm } = buildRealLlmClient();
     const draftPath = await bootstrapExpected(llm, photoPath);
     console.log(`Wrote draft: ${draftPath}`);
     console.log('Review it by hand, correct it against the real receipt, then rename it to');
@@ -220,8 +266,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  const llm = buildRealLlmClient();
-  await runEval({ llm });
+  const { llm, provider, thinking } = buildRealLlmClient();
+  await runEval({ llm, provider, thinking });
 }
 
 const isMainModule =
