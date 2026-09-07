@@ -797,3 +797,24 @@ Acceptance criteria:
 - Screenshot of the list at 360 px under `docs/reviews/screenshots/T33/`.
 
 Tests: `format.test.ts` for the three cases; the `ReceiptsPage` test asserts the new label.
+
+---
+
+## T31 — Nothing on the shopping list is lost to a wrong tap
+
+Goal: every one-tap action on the shopping list can be undone, and a list can be reopened or deleted.
+
+Files: `src/server/routes/shoppingLists.ts`, `src/shared/schemas.ts` (no shape change), `src/client/components/Toast.tsx`, `src/client/pages/ShoppingListPage.tsx`, `src/client/components/ShoppingListItemRow.tsx`, `src/client/api/queries.ts`, tests.
+
+Steps: see `docs/reviews/T31-plan.md`.
+
+Acceptance criteria:
+
+- Tapping `Fjern` hides the item and shows `Angre` for 6 s; `Angre` brings the row back unchanged with nothing sent; after 6 s the item is deleted on the server.
+- A checked item stays visible under `Kjøpt (n)` and one tap unchecks it.
+- `Ferdig handlet` completes at once; `Angre` in the toast reopens the list with all items and their checked state intact.
+- With no open list and the latest list completed today, the preview offers `Gjenåpne listen`; tomorrow it does not.
+- `Slett listen` deletes an open list after confirmation and never a completed one.
+- Every action is possible with 44 px targets at 360 px width; Playwright walk with screenshots under `docs/reviews/screenshots/T31/`.
+
+Tests: route tests for reopen (today, yesterday, another list open, 404, 401) and delete (open, done, 404, 401); client tests with fake timers for remove-and-undo, remove-and-expire, a second removal flushing the first, unmount flushing; complete-and-undo; the preview with and without `Gjenåpne`; delete list confirmed and dismissed; the `Kjøpt` section.
