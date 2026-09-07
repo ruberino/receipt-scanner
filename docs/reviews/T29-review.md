@@ -1,8 +1,9 @@
 # Review: T29 — Kvitteringer
 
-Review of `task/T29-edit-lines`, commits `738eb71` (docs) and `d42e29c` (implementation), read from the local branch on 2026-09-07 before the pull request was opened.
-Verdict at first pass: one required item (F1); everything else in the plan is met.
-The foreman runs the five scripts and checks the screenshots once the branch is pushed, and records the go-ahead below.
+Review of pull request #6, `task/T29-edit-lines`, commits `738eb71` (docs), `d42e29c` (implementation) and `111ea7a` (F1 fix, review file, screenshots), 2026-09-07.
+Verdict at first pass, read from the local branch before the pull request was opened: one required item (F1); everything else in the plan is met.
+Second pass on `111ea7a`: F1 is done; the screenshots showed one small UI item (F2).
+The go-ahead is recorded below once F2 is in.
 
 ## What was verified
 
@@ -20,6 +21,9 @@ Tests cover 401 and 404 for both routes, 409, the empty body, both warning recom
   Today `PATCH { kind: 'item' }` on a `discount` line at −1000 øre is accepted and produces an item with a negative amount, which the acceptance criterion "an item with a negative one is rejected" forbids and which would push a negative purchase into the product statistics; the test named "does not check the amount sign when only kind changes" pins the wrong behaviour.
   Fix: check `body.totalOre ?? line.totalOre` against `body.kind ?? line.kind`, with the existing two messages; turn that test around so `{ kind: 'other' }` on a −100 discount gives `400` with the "negativt" message, and add the passing sibling `{ kind: 'other', totalOre: 0 }`.
   The row's `Lagre` then shows the server message in the toast when the user flips a negative line to `Vare`, which is the intended nudge to delete the line instead.
+  Done in `111ea7a`, verified: the check runs whenever `totalOre` or `kind` is in the request, against the resulting line; the test is turned around and the passing sibling added.
+- F2. `ReceiptLineRow.tsx`: on a non-item line the whole row has `opacity-50`, so the `Rediger` button is faded too and reads as disabled (screenshot `01-receipt-with-warnings.png`, the `Tilbud` row).
+  Fade the text column only and leave the button at full opacity; no test change needed beyond the existing render test still passing.
 
 ## Noted, no action
 

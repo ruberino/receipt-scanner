@@ -161,8 +161,8 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
   }
 
   return (
-    <div className={`flex items-start gap-3 border-b py-3 ${isItem ? '' : 'opacity-50'}`}>
-      <div className="flex-1">
+    <div className="flex items-start gap-3 border-b py-3">
+      <div className={`flex-1 ${isItem ? '' : 'opacity-50'}`}>
         <p className="text-sm text-gray-600">{line.rawText}</p>
         <p className="text-xs text-gray-500">{formatQuantity(line.quantity, line.unit)}</p>
         {line.kind === 'item' ? (
