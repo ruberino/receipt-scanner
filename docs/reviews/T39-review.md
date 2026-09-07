@@ -44,3 +44,20 @@ All five scripts exit 0 in a clean worktree at `2f5c70e`, 755 tests, Vitest at t
 Approved: re-read this file, commit it on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
 After the merge the foreman updates the demo once its scan queue is empty and runs the real-data check described in the plan.
 The Kvitteringer queue is empty after this task.
+
+## Real-data check, 2026-09-08
+
+Run by the foreman on the demo at `3f6bc7b` against the household database, after a backup and with an empty scan queue; migration `0006` applied at start-up with no error lines and `PRAGMA foreign_key_check` clean.
+The automatic link could not fire on existing data: the only completed list is from 2026-09-07 and empty, and no receipt is dated 7 or 8 September, so the linking rule waits for the household's next real trip.
+What was checked by hand through the API, counts only:
+
+| Step | Result |
+| --- | --- |
+| `PATCH /api/receipts/3 { shoppingListId: 1 }` | `200`, detail carries `shoppingList { id: 1 }` |
+| `GET /api/shopping-lists/1` | one linked receipt, `trip.counts` planned 0, bought 0, notBought 0, unplanned 3 |
+| `GET /api/stats/summary` | `trips` completedLists 1, listsWithReceipt 1, unplannedItems 3; `aiProposals` all zero (the demo's proposals went with their temporary lists) |
+| `PATCH /api/receipts/3 { shoppingListId: null }` | `200`, list detail back to no receipts and `trip: null` |
+| `PATCH /api/receipts/3 { shoppingListId: 999 }` | `404` |
+
+Judgement: the plumbing works on real rows, the unplanned grouping collapsed the receipt's four item lines into three products as designed, and the unlink restores the previous state.
+The first real trip (a list completed and its receipt scanned the same day) is the check that matters, and its counts go into this file when it happens; item names stay out of git (architecture section 11).
