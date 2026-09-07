@@ -150,6 +150,7 @@ receipt-scanner/
         matching.ts          matchLines(): alias lookup, LLM matching, product and alias upserts
         suggestions.ts       computeSuggestions(histories, today): pure function
         merge.ts             mergeProducts()
+        receiptWarnings.ts   computeLineSum(), hasUnmatchedItemLine(): shared by receipts.ts and receiptLines.ts
       jobs/
         receiptProcessor.ts  queue, processReceipt(), requeueUnfinished()
       routes/
@@ -459,6 +460,7 @@ Naming guidance in the prompt: Norwegian, singular, generic but specific enough 
 ### 7.6 User corrections
 
 - `PATCH /api/receipt-lines/:id` with `{ productId }` or `{ newProductName, category? }` sets `product_id`, `match_source = 'user'`, and upserts the alias `normalizeText(raw_text) → product_id` with `source = 'user'`, replacing any LLM alias.
+- `PATCH /api/receipt-lines/:id` with `{ totalOre?, quantity?, unitPriceOre?, kind? }` (T29) corrects what the model got wrong on a line, and `DELETE /api/receipt-lines/:id` removes a line entirely; both recompute `TOTAL_MISMATCH` and `UNMATCHED_LINES` in the same transaction, only when the receipt is `done`.
 - `POST /api/products/:id/merge { intoProductId }` moves all lines and aliases from the source to the target, adds the source name as an alias of the target, and deletes the source.
 - `PATCH /api/products/:id` renames (uniqueness on `name_normalized`), sets category, or toggles `suppressed`.
 
@@ -551,7 +553,8 @@ type ShoppingList = {
 | `POST /api/receipts/:id/scan` | — | `202 ReceiptSummary` | Only when `uploaded` or `failed`, else `409`. |
 | `POST /api/receipts/:id/rematch` | — | `200 ReceiptDetail` | Runs matching for unmatched lines synchronously; may call Kimi. |
 | `DELETE /api/receipts/:id` | — | `204` | Cascades lines and image. |
-| `PATCH /api/receipt-lines/:id` | `{ productId }` or `{ newProductName, category? }` | `200 ReceiptLine` | Upserts a user alias. Removes `UNMATCHED_LINES` from the receipt when no item line has `product_id IS NULL`; `MATCHING_FAILED` is left alone. |
+| `PATCH /api/receipt-lines/:id` | `{ productId }`, `{ newProductName, category? }` or `{ totalOre?, quantity?, unitPriceOre?, kind? }` (at least one field) | `200 ReceiptLine` | The product bodies upsert a user alias and remove `UNMATCHED_LINES` from the receipt when no item line has `product_id IS NULL`; `MATCHING_FAILED` is left alone. The fields body recomputes both `TOTAL_MISMATCH` and `UNMATCHED_LINES` the same way, leaves every other warning alone, and is only accepted when the receipt is `done` (else `409`); `totalOre` must be at most 0 for a `discount` and at least 0 otherwise, checked against the resulting kind; changing `kind` away from `item` clears `product_id` and `match_source`, changing it to `item` leaves `product_id` null. |
+| `DELETE /api/receipt-lines/:id` | — | `204` | Only when the receipt is `done`, else `409`. `line_no` of the remaining lines is left as is. Recomputes `TOTAL_MISMATCH` and `UNMATCHED_LINES` the same way the fields `PATCH` does. |
 | `GET /api/products?q=&includeSuppressed=` | — | `200 Product[]` | `q` filters on `name_normalized` contains `normalizeText(q)`. Ordered by `timesBought` desc, then name. |
 | `GET /api/products/:id` | — | `200 ProductDetail` | |
 | `POST /api/products` | `{ name, category? }` | `201 Product` | `409` on duplicate normalized name. |
@@ -578,7 +581,7 @@ type ShoppingList = {
 | `/` | ShoppingListPage | The open list with check-off, add item, remove item, "Ferdig handlet"; when there is no open list, a preview of suggestions and a "Lag handleliste" button. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
 | `/receipts` | ReceiptsPage | List with store, date, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
-| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and "Leser kvittering…" with polling. When `failed`: error and "Prøv igjen", which calls scan. When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line, "Ferdig" that sets `reviewed`. |
+| `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and "Leser kvittering…" with polling. When `failed`: error and "Prøv igjen", which calls scan. When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. |
 | `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed. |
 | `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product, aliases with delete, purchase history. |
 
