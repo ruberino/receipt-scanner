@@ -5,7 +5,7 @@ import { useReceipts, useScanReceipt, useUploadReceipt } from '../api/queries.ts
 import { useToast } from '../components/Toast.tsx';
 import { downscaleImage } from '../lib/downscaleImage.ts';
 
-const MAX_EDGE = 2000;
+const MAX_SHORT_EDGE = 1600;
 const JPEG_QUALITY = 0.85;
 
 type FileState =
@@ -81,7 +81,7 @@ export default function ScanPage() {
     updateEntryState(next.id, { kind: 'preparing' });
     try {
       const downscaled = await downscaleImage(next.file, {
-        maxEdge: MAX_EDGE,
+        maxEdge: MAX_SHORT_EDGE,
         quality: JPEG_QUALITY,
       });
       updateEntryState(next.id, { kind: 'uploading', progress: 0 });

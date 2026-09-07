@@ -53,9 +53,7 @@ async function processReceipt(deps: ReceiptProcessorDeps, receiptId: number): Pr
     if (!image) {
       throw new Error(`Receipt ${receiptId} has no stored image`);
     }
-    const imageDataUrl = `data:${image.mimeType};base64,${image.bytes.toString('base64')}`;
-
-    const extraction = await runExtraction(llm, imageDataUrl, receiptId);
+    const extraction = await runExtraction(llm, image.bytes, receiptId);
     const scanDate = todayInOslo(now());
     const applied = applyExtraction(extraction.result, scanDate);
 

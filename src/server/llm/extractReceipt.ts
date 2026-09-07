@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { isIsoDate } from '../../shared/dates.ts';
 import { parseDecimal } from '../../shared/money.ts';
 import { ExtractionError } from '../lib/errors.ts';
+import { segmentImage } from '../lib/images.ts';
 import { parseJsonObject } from './json.ts';
 import type { JsonCompletionRequest, LlmClient } from './LlmClient.ts';
 import { EXTRACT_PROMPT_VERSION, EXTRACT_SYSTEM_PROMPT } from './prompts/extractReceipt.prompt.ts';
@@ -9,6 +10,10 @@ import { EXTRACT_PROMPT_VERSION, EXTRACT_SYSTEM_PROMPT } from './prompts/extract
 const MAX_TOKENS = 6000;
 const UNITS = new Set(['stk', 'kg', 'l']);
 const KINDS = new Set(['item', 'discount', 'deposit', 'other']);
+
+function toDataUrl(bytes: Buffer): string {
+  return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+}
 
 /** Parses a number or a decimal-comma string; returns undefined instead of throwing on anything else. */
 function tryParseDecimal(value: unknown): number | undefined {
@@ -112,15 +117,18 @@ export const extractionResultSchema = z.object({
 
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;
 
-export function buildExtractionRequest(
-  imageDataUrl: string,
+/** `imageBytes` is the stored (already-normalised) JPEG; a receipt taller than 2000 px is tiled
+ * into overlapping segments (T28), each sent as its own `image_url` part, in order. */
+export async function buildExtractionRequest(
+  imageBytes: Buffer,
   receiptId?: number,
-): JsonCompletionRequest {
+): Promise<JsonCompletionRequest> {
+  const segments = await segmentImage(imageBytes);
   return {
     purpose: 'extract',
     system: EXTRACT_SYSTEM_PROMPT,
     userText: 'Extract this receipt as JSON, following the schema and rules exactly.',
-    imageDataUrl,
+    imageDataUrls: segments.map(toDataUrl),
     maxTokens: MAX_TOKENS,
     promptVersion: EXTRACT_PROMPT_VERSION,
     receiptId,
@@ -147,10 +155,10 @@ export type ExtractionRunResult = {
 
 export async function runExtraction(
   llm: LlmClient,
-  imageDataUrl: string,
+  imageBytes: Buffer,
   receiptId?: number,
 ): Promise<ExtractionRunResult> {
-  const request = buildExtractionRequest(imageDataUrl, receiptId);
+  const request = await buildExtractionRequest(imageBytes, receiptId);
   const completion = await llm.completeJson(request);
 
   if (completion.finishReason === 'length') {

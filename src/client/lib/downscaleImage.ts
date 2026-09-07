@@ -5,18 +5,20 @@ export type DownscaleOptions = {
 
 const SKIP_MAX_BYTES = 500 * 1024;
 
-/** Scales down proportionally so the long edge is at most `maxEdge`; never upscales. */
+/** Scales down proportionally so the short edge is at most `maxEdge`, with no cap on the long
+ * edge; never upscales. A long receipt strip stays wide enough to read (T28); the server tiles a
+ * tall image into overlapping segments at extraction time instead of shrinking it further. */
 export function computeDownscaledSize(
   width: number,
   height: number,
   maxEdge: number,
 ): { width: number; height: number } {
-  const longEdge = Math.max(width, height);
-  if (longEdge <= maxEdge) {
+  const shortEdge = Math.min(width, height);
+  if (shortEdge <= maxEdge) {
     return { width, height };
   }
 
-  const scale = maxEdge / longEdge;
+  const scale = maxEdge / shortEdge;
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
 }
 

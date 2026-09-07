@@ -40,10 +40,10 @@ export function buildRequestBody(
   request: JsonCompletionRequest,
   options: { provider: LlmProvider; model: string; thinking?: KimiThinking },
 ): OpenAiCompatibleRequestBody {
-  const content: ContentPart[] = [];
-  if (request.imageDataUrl) {
-    content.push({ type: 'image_url', image_url: { url: request.imageDataUrl } });
-  }
+  const content: ContentPart[] = (request.imageDataUrls ?? []).map((url) => ({
+    type: 'image_url' as const,
+    image_url: { url },
+  }));
   content.push({ type: 'text', text: request.userText });
 
   const body: OpenAiCompatibleRequestBody = {

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { ExtractionError } from '../../../src/server/lib/errors.ts';
 import { FakeLlmClient } from '../../../src/server/llm/FakeLlmClient.ts';
@@ -17,21 +18,46 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.resolve(here, '..', '..', 'fixtures', 'llm');
+const imagesFixturesDir = path.resolve(here, '..', '..', 'fixtures', 'images');
 
 async function readFixture(name: string): Promise<string> {
   return readFile(path.join(fixturesDir, name), 'utf-8');
 }
 
+/** A real, small (300x500) JPEG, well under the 2000px segmenting threshold. */
+async function smallImageBuffer(): Promise<Buffer> {
+  return readFile(path.join(imagesFixturesDir, 'receipt-small.jpg'));
+}
+
+async function syntheticJpeg(width: number, height: number): Promise<Buffer> {
+  return sharp({
+    create: { width, height, channels: 3, background: { r: 10, g: 20, b: 30 } },
+  })
+    .jpeg()
+    .toBuffer();
+}
+
 describe('buildExtractionRequest', () => {
-  it('builds a request with the documented system prompt, purpose and prompt version', () => {
-    const request = buildExtractionRequest('data:image/jpeg;base64,AAAA', 7);
+  it('builds a request with the documented system prompt, purpose, prompt version and one image segment for a small image', async () => {
+    const buffer = await smallImageBuffer();
+
+    const request = await buildExtractionRequest(buffer, 7);
 
     expect(request.purpose).toBe('extract');
     expect(request.system).toBe(EXTRACT_SYSTEM_PROMPT);
-    expect(request.imageDataUrl).toBe('data:image/jpeg;base64,AAAA');
+    expect(request.imageDataUrls).toHaveLength(1);
+    expect(request.imageDataUrls?.[0]).toMatch(/^data:image\/jpeg;base64,/);
     expect(request.promptVersion).toBe(EXTRACT_PROMPT_VERSION);
     expect(request.receiptId).toBe(7);
     expect(request.maxTokens).toBe(6000);
+  });
+
+  it('builds one imageDataUrl per segment for a tall image, in order', async () => {
+    const buffer = await syntheticJpeg(1600, 10667);
+
+    const request = await buildExtractionRequest(buffer);
+
+    expect(request.imageDataUrls).toHaveLength(6);
   });
 });
 
@@ -206,7 +232,7 @@ describe('runExtraction', () => {
       },
     ]);
 
-    const run = await runExtraction(llm, 'data:image/jpeg;base64,AAAA', 3);
+    const run = await runExtraction(llm, await smallImageBuffer(), 3);
 
     expect(run.result.lines).toHaveLength(1);
     expect(run.model).toBe('kimi-k2.6');
@@ -227,7 +253,7 @@ describe('runExtraction', () => {
       },
     ]);
 
-    await expect(runExtraction(llm, 'data:image/jpeg;base64,AAAA')).rejects.toMatchObject({
+    await expect(runExtraction(llm, await smallImageBuffer())).rejects.toMatchObject({
       userMessage: 'Kvitteringen var for lang til å leses',
       stage: 'extraction',
     });
