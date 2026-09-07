@@ -7,8 +7,11 @@ import {
   receipts,
   shoppingListDismissals,
   shoppingListItems,
+  shoppingListProposals,
   shoppingLists,
 } from '../../src/server/db/schema.ts';
+import { FakeLlmClient } from '../../src/server/llm/FakeLlmClient.ts';
+import type { ShoppingListProposalItem } from '../../src/shared/schemas.ts';
 import { createTestApp } from '../helpers/createTestApp.ts';
 import { loginCookie } from '../helpers/login.ts';
 
@@ -92,6 +95,40 @@ function insertItem(
     })
     .returning()
     .get().id;
+}
+
+function insertProposal(
+  listId: number,
+  items: ShoppingListProposalItem[],
+  overrides: Partial<typeof shoppingListProposals.$inferInsert> = {},
+): number {
+  return app!.db
+    .insert(shoppingListProposals)
+    .values({
+      listId,
+      model: 'grok-4.6',
+      promptVersion: 1,
+      itemsJson: JSON.stringify(items),
+      rawResponse: '{}',
+      promptTokens: 500,
+      completionTokens: 200,
+      durationMs: 800,
+      acceptedJson: null,
+      createdAt: NOW,
+      ...overrides,
+    })
+    .returning()
+    .get().id;
+}
+
+function proposalCompletion(items: unknown[]) {
+  return {
+    text: JSON.stringify({ items }),
+    finishReason: 'stop',
+    model: 'grok-4.6',
+    usage: { promptTokens: 500, completionTokens: 200 },
+    durationMs: 800,
+  };
 }
 
 afterEach(async () => {
@@ -965,5 +1002,284 @@ describe('POST /api/shopping-lists/:id/complete', () => {
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().id).not.toBe(listId);
+  });
+});
+
+describe('POST /api/shopping-lists/:id/proposals', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'POST', url: '/api/shopping-lists/1/proposals' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/shopping-lists/999/proposals',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('gives 409 when the list is done', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it("stores and returns the model's filtered proposal", async () => {
+    const llm = new FakeLlmClient([
+      proposalCompletion([
+        {
+          productId: null,
+          name: 'Godteri',
+          category: 'Snacks',
+          quantityText: '1 pose',
+          reason: 'Halloween 31. oktober',
+          kind: 'merkedag',
+        },
+      ]),
+    ]);
+    app = createTestApp({ now: () => new Date(NOW), llmClient: llm });
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).toMatchObject({ id: expect.any(Number), createdAt: NOW, model: 'grok-4.6' });
+    expect(body.items).toEqual([
+      {
+        index: 0,
+        productId: null,
+        name: 'Godteri',
+        category: 'Snacks',
+        quantityText: '1 pose',
+        reason: 'Halloween 31. oktober',
+        kind: 'merkedag',
+      },
+    ]);
+    expect(llm.requests[0]).toMatchObject({ purpose: 'propose', listId });
+    const stored = app.db
+      .select()
+      .from(shoppingListProposals)
+      .where(eq(shoppingListProposals.listId, listId))
+      .get();
+    expect(stored).toMatchObject({
+      model: 'grok-4.6',
+      promptTokens: 500,
+      completionTokens: 200,
+      acceptedJson: null,
+    });
+  });
+
+  it('excludes a product with no purchase in the last 26 weeks and passes the recent one flagged onList', async () => {
+    const llm = new FakeLlmClient([proposalCompletion([])]);
+    app = createTestApp({ now: () => new Date(NOW), llmClient: llm });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    insertDoneReceiptWithLine('2026-08-28', milk);
+    const listId = insertOpenList();
+    insertItem(listId, 1, { productId: milk, name: 'Lettmelk 1 l', source: 'suggested' });
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals`,
+      headers: { cookie },
+    });
+
+    const context = JSON.parse(llm.requests[0]?.userText ?? '{}') as {
+      products: { id: number; onList: boolean }[];
+    };
+    expect(context.products).toEqual([expect.objectContaining({ id: milk, onList: true })]);
+  });
+});
+
+describe('POST /api/shopping-lists/:id/proposals/:proposalId/accept', () => {
+  const sevenItems: ShoppingListProposalItem[] = Array.from({ length: 7 }, (_, i) => ({
+    index: i,
+    productId: null,
+    name: `Vare ${i}`,
+    category: 'Annet',
+    quantityText: null,
+    reason: 'Fordi',
+    kind: 'vane',
+  }));
+
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/shopping-lists/1/proposals/1/accept',
+      payload: { indexes: [] },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('gives 404 for an unknown list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/shopping-lists/999/proposals/1/accept',
+      payload: { indexes: [] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('gives 404 when the proposal does not belong to the list', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const otherListId = insertOpenList('2026-09-07');
+    const proposalId = insertProposal(otherListId, sevenItems);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('gives 409 when the list is done', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+    const proposalId = insertProposal(listId, sevenItems);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('adds exactly the accepted three of seven as source "ai" with their reasons, and records the accepted indexes', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const proposalId = insertProposal(listId, sevenItems);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [1, 3, 5] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const items = response.json().items;
+    expect(items.map((item: { name: string }) => item.name).sort()).toEqual([
+      'Vare 1',
+      'Vare 3',
+      'Vare 5',
+    ]);
+    expect(items.every((item: { source: string; reason: string }) => item.source === 'ai')).toBe(
+      true,
+    );
+    const stored = app.db
+      .select()
+      .from(shoppingListProposals)
+      .where(eq(shoppingListProposals.id, proposalId))
+      .get();
+    expect(stored?.acceptedJson).toBe(JSON.stringify([1, 3, 5]));
+  });
+
+  it('gives 409 on a second accept of the same proposal', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const proposalId = insertProposal(listId, sevenItems);
+    await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [0] },
+      headers: { cookie },
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [1] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('records an empty accept ("Avbryt") without adding any item', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = insertOpenList();
+    const proposalId = insertProposal(listId, sevenItems);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().items).toEqual([]);
+    const stored = app.db
+      .select()
+      .from(shoppingListProposals)
+      .where(eq(shoppingListProposals.id, proposalId))
+      .get();
+    expect(stored?.acceptedJson).toBe('[]');
+  });
+
+  it('skips an accepted index whose product is meanwhile already on the list', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const milk = insertProduct('Lettmelk 1 l');
+    const listId = insertOpenList();
+    insertItem(listId, 1, { productId: milk, name: 'Lettmelk 1 l' });
+    const proposalId = insertProposal(listId, [
+      { ...sevenItems[0]!, productId: milk, name: 'Lettmelk 1 l' },
+      sevenItems[1]!,
+    ]);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/shopping-lists/${listId}/proposals/${proposalId}/accept`,
+      payload: { indexes: [0, 1] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const names = response.json().items.map((item: { name: string }) => item.name);
+    expect(names).toEqual(['Lettmelk 1 l', 'Vare 1']);
   });
 });

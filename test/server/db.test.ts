@@ -13,6 +13,7 @@ import {
   receipts,
   shoppingListDismissals,
   shoppingListItems,
+  shoppingListProposals,
   shoppingLists,
 } from '../../src/server/db/schema.ts';
 
@@ -24,6 +25,13 @@ const preDismissalsMigrationsFolder = path.resolve(
   'fixtures',
   'migrations',
   '0001-only',
+);
+const preProposalsMigrationsFolder = path.resolve(
+  here,
+  '..',
+  'fixtures',
+  'migrations',
+  '0002-only',
 );
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -87,6 +95,7 @@ describe('database schema and migrations', () => {
       'receipts',
       'shopping_list_dismissals',
       'shopping_list_items',
+      'shopping_list_proposals',
       'shopping_lists',
     ]);
   });
@@ -195,6 +204,105 @@ describe('database schema and migrations', () => {
         .values({ listId: list.id, productId: product.id, createdAt: NOW })
         .run(),
     ).not.toThrow();
+  });
+
+  it('keeps an existing list, item and dismissal intact when migrating in shopping_list_proposals and the "ai" source (T37)', () => {
+    opened = openDatabase(':memory:');
+    migrate(opened.db, { migrationsFolder: preProposalsMigrationsFolder });
+
+    const list = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+    const product = insertProduct(opened, 'Lettmelk');
+    const item = opened.db
+      .insert(shoppingListItems)
+      .values({
+        listId: list.id,
+        productId: product.id,
+        name: 'Lettmelk 1 l',
+        source: 'suggested',
+        checked: 0,
+        position: 1,
+        createdAt: NOW,
+      })
+      .returning()
+      .get();
+    const dismissal = opened.db
+      .insert(shoppingListDismissals)
+      .values({ listId: list.id, productId: product.id, createdAt: NOW })
+      .returning()
+      .get();
+
+    runMigrations(opened);
+
+    expect(
+      opened.db.select().from(shoppingLists).where(eq(shoppingLists.id, list.id)).get(),
+    ).toMatchObject({ status: 'open', weekStart: '2026-08-31' });
+    expect(
+      opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, item.id)).get(),
+    ).toMatchObject({ name: 'Lettmelk 1 l', productId: product.id, source: 'suggested' });
+    expect(
+      opened.db
+        .select()
+        .from(shoppingListDismissals)
+        .where(eq(shoppingListDismissals.listId, dismissal.listId))
+        .get(),
+    ).toMatchObject({ productId: product.id });
+    expect(() =>
+      opened.db
+        .insert(shoppingListItems)
+        .values({
+          listId: list.id,
+          productId: null,
+          name: 'AI-forslag',
+          source: 'ai',
+          checked: 0,
+          position: 2,
+          createdAt: NOW,
+        })
+        .run(),
+    ).not.toThrow();
+    expect(() =>
+      opened.db
+        .insert(shoppingListProposals)
+        .values({
+          listId: list.id,
+          model: 'grok-4.6',
+          promptVersion: 1,
+          itemsJson: '[]',
+          rawResponse: '{}',
+          promptTokens: 100,
+          completionTokens: 50,
+          durationMs: 1000,
+          createdAt: NOW,
+        })
+        .run(),
+    ).not.toThrow();
+  });
+
+  it('rejects an unknown shopping_list_items source', () => {
+    opened = createDb();
+    const list = opened.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
+      .returning()
+      .get();
+
+    expect(() =>
+      opened.db
+        .insert(shoppingListItems)
+        .values({
+          listId: list.id,
+          name: 'Test',
+          source: 'weird',
+          checked: 0,
+          position: 1,
+          createdAt: NOW,
+        })
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
   });
 
   it('rejects an unknown receipt line kind', () => {

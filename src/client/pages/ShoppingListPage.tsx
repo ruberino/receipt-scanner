@@ -19,6 +19,7 @@ import {
   useSuggestions,
   useToggleShoppingListItem,
 } from '../api/queries.ts';
+import ProposalPanel from '../components/ProposalPanel.tsx';
 import ShoppingListItemRow from '../components/ShoppingListItemRow.tsx';
 import SuggestionCard from '../components/SuggestionCard.tsx';
 import { useToast } from '../components/Toast.tsx';
@@ -402,6 +403,7 @@ function OpenListView({ list }: { list: ShoppingList }) {
 
       <div className="flex flex-col gap-4 p-4">
         <AddItemField listId={list.id} />
+        <ProposalPanel listId={list.id} />
         <button
           type="button"
           onClick={handleRefresh}

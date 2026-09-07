@@ -1,17 +1,29 @@
 import type { FastifyInstance } from 'fastify';
 import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { createShoppingListItemSchema, patchShoppingListItemSchema } from '../../shared/schemas.ts';
+import {
+  acceptProposalSchema,
+  createShoppingListItemSchema,
+  patchShoppingListItemSchema,
+  type ShoppingListProposalItem,
+} from '../../shared/schemas.ts';
 import { mondayOf, todayInOslo } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import {
   products,
   shoppingListDismissals,
   shoppingListItems,
+  shoppingListProposals,
   shoppingLists,
 } from '../db/schema.ts';
 import { computeSuggestions } from '../domain/suggestions.ts';
 import { loadProductHistories } from '../domain/productStats.ts';
+import {
+  buildProposalContext,
+  type PreviousProposal,
+  type PreviousProposalItem,
+} from '../domain/proposalContext.ts';
+import { runProposal } from '../llm/proposeList.ts';
 import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.ts';
 
 export type ShoppingListsRouteOptions = {
@@ -20,6 +32,10 @@ export type ShoppingListsRouteOptions = {
 };
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
+const acceptProposalParamsSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  proposalId: z.coerce.number().int().positive(),
+});
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -128,6 +144,28 @@ function buildShoppingListDetail(db: AppDatabase, list: typeof shoppingLists.$in
     completedAt: list.completedAt,
     items: loadItems(db, list.id).map(toShoppingListItem),
   };
+}
+
+function toShoppingListProposal(row: typeof shoppingListProposals.$inferSelect) {
+  return {
+    id: row.id,
+    createdAt: row.createdAt,
+    model: row.model,
+    items: JSON.parse(row.itemsJson) as ShoppingListProposalItem[],
+  };
+}
+
+function loadPreviousProposals(db: AppDatabase, listId: number): PreviousProposal[] {
+  return db
+    .select()
+    .from(shoppingListProposals)
+    .where(eq(shoppingListProposals.listId, listId))
+    .all()
+    .map((row) => ({
+      items: JSON.parse(row.itemsJson) as PreviousProposalItem[],
+      acceptedIndexes:
+        row.acceptedJson === null ? null : (JSON.parse(row.acceptedJson) as number[]),
+    }));
 }
 
 export default async function shoppingListsRoutes(
@@ -417,6 +455,148 @@ export default async function shoppingListsRoutes(
     })();
 
     return buildShoppingListDetail(app.db, list);
+  });
+
+  app.post('/api/shopping-lists/:id/proposals', async (request, reply) => {
+    const params = idParamsSchema.parse(request.params);
+
+    const list = app.db.select().from(shoppingLists).where(eq(shoppingLists.id, params.id)).get();
+    if (!list) {
+      throw new NotFoundError();
+    }
+    if (list.status !== 'open') {
+      throw new ConflictError('Listen er ikke åpen');
+    }
+
+    const dismissedProductIds = new Set(
+      app.db
+        .select({ productId: shoppingListDismissals.productId })
+        .from(shoppingListDismissals)
+        .where(eq(shoppingListDismissals.listId, params.id))
+        .all()
+        .map((row) => row.productId),
+    );
+
+    const context = buildProposalContext(
+      {
+        histories: loadProductHistories(app.db),
+        list: {
+          items: loadItems(app.db, params.id).map((item) => ({
+            productId: item.productId,
+            name: item.name,
+          })),
+        },
+        dismissedProductIds,
+        previousProposals: loadPreviousProposals(app.db, params.id),
+        today: todayInOslo(options.now()),
+      },
+      request.log,
+    );
+
+    const result = await runProposal(app.llm, context, params.id, request.log);
+
+    const now = options.now().toISOString();
+    const created = app.db
+      .insert(shoppingListProposals)
+      .values({
+        listId: params.id,
+        model: result.model,
+        promptVersion: result.promptVersion,
+        itemsJson: JSON.stringify(result.items),
+        rawResponse: result.rawResponse,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        durationMs: result.durationMs,
+        acceptedJson: null,
+        createdAt: now,
+      })
+      .returning()
+      .get();
+
+    reply.status(201).send(toShoppingListProposal(created));
+  });
+
+  app.post('/api/shopping-lists/:id/proposals/:proposalId/accept', async (request) => {
+    const params = acceptProposalParamsSchema.parse(request.params);
+    const body = acceptProposalSchema.parse(request.body);
+
+    const list = app.db.select().from(shoppingLists).where(eq(shoppingLists.id, params.id)).get();
+    if (!list) {
+      throw new NotFoundError();
+    }
+
+    const proposal = app.db
+      .select()
+      .from(shoppingListProposals)
+      .where(eq(shoppingListProposals.id, params.proposalId))
+      .get();
+    if (!proposal || proposal.listId !== params.id) {
+      throw new NotFoundError();
+    }
+    if (list.status !== 'open') {
+      throw new ConflictError('Listen er ikke åpen');
+    }
+    if (proposal.acceptedJson !== null) {
+      throw new ConflictError('Forslaget er allerede behandlet');
+    }
+
+    const items = JSON.parse(proposal.itemsJson) as ShoppingListProposalItem[];
+    const itemByIndex = new Map(items.map((item) => [item.index, item]));
+    const onListProductIds = new Set(
+      app.db
+        .select({ productId: shoppingListItems.productId })
+        .from(shoppingListItems)
+        .where(eq(shoppingListItems.listId, params.id))
+        .all()
+        .map((row) => row.productId)
+        .filter((productId): productId is number => productId !== null),
+    );
+
+    const now = options.now().toISOString();
+    app.sqlite.transaction(() => {
+      let position = nextPosition(app.db, params.id);
+      for (const index of body.indexes) {
+        const item = itemByIndex.get(index);
+        if (!item) {
+          continue;
+        }
+        if (item.productId !== null && onListProductIds.has(item.productId)) {
+          continue;
+        }
+
+        app.db
+          .insert(shoppingListItems)
+          .values({
+            listId: params.id,
+            productId: item.productId,
+            name: item.name,
+            quantityText: item.quantityText,
+            source: 'ai',
+            reason: item.reason,
+            checked: 0,
+            position,
+            createdAt: now,
+          })
+          .run();
+        position += 1;
+        if (item.productId !== null) {
+          onListProductIds.add(item.productId);
+        }
+      }
+
+      app.db
+        .update(shoppingListProposals)
+        .set({ acceptedJson: JSON.stringify(body.indexes) })
+        .where(eq(shoppingListProposals.id, params.proposalId))
+        .run();
+    })();
+
+    const updatedList = app.db
+      .select()
+      .from(shoppingLists)
+      .where(eq(shoppingLists.id, params.id))
+      .get();
+    return buildShoppingListDetail(app.db, updatedList!);
   });
 
   app.post('/api/shopping-lists/:id/complete', async (request) => {

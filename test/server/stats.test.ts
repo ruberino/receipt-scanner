@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
-import { products, receiptLines, receipts } from '../../src/server/db/schema.ts';
+import {
+  products,
+  receiptLines,
+  receipts,
+  shoppingListProposals,
+  shoppingLists,
+} from '../../src/server/db/schema.ts';
 import { createTestApp } from '../helpers/createTestApp.ts';
 import { loginCookie } from '../helpers/login.ts';
 
@@ -199,5 +205,74 @@ describe('GET /api/stats/summary', () => {
     });
 
     expect(response.json().topProducts).toHaveLength(10);
+  });
+
+  it('sums proposals, proposed items and accepted items across every proposal (T37)', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const listId = app!.db
+      .insert(shoppingLists)
+      .values({ weekStart: '2026-09-07', status: 'open', createdAt: NOW })
+      .returning()
+      .get().id;
+    app!.db
+      .insert(shoppingListProposals)
+      .values({
+        listId,
+        model: 'grok-4.6',
+        promptVersion: 1,
+        itemsJson: JSON.stringify([{ index: 0 }, { index: 1 }, { index: 2 }]),
+        rawResponse: '{}',
+        promptTokens: 100,
+        completionTokens: 50,
+        durationMs: 1000,
+        acceptedJson: JSON.stringify([0, 2]),
+        createdAt: NOW,
+      })
+      .run();
+    app!.db
+      .insert(shoppingListProposals)
+      .values({
+        listId,
+        model: 'grok-4.6',
+        promptVersion: 1,
+        itemsJson: JSON.stringify([{ index: 0 }]),
+        rawResponse: '{}',
+        promptTokens: 100,
+        completionTokens: 50,
+        durationMs: 1000,
+        acceptedJson: null,
+        createdAt: NOW,
+      })
+      .run();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/stats/summary?months=1',
+      headers: { cookie },
+    });
+
+    expect(response.json().aiProposals).toEqual({
+      proposals: 2,
+      proposedItems: 4,
+      acceptedItems: 2,
+    });
+  });
+
+  it('reports zero aiProposals when none exist', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/stats/summary?months=1',
+      headers: { cookie },
+    });
+
+    expect(response.json().aiProposals).toEqual({
+      proposals: 0,
+      proposedItems: 0,
+      acceptedItems: 0,
+    });
   });
 });

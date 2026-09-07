@@ -57,7 +57,16 @@ export class RateLimitedError extends AppError {
   }
 }
 
-export type ExtractionStage = 'extraction' | 'matching';
+/** The synchronous `POST /api/shopping-lists/:id/proposals` call failed (network, timeout,
+ * `finishReason: 'length'`, or an answer that does not parse); unlike matching's silent
+ * degrade-to-warning, a proposal with no result is not useful, so this reaches the user (T37). */
+export class ProposalFailedError extends AppError {
+  constructor(message = 'Kunne ikke lage forslag, prøv igjen') {
+    super(500, 'INTERNAL', message);
+  }
+}
+
+export type ExtractionStage = 'extraction' | 'matching' | 'proposal';
 
 /** A failed receipt job; `userMessage` is the Norwegian text stored on the receipt and shown in the UI. */
 export class ExtractionError extends Error {

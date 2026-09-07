@@ -20,6 +20,7 @@ import type {
   ReceiptSummary,
   ShoppingList,
   ShoppingListItem,
+  ShoppingListProposal,
   ShoppingListSummary,
   StatsSummary,
   Suggestion,
@@ -477,6 +478,34 @@ export function useLatestShoppingList() {
     queryFn: async () => {
       const lists = await fetchJson<ShoppingListSummary[]>('/api/shopping-lists?limit=1');
       return lists[0] ?? null;
+    },
+  });
+}
+
+/** `Foreslå med AI` (T37): a fresh call every tap, never cached, since the model may answer
+ * differently each time. */
+export function useCreateProposal(listId: number) {
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<ShoppingListProposal>(`/api/shopping-lists/${listId}/proposals`, {
+        method: 'POST',
+      }),
+  });
+}
+
+export function useAcceptProposal(listId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ proposalId, indexes }: { proposalId: number; indexes: number[] }) =>
+      fetchJson<ShoppingList>(`/api/shopping-lists/${listId}/proposals/${proposalId}/accept`, {
+        method: 'POST',
+        body: JSON.stringify({ indexes }),
+      }),
+    onSuccess: (list) => {
+      queryClient.setQueryData(CURRENT_SHOPPING_LIST_KEY, list);
+      void queryClient.invalidateQueries({ queryKey: ['shopping-lists'] });
+      void queryClient.invalidateQueries({ queryKey: ['stats'] });
     },
   });
 }

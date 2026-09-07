@@ -168,7 +168,7 @@ export const mergeProductSchema = z
 export type MergeProductRequest = z.infer<typeof mergeProductSchema>;
 
 const shoppingListStatusSchema = z.enum(['open', 'done']);
-const shoppingListItemSourceSchema = z.enum(['suggested', 'manual']);
+const shoppingListItemSourceSchema = z.enum(['suggested', 'manual', 'ai']);
 
 export const shoppingListItemSchema = z.object({
   id: z.number().int(),
@@ -230,6 +230,39 @@ export const patchShoppingListItemSchema = z
 
 export type PatchShoppingListItemRequest = z.infer<typeof patchShoppingListItemSchema>;
 
+const proposalItemKindSchema = z.enum(['sesong', 'merkedag', 'variasjon', 'vane']);
+
+/** One item in an AI proposal (T37, ADR-0016); `index` is its position in the proposal's own
+ * `items` array, which `POST .../accept`'s `indexes` refers back to. */
+export const shoppingListProposalItemSchema = z.object({
+  index: z.number().int(),
+  productId: z.number().int().nullable(),
+  name: z.string(),
+  category: z.string().nullable(),
+  quantityText: z.string().nullable(),
+  reason: z.string(),
+  kind: proposalItemKindSchema,
+});
+
+export type ShoppingListProposalItem = z.infer<typeof shoppingListProposalItemSchema>;
+
+export const shoppingListProposalSchema = z.object({
+  id: z.number().int(),
+  createdAt: z.string(),
+  model: z.string(),
+  items: z.array(shoppingListProposalItemSchema),
+});
+
+export type ShoppingListProposal = z.infer<typeof shoppingListProposalSchema>;
+
+export const acceptProposalSchema = z
+  .object({
+    indexes: z.array(z.number().int()),
+  })
+  .strict();
+
+export type AcceptProposalRequest = z.infer<typeof acceptProposalSchema>;
+
 export const suggestionSchema = z.object({
   productId: z.number().int(),
   name: z.string(),
@@ -250,9 +283,19 @@ export const monthlyStatsSchema = z.object({
 
 export type MonthlyStats = z.infer<typeof monthlyStatsSchema>;
 
+/** All-time counts over `shopping_list_proposals`, the acceptance-rate inputs (T37, ADR-0016). */
+export const aiProposalsStatsSchema = z.object({
+  proposals: z.number().int(),
+  proposedItems: z.number().int(),
+  acceptedItems: z.number().int(),
+});
+
+export type AiProposalsStats = z.infer<typeof aiProposalsStatsSchema>;
+
 export const statsSummarySchema = z.object({
   months: z.array(monthlyStatsSchema),
   topProducts: z.array(productSchema),
+  aiProposals: aiProposalsStatsSchema,
 });
 
 export type StatsSummary = z.infer<typeof statsSummarySchema>;

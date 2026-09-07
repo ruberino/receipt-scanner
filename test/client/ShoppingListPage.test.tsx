@@ -8,6 +8,8 @@ import type {
   Product,
   ShoppingList,
   ShoppingListItem,
+  ShoppingListProposal,
+  ShoppingListProposalItem,
   ShoppingListSummary,
   Suggestion,
 } from '../../src/shared/schemas.ts';
@@ -31,6 +33,8 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useUpdateShoppingListItem: vi.fn(),
     useDeleteShoppingListItem: vi.fn(),
     useProductSearch: vi.fn(),
+    useCreateProposal: vi.fn(),
+    useAcceptProposal: vi.fn(),
   };
 });
 
@@ -48,6 +52,8 @@ const {
   useUpdateShoppingListItem,
   useDeleteShoppingListItem,
   useProductSearch,
+  useCreateProposal,
+  useAcceptProposal,
 } = await import('../../src/client/api/queries.ts');
 
 function suggestion(overrides: Partial<Suggestion> = {}): Suggestion {
@@ -97,6 +103,29 @@ function listSummary(overrides: Partial<ShoppingListSummary> = {}): ShoppingList
     createdAt: '2026-09-06T00:00:00.000Z',
     completedAt: '2026-09-06T00:00:00.000Z',
     itemCount: 2,
+    ...overrides,
+  };
+}
+
+function proposalItem(overrides: Partial<ShoppingListProposalItem> = {}): ShoppingListProposalItem {
+  return {
+    index: 0,
+    productId: null,
+    name: 'Godteri',
+    category: 'Snacks',
+    quantityText: '1 pose',
+    reason: 'Halloween 31. oktober',
+    kind: 'merkedag',
+    ...overrides,
+  };
+}
+
+function proposal(overrides: Partial<ShoppingListProposal> = {}): ShoppingListProposal {
+  return {
+    id: 1,
+    createdAt: '2026-09-07T12:00:00.000Z',
+    model: 'grok-4.6',
+    items: [proposalItem()],
     ...overrides,
   };
 }
@@ -166,6 +195,8 @@ describe('ShoppingListPage', () => {
   let toggleMutate: ReturnType<typeof vi.fn>;
   let updateItemMutate: ReturnType<typeof vi.fn>;
   let deleteItemMutate: ReturnType<typeof vi.fn>;
+  let createProposalMutate: ReturnType<typeof vi.fn>;
+  let acceptProposalMutate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     createListMutate = vi.fn();
@@ -177,6 +208,8 @@ describe('ShoppingListPage', () => {
     toggleMutate = vi.fn();
     updateItemMutate = vi.fn();
     deleteItemMutate = vi.fn();
+    createProposalMutate = vi.fn();
+    acceptProposalMutate = vi.fn();
     mockLatestList(null);
     vi.mocked(useCreateShoppingList).mockReturnValue({
       mutate: createListMutate,
@@ -217,6 +250,14 @@ describe('ShoppingListPage', () => {
     vi.mocked(useProductSearch).mockReturnValue({
       data: [],
     } as unknown as ReturnType<typeof useProductSearch>);
+    vi.mocked(useCreateProposal).mockReturnValue({
+      mutate: createProposalMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateProposal>);
+    vi.mocked(useAcceptProposal).mockReturnValue({
+      mutate: acceptProposalMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAcceptProposal>);
   });
 
   afterEach(() => {
@@ -905,6 +946,183 @@ describe('ShoppingListPage', () => {
         const user = userEvent.setup();
 
         await user.click(screen.getByRole('button', { name: 'Oppdater forslag' }));
+
+        expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
+      });
+    });
+
+    describe('Foreslå med AI (T37)', () => {
+      it('shows a live-updating "Tenker …" label while the call is pending', () => {
+        vi.useFakeTimers();
+        vi.mocked(useCreateProposal).mockReturnValue({
+          mutate: createProposalMutate,
+          isPending: true,
+        } as unknown as ReturnType<typeof useCreateProposal>);
+        mockList(list());
+
+        renderPage();
+
+        expect(screen.getByText('Tenker… (0 s)')).toBeInTheDocument();
+        act(() => {
+          vi.advanceTimersByTime(2000);
+        });
+        expect(screen.getByText('Tenker… (2 s)')).toBeInTheDocument();
+      });
+
+      it('calls createProposal when "Foreslå med AI" is tapped', async () => {
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        expect(createProposalMutate).toHaveBeenCalledWith(undefined, expect.anything());
+      });
+
+      it('renders the proposal with every item pre-checked, its reason and a kind chip', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(
+            proposal({
+              items: [
+                proposalItem({ index: 0, name: 'Godteri', kind: 'merkedag' }),
+                proposalItem({
+                  index: 1,
+                  name: 'Lettmelk 1 l',
+                  kind: 'vane',
+                  reason: 'Kjøpes normalt hver uke',
+                }),
+              ],
+            }),
+          );
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        expect(screen.getByText('Forslag fra AI')).toBeInTheDocument();
+        expect(screen.getByText('Halloween 31. oktober')).toBeInTheDocument();
+        expect(screen.getByText('Merkedag')).toBeInTheDocument();
+        expect(screen.getByText('Vane')).toBeInTheDocument();
+        expect(screen.getByLabelText('Godteri')).toBeChecked();
+        expect(screen.getByLabelText('Lettmelk 1 l')).toBeChecked();
+        expect(screen.getByRole('button', { name: 'Legg til valgte (2)' })).toBeInTheDocument();
+      });
+
+      it('unchecking an item updates the "Legg til valgte" count', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(
+            proposal({
+              items: [
+                proposalItem({ index: 0, name: 'Godteri' }),
+                proposalItem({ index: 1, name: 'Lettmelk 1 l' }),
+              ],
+            }),
+          );
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        await user.click(screen.getByLabelText('Godteri'));
+
+        expect(screen.getByLabelText('Godteri')).not.toBeChecked();
+        expect(screen.getByRole('button', { name: 'Legg til valgte (1)' })).toBeInTheDocument();
+      });
+
+      it('"Legg til valgte" accepts only the still-checked indexes', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(
+            proposal({
+              id: 7,
+              items: [
+                proposalItem({ index: 0, name: 'Godteri' }),
+                proposalItem({ index: 1, name: 'Lettmelk 1 l' }),
+              ],
+            }),
+          );
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+        await user.click(screen.getByLabelText('Godteri'));
+
+        await user.click(screen.getByRole('button', { name: 'Legg til valgte (1)' }));
+
+        expect(acceptProposalMutate).toHaveBeenCalledWith(
+          { proposalId: 7, indexes: [1] },
+          expect.anything(),
+        );
+      });
+
+      it('closes the panel once the accept succeeds', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(proposal());
+        });
+        acceptProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(list());
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        await user.click(screen.getByRole('button', { name: 'Legg til valgte (1)' }));
+
+        expect(screen.queryByText('Forslag fra AI')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Foreslå med AI' })).toBeInTheDocument();
+      });
+
+      it('"Avbryt" accepts an empty set of indexes and closes the panel', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(proposal({ id: 3 }));
+        });
+        acceptProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(list());
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        await user.click(screen.getByRole('button', { name: 'Avbryt' }));
+
+        expect(acceptProposalMutate).toHaveBeenCalledWith(
+          { proposalId: 3, indexes: [] },
+          expect.anything(),
+        );
+        expect(screen.queryByText('Forslag fra AI')).not.toBeInTheDocument();
+      });
+
+      it('shows the error toast when the proposal call fails', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onError?.(new Error('nettverksfeil'));
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
+      });
+
+      it('shows the error toast when accepting fails', async () => {
+        createProposalMutate.mockImplementation((_body, options) => {
+          options?.onSuccess?.(proposal());
+        });
+        acceptProposalMutate.mockImplementation((_body, options) => {
+          options?.onError?.(new Error('nettverksfeil'));
+        });
+        mockList(list());
+        renderPage();
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Foreslå med AI' }));
+
+        await user.click(screen.getByRole('button', { name: 'Legg til valgte (1)' }));
 
         expect(screen.getByRole('status')).toHaveTextContent('Noe gikk galt');
       });

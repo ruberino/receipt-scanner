@@ -1,4 +1,4 @@
-export type LlmPurpose = 'extract' | 'match';
+export type LlmPurpose = 'extract' | 'match' | 'propose';
 
 export type JsonCompletionRequest = {
   purpose: LlmPurpose;
@@ -10,6 +10,9 @@ export type JsonCompletionRequest = {
   maxTokens: number;
   promptVersion: number;
   receiptId?: number;
+  /** Only set for `purpose: 'propose'` (T37): traces the one `info` log line back to which list
+   * asked for a proposal, the same way `receiptId` does for extraction and matching. */
+  listId?: number;
 };
 
 export type JsonCompletionResult = {
