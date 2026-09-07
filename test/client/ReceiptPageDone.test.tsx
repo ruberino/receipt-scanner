@@ -19,6 +19,8 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useDeleteReceipt: vi.fn(),
     useProductSearch: vi.fn(),
     useUpdateReceiptLine: vi.fn(),
+    useUpdateReceiptLineFields: vi.fn(),
+    useDeleteReceiptLine: vi.fn(),
   };
 });
 
@@ -30,6 +32,8 @@ const {
   useDeleteReceipt,
   useProductSearch,
   useUpdateReceiptLine,
+  useUpdateReceiptLineFields,
+  useDeleteReceiptLine,
 } = await import('../../src/client/api/queries.ts');
 
 function baseReceipt(overrides: Partial<ReceiptDetail> = {}): ReceiptDetail {
@@ -120,6 +124,14 @@ describe('ReceiptPage — done state', () => {
       mutate: vi.fn(),
       isPending: false,
     } as unknown as ReturnType<typeof useUpdateReceiptLine>);
+    vi.mocked(useUpdateReceiptLineFields).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useUpdateReceiptLineFields>);
+    vi.mocked(useDeleteReceiptLine).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteReceiptLine>);
   });
 
   afterEach(() => {
