@@ -781,3 +781,19 @@ Acceptance criteria:
 - Playwright walk with screenshots at 360 px (hidden, shown, scrolled) and 1280 px under `docs/reviews/screenshots/T35/`.
 
 Tests: client tests for the toggle, the stored preference, the link; layout is covered by the screenshots.
+
+---
+
+## T33 — The receipts list shows the date, not only "3 dager siden"
+
+Goal: a receipt row in the list tells the date at a glance and how long ago that was.
+
+Files: `src/client/lib/format.ts`, `src/client/pages/ReceiptsPage.tsx`, tests.
+
+Acceptance criteria:
+
+- A receipt bought three days ago reads `4. sep. · 3 dager siden` (with today 2026-09-07); one bought today `7. sep. · i dag`; one older than 30 days shows the date once.
+- The `Lastet opp` fallback for a receipt without a date uses the same form.
+- Screenshot of the list at 360 px under `docs/reviews/screenshots/T33/`.
+
+Tests: `format.test.ts` for the three cases; the `ReceiptsPage` test asserts the new label.
