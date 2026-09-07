@@ -762,3 +762,22 @@ Acceptance criteria:
 - Screenshots of the failed view and the processing view at 360 px under `docs/reviews/screenshots/T30/`.
 
 Tests: client tests for the failed view's delete after confirmation and after dismissal, the elapsed time from `updatedAt` against a faked clock, the same time after a remount, the two labels; the existing uploaded and done delete tests keep passing; `toReceiptSummary` includes `updatedAt`.
+
+---
+
+## T35 — The receipt image beside the extracted lines
+
+Goal: the user compares the lines with the receipt itself without leaving the page.
+
+Files: `src/client/pages/ReceiptPage.tsx`, tests.
+
+Steps: see `docs/reviews/T35-plan.md`.
+
+Acceptance criteria:
+
+- On a `done` receipt at 360 px, `Vis bilde` shows the image in a sticky 45vh panel that scrolls on its own while the lines scroll beneath; `Skjul bilde` hides it; the choice survives navigating to another receipt in the same session.
+- At 1280 px the image is beside the lines with no toggle, and stays in view while the lines scroll.
+- The image links to the full-size image in a new tab.
+- Playwright walk with screenshots at 360 px (hidden, shown, scrolled) and 1280 px under `docs/reviews/screenshots/T35/`.
+
+Tests: client tests for the toggle, the stored preference, the link; layout is covered by the screenshots.
