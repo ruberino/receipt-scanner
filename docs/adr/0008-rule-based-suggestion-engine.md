@@ -45,3 +45,11 @@ Three constants and one formula change; the engine stays pure and deterministic.
 - The quantity hint is the median of each purchase week's total, not of individual purchases: two purchases in the same week (buying milk twice on a big shopping week) count as one week's worth, so the list sizes for a week, not a single trip.
 
 Architecture.md section 8 and its worked example are updated accordingly and stay normative.
+
+## Amendment, 2026-09-07 (T34): a list is a snapshot, refresh is the explicit bridge
+
+The engine itself stays pure and live: `computeSuggestions` always answers against the current purchase history and today's date.
+A shopping list is not live — it is a snapshot of what the engine proposed at the moment `POST /api/shopping-lists` created it, and the household edits that snapshot (checking items off, adding, removing) over the days it stays open.
+
+`POST /api/shopping-lists/:id/refresh` is the explicit, user-triggered bridge between the two: it re-runs the engine and adds whatever it proposes today that is not already on the list (checked or not) and not dismissed, leaving every existing item untouched.
+`shopping_list_dismissals` remembers a product removed from a specific list, so a refresh never re-adds what the user just took off; the same product is suggested again on the next list, since dismissals are per-list, not global.

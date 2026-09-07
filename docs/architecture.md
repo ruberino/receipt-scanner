@@ -306,6 +306,13 @@ CREATE TABLE shopping_list_items (
   created_at    TEXT NOT NULL
 );
 CREATE INDEX shopping_list_items_list ON shopping_list_items (list_id, position);
+
+CREATE TABLE shopping_list_dismissals (
+  list_id    INTEGER NOT NULL REFERENCES shopping_lists(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (list_id, product_id)
+);
 ```
 
 Definitions:
@@ -323,6 +330,7 @@ Definitions:
 - `other` is for lines that are printed on the receipt but are neither a purchase, a discount nor a deposit and that the model could not leave out; it is excluded from the total check and from statistics.
 - `extraction_json` is the validated extraction result, `raw_response` the exact LLM text; both exist for debugging and for growing the eval set.
 - At most one shopping list has `status = 'open'` at a time; enforced in code.
+- A product dismissed from a list (removed while it had a `product_id`) is never re-added to that same list by a refresh; `shopping_list_dismissals` records it, `(list_id, product_id)`. T34.
 - `PRODUCT_CATEGORIES` is the fixed list: `Frukt og grønt`, `Meieri`, `Kjøtt og fisk`, `Brød og bakevarer`, `Tørrvarer`, `Frossen`, `Drikke`, `Snacks`, `Husholdning`, `Hygiene`, `Annet`.
 - Migrations run with `foreign_keys` off and `PRAGMA foreign_key_check` after, because drizzle's SQLite table recreates would otherwise cascade-delete child rows.
 
@@ -572,6 +580,7 @@ type ShoppingList = {
 | `PATCH /api/shopping-list-items/:id` | `{ checked?, name?, quantityText?, position? }` | `200 item` | `category` is unaffected: editing never changes `productId`. T32. |
 | `DELETE /api/shopping-list-items/:id` | — | `204` | |
 | `POST /api/shopping-lists/:id/complete` | — | `200 ShoppingList` | Sets `done` and `completedAt`. |
+| `POST /api/shopping-lists/:id/refresh` | — | `200 ShoppingList` | Only when `open`, else `409 Listen er ikke åpen`; `404` when missing. Adds every suggestion whose product is on neither the list's items nor its dismissals, `source = 'suggested'`, `position` after the current maximum; existing items are untouched. T34. |
 | `POST /api/shopping-lists/:id/reopen` | — | `200 ShoppingList` | Only when `done`, `completedAt` falls on today's date in Europe/Oslo (`todayInOslo`), and no list is `open`; sets `open` and clears `completedAt`. `409 Listen kan ikke gjenåpnes` otherwise. T31. |
 | `DELETE /api/shopping-lists/:id` | — | `204` | Only when `open`; items cascade. `409 En fullført liste kan ikke slettes` when `done`. History is never deleted. T31. |
 | `GET /api/shopping-lists?limit=20` | — | `200 ShoppingListSummary[]` | History, `weekStart` descending, `id` descending tiebreak. `ShoppingListSummary` is `ShoppingList` without `items`, plus `itemCount` (the same relationship `ReceiptSummary` has to `ReceiptDetail`). Phase 2 (T23). |
@@ -584,7 +593,7 @@ type ShoppingList = {
 | Route | Page | Content |
 | --- | --- | --- |
 | `/login` | LoginPage | Password field. |
-| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; the row (checkbox and text) toggles checked, and a pencil button on each item edits name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32. |
+| `/` | ShoppingListPage | Header with the ISO week and progress; unchecked items grouped by category in store-walk order; the row (checkbox and text) toggles checked, and a pencil button on each item edits name and quantity in place; check-off, a visible `Kjøpt (n)` section, add item, remove item (a quiet `×` icon) with a 6 s `Angre` (the delete is sent when the toast expires, so an item removed just before the app is closed stays), `Ferdig handlet` with `Angre` that reopens, `Oppdater forslag` (adds today's new suggestions without touching the user's own edits, and reports `x varer lagt til` or `Ingen nye forslag`), `Slett listen` behind a confirmation; when there is no open list, a preview of suggestions, `Lag handleliste`, and `Gjenåpne listen` when the latest list was completed today. Desktop caps at `max-w-2xl` centred. T31, T32, T34. |
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
 | `/receipts` | ReceiptsPage | List with store, date as `4. sep. · 3 dager siden`, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), and the shopping list history (week, item count, status); closed, neither request fires, so the everyday visit costs nothing extra. |
 | `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), the receipt image in a sticky, scrollable panel: toggled with `Vis bilde` on a phone, always beside the lines on desktop, tap opens the full image (T35), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. |

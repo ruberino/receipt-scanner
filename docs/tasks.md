@@ -854,3 +854,22 @@ Acceptance criteria:
 - Every action is possible with 44 px targets at 360 px width; Playwright walk at 360 px and 1280 px with screenshots under `docs/reviews/screenshots/T32/`.
 
 Tests: server test that items carry the product's category and `null` for a manual item; client tests for grouping order and the `Annet` fallback, the header progress, inline edit with changed-fields-only, empty-name rejection, cancel; the `SHOPPING_CATEGORY_ORDER` permutation test.
+
+---
+
+## T34 — Refresh the open shopping list with new suggestions
+
+Goal: a list made on Friday can pick up what became due after the weekend's receipts, without losing the user's own edits.
+
+Files: `src/server/db/schema.ts`, a migration, `src/server/routes/shoppingLists.ts`, `src/client/pages/ShoppingListPage.tsx`, `src/client/api/queries.ts`, tests.
+
+Steps: see `docs/reviews/T34-plan.md`.
+
+Acceptance criteria:
+
+- After a new receipt makes a product due, `Oppdater forslag` adds it to the open list once; pressing again adds nothing and says `Ingen nye forslag`.
+- A suggested product the user removed from the list is not re-added by a refresh; the same product is suggested again on the next list.
+- Checked items and manual items are untouched by a refresh.
+- The button is 44 px at 360 px width; screenshots under `docs/reviews/screenshots/T34/`.
+
+Tests: route tests for adds-missing, skips-present-including-checked, skips-dismissed, appends-after-max-position, 409 when done, 404, 401; the dismissal is written on item delete with a product and not without; migration test that existing lists and items survive; client test for the three toast texts.
