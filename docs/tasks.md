@@ -724,4 +724,4 @@ Acceptance criteria:
 
 - A 600×8000 image is stored as 600×8000; a 3000×20000 image is stored as 1600×10667; neither is enlarged.
 - A stored 1600×10667 image is sent as six consecutive segments with 120 px overlap; a 1200×1600 image is sent as one.
-- The four Kiwi receipts in `eval/receipts/` are re-run through the eval once their expected JSON exists, and `totalWithin1krRate` and `meanItemRecall` are recorded in the results file committed with the PR.
+- The Kiwi receipts already in `eval/receipts/` are 149×2000 px copies of what the pre-fix pipeline stored, so no bootstrap on this branch can recover them: they are re-uploaded from their originals once this task is deployed, get expected JSON through `eval:bootstrap`, and are run through the eval in a follow-up task. The three MENY receipts (8, 11, 12) are the baseline committed here, with `totalWithin1krRate` and `meanItemRecall` recorded in the results files committed with the PR.

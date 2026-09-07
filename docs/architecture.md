@@ -331,6 +331,7 @@ Definitions:
 
 1. The client converts the chosen photo with `downscaleImage`: draw to a canvas with the **short** edge capped at 1600 px (never the long edge, never enlarging), export JPEG quality 0.85.
    This also converts HEIC from iPhones to JPEG, because the browser decodes it.
+   If the target size would exceed 16 777 216 px (WebKit's canvas area limit on iOS), the file is uploaded unscaled instead of drawing to canvas; `normaliseImage` on the server does the resize either way.
 2. `POST /api/receipts` (multipart field `image`) accepts `image/jpeg`, `image/png`, `image/webp`, at most `MAX_UPLOAD_BYTES`.
 3. The server runs `normaliseImage`: `sharp` reads metadata, rejects unknown formats with `400 VALIDATION_ERROR`, applies EXIF rotation, resizes so the **short** edge is at most 1600 px (there is no long-edge cap, and it never enlarges), encodes JPEG quality 85, and computes `sha256` of the result.
    A tall receipt strip therefore stays wide enough that the printed digits are legible, at the cost of a taller stored image; see the T28 amendment to ADR-0005 for why the long-edge cap was replaced (a 149×2000 px receipt was unreadable).

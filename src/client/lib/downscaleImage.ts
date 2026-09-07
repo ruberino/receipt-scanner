@@ -4,6 +4,10 @@ export type DownscaleOptions = {
 };
 
 const SKIP_MAX_BYTES = 500 * 1024;
+// WebKit on iOS refuses a canvas whose area exceeds this ("Canvas area exceeds the maximum
+// limit"); a receipt long enough to need server-side segmenting (T28) can exceed it easily (a
+// 1600x10667 target is 17.07M px). MAX_UPLOAD_BYTES stays the ceiling on the unscaled upload.
+const MAX_CANVAS_PX = 16_777_216;
 
 /** Scales down proportionally so the short edge is at most `maxEdge`, with no cap on the long
  * edge; never upscales. A long receipt strip stays wide enough to read (T28); the server tiles a
@@ -66,6 +70,11 @@ export async function downscaleImage(
 ): Promise<Blob> {
   const { width, height, drawable, cleanup } = await loadImageSource(file);
   const target = computeDownscaledSize(width, height, maxEdge);
+
+  if (target.width * target.height > MAX_CANVAS_PX) {
+    cleanup();
+    return file;
+  }
 
   const alreadySmallJpeg =
     file.type === 'image/jpeg' &&

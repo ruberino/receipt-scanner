@@ -114,6 +114,9 @@ Any wrong extraction seen in real use (not just in the eval set) gets added to `
 a new case, or to `test/fixtures/llm/` if it's a parsing edge case, before the fix — a bug fixed
 without a regression case is a bug that can come back silently.
 
+The prompt version 2 results (T28) are the first committed baseline: prompt version 1 never had
+expected JSON for any receipt, so there is nothing earlier to regress against.
+
 ## Privacy
 
 `eval/receipts/*.jpg` (and any `.expected.json`/`.expected.draft.json` next to them) are real
