@@ -110,6 +110,25 @@ describe('GET /api/receipts', () => {
     expect(new Set(allSeen).size).toBe(allSeen.length);
   });
 
+  it('includes updatedAt, distinct from createdAt (T30)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertDoneReceipt({
+      createdAt: '2026-09-03T12:00:00.000Z',
+      updatedAt: '2026-09-03T12:05:00.000Z',
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/receipts',
+      headers: { cookie },
+    });
+
+    const receipt = response.json().find((r: { id: number }) => r.id === id);
+    expect(receipt.createdAt).toBe('2026-09-03T12:00:00.000Z');
+    expect(receipt.updatedAt).toBe('2026-09-03T12:05:00.000Z');
+  });
+
   it('rejects a limit outside 1-100', async () => {
     app = createTestApp();
     cookie = await loginCookie(app);

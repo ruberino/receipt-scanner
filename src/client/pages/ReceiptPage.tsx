@@ -14,15 +14,33 @@ import ReceiptLineRow from '../components/ReceiptLineRow.tsx';
 import ReceiptStatusBadge from '../components/ReceiptStatusBadge.tsx';
 import { useToast } from '../components/Toast.tsx';
 
-// A separate component so its elapsed-seconds counter resets naturally on mount, every time the
-// receipt (re-)enters the processing state, instead of a manual reset inside an effect.
-function ProcessingView({ imageUrl }: { imageUrl: string }) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+const PROCESSING_LABELS: Record<'pending' | 'processing', string> = {
+  pending: 'I kø…',
+  processing: 'Leser kvittering…',
+};
+
+/** Seconds since `updatedAt`, the server's own timestamp of the last status change, never below 0
+ * (a small clock skew must not show a negative wait). Counting from this instead of mount time
+ * (T30) means leaving and reopening the page shows the same elapsed time, not a restarted one. */
+function elapsedSecondsSince(updatedAt: string): number {
+  return Math.max(0, Math.floor((Date.now() - Date.parse(updatedAt)) / 1000));
+}
+
+type ProcessingViewProps = {
+  imageUrl: string;
+  status: 'pending' | 'processing';
+  updatedAt: string;
+};
+
+// Keyed on `updatedAt` at the call site, so a fresh timestamp (the pending -> processing
+// transition) remounts this component instead of needing a synchronous resync inside an effect.
+function ProcessingView({ imageUrl, status, updatedAt }: ProcessingViewProps) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => elapsedSecondsSince(updatedAt));
 
   useEffect(() => {
-    const interval = setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000);
+    const interval = setInterval(() => setElapsedSeconds(elapsedSecondsSince(updatedAt)), 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [updatedAt]);
 
   return (
     <div className="flex flex-col items-center gap-4 p-6">
@@ -32,29 +50,53 @@ function ProcessingView({ imageUrl }: { imageUrl: string }) {
         aria-label="Laster"
         className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"
       />
-      <p>Leser kvittering… ({elapsedSeconds} s)</p>
+      <p>
+        {PROCESSING_LABELS[status]} ({elapsedSeconds} s)
+      </p>
     </div>
   );
 }
 
-function UploadedView({ receipt }: { receipt: ReceiptDetail }) {
+/**
+ * Shared by every ReceiptPage state that can delete the receipt (uploaded, failed, done): one
+ * handler and one button, so a receipt stuck in any status has the same way out (T30).
+ */
+function DeleteReceiptButton({ receiptId }: { receiptId: number }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const scan = useScanReceipt();
-  const deleteReceipt = useDeleteReceipt(receipt.id);
-
-  function handleScan() {
-    scan.mutate(receipt.id, {
-      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
-    });
-  }
+  const deleteReceipt = useDeleteReceipt(receiptId);
 
   function handleDelete() {
     if (!window.confirm('Slette denne kvitteringen? Dette kan ikke angres.')) {
       return;
     }
     deleteReceipt.mutate(undefined, {
-      onSuccess: () => navigate('/receipts'),
+      onSuccess: () => {
+        showToast('Kvitteringen er slettet');
+        navigate('/receipts');
+      },
+      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
+    });
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleDelete}
+      disabled={deleteReceipt.isPending}
+      className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
+    >
+      Slett kvittering
+    </button>
+  );
+}
+
+function UploadedView({ receipt }: { receipt: ReceiptDetail }) {
+  const { showToast } = useToast();
+  const scan = useScanReceipt();
+
+  function handleScan() {
+    scan.mutate(receipt.id, {
       onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
     });
   }
@@ -70,14 +112,7 @@ function UploadedView({ receipt }: { receipt: ReceiptDetail }) {
       >
         Skann
       </button>
-      <button
-        type="button"
-        onClick={handleDelete}
-        disabled={deleteReceipt.isPending}
-        className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
-      >
-        Slett kvittering
-      </button>
+      <DeleteReceiptButton receiptId={receipt.id} />
     </div>
   );
 }
@@ -218,11 +253,9 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
 const UNMATCHED_WARNINGS = new Set(['UNMATCHED_LINES', 'MATCHING_FAILED']);
 
 function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
-  const navigate = useNavigate();
   const { showToast } = useToast();
   const rematch = useRematch(receipt.id);
   const updateReceipt = useUpdateReceipt(receipt.id);
-  const deleteReceipt = useDeleteReceipt(receipt.id);
 
   const hasUnmatchedLines = receipt.warnings.some((code) => UNMATCHED_WARNINGS.has(code));
 
@@ -234,16 +267,6 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
         onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
       },
     );
-  }
-
-  function handleDelete() {
-    if (!window.confirm('Slette denne kvitteringen? Dette kan ikke angres.')) {
-      return;
-    }
-    deleteReceipt.mutate(undefined, {
-      onSuccess: () => navigate('/receipts'),
-      onError: (mutationError) => showToast(apiErrorMessage(mutationError)),
-    });
   }
 
   function handleRematch() {
@@ -272,14 +295,7 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
       >
         Ferdig
       </button>
-      <button
-        type="button"
-        onClick={handleDelete}
-        disabled={deleteReceipt.isPending}
-        className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
-      >
-        Slett kvittering
-      </button>
+      <DeleteReceiptButton receiptId={receipt.id} />
     </div>
   );
 }
@@ -304,7 +320,14 @@ export default function ReceiptPage() {
   }
 
   if (data.status === 'pending' || data.status === 'processing') {
-    return <ProcessingView imageUrl={data.imageUrl} />;
+    return (
+      <ProcessingView
+        key={data.updatedAt}
+        imageUrl={data.imageUrl}
+        status={data.status}
+        updatedAt={data.updatedAt}
+      />
+    );
   }
 
   if (data.status === 'failed') {
@@ -327,6 +350,7 @@ export default function ReceiptPage() {
         >
           Prøv igjen
         </button>
+        <DeleteReceiptButton receiptId={id} />
       </div>
     );
   }

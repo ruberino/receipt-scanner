@@ -49,6 +49,7 @@ function baseReceipt(overrides: Partial<ReceiptDetail> = {}): ReceiptDetail {
     possibleDuplicateOf: null,
     reviewedAt: null,
     createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
     imageUrl: '/api/receipts/1/image',
     lines: [
       {
