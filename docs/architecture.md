@@ -157,7 +157,8 @@ receipt-scanner/
         receiptWarnings.ts   computeLineSum(), hasUnmatchedItemLine(): shared by receipts.ts and receiptLines.ts
         proposalContext.ts   buildProposalContext(...): pure given its inputs; serialises history, calendar and list state for the propose call (T37)
         tripLink.ts          findTripList(purchaseDate, candidates): pure; the automatic receipt-to-list linking rule (T39, ADR-0018)
-        trip.ts              computeTrip({ items, lines, productNames }): pure; planned/bought/notBought/unplanned, computed on read (T39, ADR-0018)
+        trip.ts              computeTrip({ items, lines, productNames, parentOf }): pure; planned/bought/notBought/unplanned, computed on read (T39, ADR-0018; parentOf added T40, ADR-0019)
+        productGroups.ts     foldHistories(histories, parentOf, parents), findGroupCandidates(products): pure; a parent product folds its variants (T40, ADR-0019)
       jobs/
         receiptProcessor.ts  queue, processReceipt(), requeueUnfinished()
       routes/
@@ -266,9 +267,11 @@ CREATE TABLE products (
   name_normalized TEXT NOT NULL UNIQUE,
   category        TEXT,
   suppressed      INTEGER NOT NULL DEFAULT 0,
+  parent_id       INTEGER REFERENCES products(id) ON DELETE SET NULL,
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL
 );
+CREATE INDEX products_parent ON products (parent_id);
 
 CREATE TABLE product_aliases (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -360,6 +363,10 @@ Definitions:
 - A proposal (`shopping_list_proposals`) is applied only through `POST .../accept`; the model's answer never inserts rows on its own, and `accepted_json` (once set) makes a second accept on the same proposal a `409`. T37.
 - `shopping_list_items.category` is set from the AI proposal, otherwise null (T37); a matched product's own category still wins on read, so this is only the display fallback for a proposal-accepted item with no product.
 - `receipts.shopping_list_id` links a receipt to the list it was bought for (T39, ADR-0018); several receipts can belong to one list, a receipt to at most one list. Set automatically by `findTripList` (`src/server/domain/tripLink.ts`) when a receipt reaches `done` or a list is completed, and overridable on the receipt page. The outcome (`Trip`, `src/server/domain/trip.ts`) is computed from the list's items and the linked receipts' lines on every read, never stored.
+- `products.parent_id` groups a product's variants under it (T40, ADR-0019), depth exactly one: a product with a parent cannot itself be a parent, and a product with children cannot get a parent, both enforced in the route handlers.
+  A parent is an ordinary product and may have receipt lines of its own.
+  `foldHistories` (`src/server/domain/productGroups.ts`) sums children's purchases into the parent's `ProductHistory` before the suggestion engine, refresh, dismissals or the AI proposal context see it; a receipt, its lines, aliases and a product's own stats always keep the variant.
+  Grouping and ungrouping happen only through `POST`/`DELETE /api/products/:id/parent` and `POST /api/product-groups`, never automatically; deleting a parent (through merge) sets its children's `parent_id` back to null.
 - `PRODUCT_CATEGORIES` is the fixed list: `Frukt og grønt`, `Meieri`, `Kjøtt og fisk`, `Brød og bakevarer`, `Tørrvarer`, `Frossen`, `Drikke`, `Snacks`, `Husholdning`, `Hygiene`, `Annet`.
 - Migrations run with `foreign_keys` off and `PRAGMA foreign_key_check` after, because drizzle's SQLite table recreates would otherwise cascade-delete child rows.
 
@@ -493,6 +500,7 @@ A long receipt split over two photos is not detected; the halves have different 
 6. An answer cut off at the token budget (`finishReason: 'length'`) counts as a failed batch, the same as a call that errors outright: its texts stay unmatched, the other batches' matches are kept, and the receipt still becomes `done` with `MATCHING_FAILED`; `POST /api/receipts/:id/rematch` re-runs steps 1–5 for lines with `product_id IS NULL`.
 
 Naming guidance in the prompt: Norwegian, singular, generic but specific enough to be useful on a shopping list ("Lettmelk 1 l", "Banan", "Grovbrød", "Kaffe filtermalt 250 g"), brand only when it distinguishes what to buy.
+A parent product (T40, ADR-0019) is an ordinary row among the known product names, so a line whose text is the bare group name ("SKYR MINI") matches the parent directly, with no change to this algorithm.
 
 ### 7.6 User corrections
 
@@ -514,12 +522,13 @@ Request to the proposal provider (`LLM_PROVIDER_PROPOSE`, default `LLM_PROVIDER`
 The context (`buildProposalContext({ histories, list, dismissedProductIds, previousProposals, today })`):
 
 - `today`, the weekday in Norwegian, the ISO week, and `calendarEvents(today)` (`src/shared/calendar.ts`) for the next three weeks.
-- `products`: every non-suppressed product with at least one purchase in the last 26 weeks — the recent scope; anything older is not sent at all — as `{ id, name, category, purchases: [...] }`, dates descending, at most the last 12 purchases per product; flags `onList`, `dismissed` (T34 dismissals for this list) and `rejected` (proposed by an earlier proposal on this list and not accepted).
+- `products`: every non-suppressed product with at least one purchase in the last 26 weeks — the recent scope; anything older is not sent at all — as `{ id, name, category, purchases: [...] }`, dates descending, at most the last 12 purchases per product; flags `onList`, `dismissed` (T34 dismissals for this list) and `rejected` (proposed by an earlier proposal on this list and not accepted); `variants` (T40, ADR-0019), the names of a group's children, omitted from the JSON when the product is ungrouped, to spend no tokens on the common case.
 - `listItems`: the names on the list now, checked or not, so manual items without a product are visible too.
 - A size guard: a serialised context over 40,000 characters drops purchases older than 12 weeks first, then caps products at 250 by most recent purchase; one `warn` log line records the counts.
 
 The prompt asks for 5 to 15 additions for one weekly trip covering the coming seven days (the same frame as T36), weighing the last 8 weeks most, varying dinner items against the last 2 weeks of dinner-bearing purchases, and using the date and calendar events for seasonal and calendar-driven goods; season itself (grilling, strawberries, fårikål, lutefisk and the like) is left to the model's own knowledge of the date, not enumerated in the prompt.
 It must never propose something `onList`, `dismissed`, `rejected`, or bought today or yesterday (the same rule as the engine's step 3, T36).
+`PROPOSE_PROMPT_VERSION` is 2 as of T40 (ADR-0019), which adds one rule: a product may list variants, and proposing a variant of a product that is on the list, dismissed, rejected or recently bought is not variation and must not be proposed — the model should name the product, not the variant, and the household chooses in the shop.
 
 Expected output, one JSON object:
 
@@ -533,7 +542,7 @@ Expected output, one JSON object:
 }
 ```
 
-`runProposal(llm, context)` (`src/server/llm/proposeList.ts`) parses this with zod, then: drops an item whose `productId` is not in the context or whose `category` is not in `PRODUCT_CATEGORIES` (one `warn` log naming the count, never the text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought today or yesterday (the same rule as the engine's step 3, T36) as a defence against the model ignoring the prompt's own rule, and returns at most 15 items.
+`runProposal(llm, context)` (`src/server/llm/proposeList.ts`) parses this with zod, then: a `productId` that resolves to a child whose parent is `onList`, `dismissed` or `rejected` is filtered like the parent would be; a `productId` that resolves to a child otherwise is rewritten to the parent's id, so the list always gets the group (T40); drops an item whose `productId` is not in the context or whose `category` is not in `PRODUCT_CATEGORIES` (one `warn` log naming the count, never the text), de-duplicates by normalised name, filters out anything `onList`, `dismissed`, `rejected` or bought today or yesterday (the same rule as the engine's step 3, T36) as a defence against the model ignoring the prompt's own rule, and returns at most 15 items.
 `OpenAiCompatibleClient`'s `stageFor` maps the `propose` purpose to a new `ExtractionStage` value, `'proposal'`; a failure surfaces as an `AppError` with the Norwegian message "Kunne ikke lage forslag, prøv igjen".
 
 ## 8. Suggestion engine (`domain/suggestions.ts`, ADR-0008)
@@ -541,6 +550,7 @@ Expected output, one JSON object:
 Pure function `computeSuggestions(histories, today)`.
 
 Input per product: `{ productId, name, category, suppressed, purchases: { date, quantity, unit }[] }` where purchases are aggregated per receipt date (quantities summed) from `receipt_lines` with `kind = 'item'` joined to receipts with `status = 'done'`.
+`loadProductHistories` (`src/server/domain/productStats.ts`) folds a variant's purchases into its parent's history before this function ever sees it (T40, ADR-0019), so a grouped product is one row here like any other, named after the parent and carrying the group's combined purchases; this function is unchanged and unaware of grouping.
 
 Algorithm, evaluated per product:
 
@@ -602,12 +612,18 @@ type ReceiptDetail = ReceiptSummary & {
 type Product = {
   id: number; name: string; category: string | null; suppressed: boolean;
   timesBought: number; lastBought: string | null; medianIntervalDays: number | null;
+  parentId: number | null; variantCount: number;
 };
 
 type ProductDetail = Product & {
   aliases: { id: number; alias: string; source: 'llm' | 'user' }[];
   purchases: { receiptId: number; date: string; storeName: string | null; quantity: number; unit: string | null; totalOre: number }[];
+  parent: { id: number; name: string } | null;
+  variants: { id: number; name: string; timesBought: number; lastBought: string | null }[];
+  groupStats: { timesBought: number; lastBought: string | null; medianIntervalDays: number | null } | null;
 };
+
+type GroupCandidate = { suggestedName: string; productIds: number[] };
 
 type Suggestion = { productId: number; name: string; category: string | null; reason: string; quantityText: string; score: number };
 
@@ -651,12 +667,16 @@ type ShoppingListProposal = {
 | `DELETE /api/receipts/:id` | — | `204` | Cascades lines and image. |
 | `PATCH /api/receipt-lines/:id` | `{ productId }`, `{ newProductName, category? }` or `{ totalOre?, quantity?, unitPriceOre?, kind? }` (at least one field) | `200 ReceiptLine` | The product bodies upsert a user alias and remove `UNMATCHED_LINES` from the receipt when no item line has `product_id IS NULL`; `MATCHING_FAILED` is left alone. The fields body recomputes both `TOTAL_MISMATCH` and `UNMATCHED_LINES` the same way, leaves every other warning alone, and is only accepted when the receipt is `done` (else `409`); `totalOre` must be at most 0 for a `discount` and at least 0 otherwise, checked against the resulting kind; changing `kind` away from `item` clears `product_id` and `match_source`, changing it to `item` leaves `product_id` null. |
 | `DELETE /api/receipt-lines/:id` | — | `204` | Only when the receipt is `done`, else `409`. `line_no` of the remaining lines is left as is. Recomputes `TOTAL_MISMATCH` and `UNMATCHED_LINES` the same way the fields `PATCH` does. |
-| `GET /api/products?q=&includeSuppressed=` | — | `200 Product[]` | `q` filters on `name_normalized` contains `normalizeText(q)`. Ordered by `timesBought` desc, then name. |
-| `GET /api/products/:id` | — | `200 ProductDetail` | |
+| `GET /api/products?q=&includeSuppressed=` | — | `200 Product[]` | `q` filters on `name_normalized` contains `normalizeText(q)`. Ordered by `timesBought` desc, then name; a child sorts directly after its parent when both are in the result (T40). |
+| `GET /api/products/:id` | — | `200 ProductDetail` | `parent`/`variants`/`groupStats` T40; `groupStats` is `null` unless the product is a parent. |
 | `POST /api/products` | `{ name, category? }` | `201 Product` | `409` on duplicate normalized name. |
 | `PATCH /api/products/:id` | `{ name?, category?, suppressed? }` | `200 Product` | |
-| `POST /api/products/:id/merge` | `{ intoProductId }` | `200 Product` | Returns the target. `400` when ids are equal. |
+| `POST /api/products/:id/merge` | `{ intoProductId }` | `200 Product` | Returns the target. `400` when ids are equal. Deleting a parent this way (the only delete path for a product with children) sets its former children's `parentId` to `null` (T40). |
 | `DELETE /api/product-aliases/:id` | — | `204` | Lines keep their product; only future matching changes. |
+| `POST /api/products/:id/parent` | `{ parentId }` | `200 Product` | Attaches; returns the child. `400` when `parentId === id`; `404` when either product is missing; `409 Produktet er allerede en varegruppe` when the product itself has children; `409 Varegruppen kan ikke ligge i en annen gruppe` when the target already has a parent — depth stays exactly one. T40. |
+| `DELETE /api/products/:id/parent` | — | `204` | Detaches. `404` when the product has no parent. T40. |
+| `POST /api/product-groups` | `{ name, category?, memberIds: number[] }` | `201 ProductDetail` | Creates the parent product (`category` defaults to the first member's) and attaches every member in one transaction, with the same depth checks as `POST .../parent`. `409` on a duplicate normalised name. T40. |
+| `GET /api/products/group-candidates` | — | `200 GroupCandidate[]` | `findGroupCandidates` over every product: unsuppressed, without a parent and without children, grouped by category and the first two tokens of the normalised name; at least two members; capped at 10, sorted by member count then name. T40. |
 | `GET /api/suggestions` | — | `200 Suggestion[]` | Computed on demand; no caching. |
 | `GET /api/shopping-lists/current` | — | `200 ShoppingList` | `404` when no open list. |
 | `GET /api/shopping-lists/:id` | — | `200 ShoppingList` | `404` when missing. `trip` is `null` while the list is `open` or has no linked receipt; `receipts` is the linked receipts, newest first. T39. |
@@ -685,8 +705,8 @@ type ShoppingListProposal = {
 | `/scan` | ScanPage | "Ta bilde" (`<input type="file" accept="image/*" capture="environment">`, one photo) and "Velg fra bilder" (same input without `capture`, `multiple`). Every selected file is downscaled and uploaded at once, one after the other in selection order, in a list with per-file state: "Laster opp … 45 %", "Lastet opp", "Allerede skannet" with a link to the existing receipt, or "Feilet: {message}". Below the list, "Skann (1)" or "Skann alle (n)" for every receipt with status `uploaded`; it calls scan for each and navigates to `/receipts/:id` when n is 1, else to `/receipts`. |
 | `/receipts` | ReceiptsPage | List with store, date as `4. sep. · 3 dager siden`, total, status badge and warning count; tap opens the receipt. "Skann" on each `uploaded` row and "Skann alle (n)" above the list. Between the "Skann alle" button and the list, a collapsed `<details>` "Statistikk og historikk" (Phase 2, T23): opened, it fetches `GET /api/stats/summary` and `GET /api/shopping-lists` and shows monthly totals as a plain bar list, "Mest kjøpt, alle kvitteringer" (all-time top 10 products), the shopping list history (week, item count, status, each row linking to its detail page and showing `12 av 14 kjøpt · 5 utenom` when `tripCounts` is set, T39) and, since T37, `AI-forslag` (proposals, proposed, accepted, bought) and `Handleturer` (completed lists, of which with receipt, share of planned items bought, unplanned items per trip, T39) — `aiProposals` has been in the API since T37 but was not rendered anywhere until this task; closed, neither request fires, so the everyday visit costs nothing extra. |
 | `/receipts/:id` | ReceiptPage | While `uploaded`: image thumbnail, "Skann" and "Slett kvittering". While `pending`/`processing`: image thumbnail and `I kø…`/`Leser kvittering…` with the seconds since `updatedAt` (not since the component mounted, T30), ticking, with polling. When `failed`: error, "Prøv igjen" (calls scan) and "Slett kvittering" (T30). When `done`: editable header (store, date, total), a `Handleliste` select under it (`Ingen` and the eight most recent `done` lists as `Uke 37, fullført 7. sep`, saved through `PATCH`, with a note `Knyttes automatisk når datoene stemmer`; when linked, a `Handleliste uke 37` link instead), warning chips (the `POSSIBLE_DUPLICATE` chip links to the other receipt), the receipt image in a sticky, scrollable panel: toggled with `Vis bilde` on a phone, always beside the lines on desktop, tap opens the full image (T35), lines with product picker per item line; each line's amount and kind can be corrected and a line deleted, warnings recompute; "Ferdig" that sets `reviewed`. `Slett kvittering` (`uploaded`/`failed`/`done`) is one shared component: `window.confirm`, toast "Kvitteringen er slettet", navigate to `/receipts`. T39: the select. |
-| `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed. |
-| `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product, aliases with delete, purchase history. |
+| `/products` | ProductsPage | Search field, list with times bought, last bought, interval; toggle to show suppressed; a child renders indented under its parent when both are in the result, otherwise with a `variant av …` line under its name; a collapsed `Kan være samme vare (n)` block above the list when `GET /api/products/group-candidates` has candidates, each row naming its members and a suggested group name (editable) with `Grupper` to create the group and `Ikke nå` to hide it (remembered per candidate in `localStorage`, no server state). T40. |
+| `/products/:id` | ProductPage | Rename, category select, "Ikke foreslå" toggle, merge into another product (confirm text now also says `Er det varianter av samme vare, bruk Varegruppe i stedet.`), aliases with delete, purchase history. A `Varegruppe` section between "Ikke foreslå" and "Alias": ungrouped shows `Legg i gruppe…` through the existing `ProductPicker` (choosing a parent attaches; choosing another ungrouped product opens a `Navn på varegruppen` dialog and calls `POST /api/product-groups`; the picker's `Opprett «…»` creates a new parent with this product as its only member); a variant shows `Variant av «<parent>»` as a link and `Fjern fra gruppen`; a parent shows `Varianter (n)` as links with each variant's own count and last-bought date, and the group's folded `groupStats` line, with no `Legg i gruppe`. T40. |
 
 Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`), Varer (`/products`).
 

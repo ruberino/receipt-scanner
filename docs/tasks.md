@@ -937,3 +937,26 @@ Acceptance criteria:
 - Existing receipts and lists survive migration `0006` with their ids and `shopping_list_id = null`.
 
 Tests: linking rule with fixed dates; comparison with product and name matches, two receipts, grouping, checked-but-not-bought; routes (`401` on the new endpoint, `GET` by id with and without receipts, `PATCH` link/unlink/404, `complete` linking same-day receipts only, processor `done` linking within one day); stats fields; migration survival and `SET NULL` on list delete; client (detail page, null message, receipt selector, history label, statistics section).
+
+---
+
+## T40 — Varegrupper, one product with its variants
+
+Goal: two flavours of the same product (e.g. two yoghurt flavours) can be grouped so the engine, the list, the AI proposal and Handleturen work on the group's combined habit, while the receipt keeps the exact variant bought.
+
+Files: `src/server/db/schema.ts`, one migration, `src/server/domain/productGroups.ts` (new), `src/server/domain/productStats.ts`, `src/server/domain/trip.ts`, `src/server/domain/proposalContext.ts`, `src/server/llm/prompts/proposeList.prompt.ts`, `src/server/llm/proposeList.ts`, `src/server/routes/products.ts`, `src/server/routes/shoppingLists.ts`, `src/shared/schemas.ts`, `src/client/pages/ProductPage.tsx`, `src/client/pages/ProductsPage.tsx`, `docs/adr/0019-*.md`, tests.
+
+Steps: see `docs/reviews/T40-plan.md`.
+
+Acceptance criteria:
+
+- With two products bought on alternating weeks for eight weeks and grouped under one parent, the engine suggests the parent every week with the folded weekly quantity, and neither child appears; ungrouped they are suggested as today.
+- A list item for the parent counts as bought in Handleturen when the receipt has either variant; a sibling of an explicitly listed variant shows under `Utenom lista`.
+- The AI context carries `variants` for grouped products and the prompt version is 2; a proposal naming a variant of an on-list group is filtered.
+- The product page can group, name the group, and ungroup; the depth-one rule gives `409` on both violations; deleting a parent through merge leaves its children ungrouped.
+- A receipt line whose text is the bare group name matches the parent product.
+- The products page offers group candidates for at least the two-flavour case and hides one on `Ikke nå`.
+- Existing products survive migration `0007` with `parent_id = null`; the generated SQL carries `ON DELETE SET NULL`.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` pass; no extraction eval (no extraction prompt, model or schema change).
+
+Tests: fold with summed quantities, dates, units, suppressed child and parent, `variants`; candidates heuristic; trip with a parent map; proposal context `variants` and parser mapping; routes (`401`s, attach, detach, conflicts, group creation, duplicate name, candidates, detail of a parent, merge interactions); migration survival and `SET NULL`; engine end to end with grouped histories; client pages and flows.
