@@ -259,6 +259,36 @@ describe('runProposal', () => {
     expect(result.items).toEqual([expect.objectContaining({ productId: 1, name: 'Skyr mini' })]);
   });
 
+  it('maps a variant name to the parent name even when productId is already the parent (F1)', async () => {
+    const llm = new FakeLlmClient([
+      completion([{ ...validItem, productId: 1, name: 'Skyr mini jordbær' }]),
+    ]);
+    const ctx = context({
+      products: [
+        product({ id: 1, name: 'Skyr mini', variants: ['Skyr mini jordbær', 'Skyr mini banan'] }),
+      ],
+    });
+
+    const result = await runProposal(llm, ctx, 9);
+
+    expect(result.items).toEqual([expect.objectContaining({ productId: 1, name: 'Skyr mini' })]);
+  });
+
+  it('leaves a group named directly (not by a variant name) unchanged', async () => {
+    const llm = new FakeLlmClient([
+      completion([{ ...validItem, productId: 1, name: 'Skyr mini' }]),
+    ]);
+    const ctx = context({
+      products: [
+        product({ id: 1, name: 'Skyr mini', variants: ['Skyr mini jordbær', 'Skyr mini banan'] }),
+      ],
+    });
+
+    const result = await runProposal(llm, ctx, 9);
+
+    expect(result.items).toEqual([expect.objectContaining({ productId: 1, name: 'Skyr mini' })]);
+  });
+
   it('filters a variant name like its parent when the parent is on the list (T40)', async () => {
     const llm = new FakeLlmClient([
       completion([{ ...validItem, productId: null, name: 'Skyr mini jordbær' }]),

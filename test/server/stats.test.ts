@@ -208,6 +208,26 @@ describe('GET /api/stats/summary', () => {
     expect(response.json().topProducts).toHaveLength(10);
   });
 
+  it('counts a group once with its folded stats, leaving both variants out (T40 F2)', async () => {
+    app = createTestApp({ now: () => new Date(NOW) });
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const jordbaer = insertProduct('Skyr mini jordbær', { parentId: parent });
+    const banan = insertProduct('Skyr mini banan', { parentId: parent });
+    insertLine(insertReceipt({ purchasedAt: '2026-01-05', totalOre: 100 }), jordbaer);
+    insertLine(insertReceipt({ purchasedAt: '2026-01-12', totalOre: 100 }), banan);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/stats/summary?months=1',
+      headers: { cookie },
+    });
+
+    const topProducts = response.json().topProducts as { id: number }[];
+    expect(topProducts.map((product) => product.id)).toEqual([parent]);
+    expect(topProducts[0]).toMatchObject({ timesBought: 2, lastBought: '2026-01-12' });
+  });
+
   it('sums proposals, proposed items and accepted items across every proposal (T37)', async () => {
     app = createTestApp({ now: () => new Date(NOW) });
     cookie = await loginCookie(app);

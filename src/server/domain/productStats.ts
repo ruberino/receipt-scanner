@@ -37,8 +37,16 @@ export function computeProductStats(purchaseDates: string[]): ProductStats {
   };
 }
 
-/** One query for every product's purchase dates, for a product list instead of one query each. */
-export function loadProductStatsMap(db: AppDatabase): Map<number, ProductStats> {
+/**
+ * One query for every product's purchase dates, for a product list instead of one query each.
+ * With `parentOf` (T40, ADR-0019), a parent's entry is the group's folded stats — its own
+ * purchases plus every child's, even when the parent has none of its own — while a child keeps
+ * its own entry unchanged; an ungrouped product is unaffected either way.
+ */
+export function loadProductStatsMap(
+  db: AppDatabase,
+  parentOf: ReadonlyMap<number, number> = new Map(),
+): Map<number, ProductStats> {
   const rows = db
     .select({ productId: receiptLines.productId, date: receipts.purchasedAt })
     .from(receiptLines)
@@ -47,18 +55,30 @@ export function loadProductStatsMap(db: AppDatabase): Map<number, ProductStats> 
     .all();
 
   const datesByProduct = new Map<number, string[]>();
+  const foldedDatesByFoldKey = new Map<number, string[]>();
   for (const row of rows) {
     if (row.productId === null) {
       continue;
     }
+    const date = row.date as string;
     const dates = datesByProduct.get(row.productId) ?? [];
-    dates.push(row.date as string);
+    dates.push(date);
     datesByProduct.set(row.productId, dates);
+
+    const foldKey = parentOf.get(row.productId) ?? row.productId;
+    const foldedDates = foldedDatesByFoldKey.get(foldKey) ?? [];
+    foldedDates.push(date);
+    foldedDatesByFoldKey.set(foldKey, foldedDates);
   }
 
   const statsByProduct = new Map<number, ProductStats>();
   for (const [productId, dates] of datesByProduct) {
     statsByProduct.set(productId, computeProductStats(dates));
+  }
+  // Overwrites a parent's own-only entry above with the group's folded one (and adds an entry for
+  // a parent with no purchases of its own); a child is never a fold key, so its own entry stands.
+  for (const [foldKey, dates] of foldedDatesByFoldKey) {
+    statsByProduct.set(foldKey, computeProductStats(dates));
   }
   return statsByProduct;
 }

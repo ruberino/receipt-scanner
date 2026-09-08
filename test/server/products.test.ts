@@ -197,6 +197,52 @@ describe('GET /api/products', () => {
     expect(response.statusCode).toBe(200);
     expect(statements.length).toBeLessThanOrEqual(2);
   });
+
+  it("shows a parent with the group's folded stats and a child with its own (T40 F2)", async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const jordbaer = insertProduct('Skyr mini jordbær', { parentId: parent });
+    const banan = insertProduct('Skyr mini banan', { parentId: parent });
+    const r1 = insertReceipt('2026-08-01');
+    insertLine(r1, jordbaer);
+    const r2 = insertReceipt('2026-08-08');
+    insertLine(r2, banan);
+
+    const response = await app.inject({ method: 'GET', url: '/api/products', headers: { cookie } });
+
+    const body = response.json();
+    expect(body.find((p: { id: number }) => p.id === parent)).toMatchObject({
+      timesBought: 2,
+      lastBought: '2026-08-08',
+    });
+    expect(body.find((p: { id: number }) => p.id === jordbaer)).toMatchObject({
+      timesBought: 1,
+      lastBought: '2026-08-01',
+    });
+    expect(body.find((p: { id: number }) => p.id === banan)).toMatchObject({
+      timesBought: 1,
+      lastBought: '2026-08-08',
+    });
+  });
+
+  it("folds a parent's stats even when a matching search excludes its children (T40 F2)", async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    // Deliberately unrelated to the parent's name, so a search for the parent's name excludes it.
+    const child = insertProduct('Fruktyoghurt banan', { parentId: parent });
+    const r1 = insertReceipt('2026-08-01');
+    insertLine(r1, child);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/products?${new URLSearchParams({ q: 'Skyr mini' }).toString()}`,
+      headers: { cookie },
+    });
+
+    expect(response.json()).toEqual([expect.objectContaining({ id: parent, timesBought: 1 })]);
+  });
 });
 
 describe('GET /api/products/:id', () => {

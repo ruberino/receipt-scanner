@@ -130,15 +130,20 @@ export default async function statsRoutes(
     // All-time, not scoped to `months`: Product's own fields already mean all-time everywhere
     // else in the app (the products list, the product page), so a second, window-scoped
     // `timesBought` here would show a different number for the same product depending on screen.
-    const statsByProduct = loadProductStatsMap(app.db);
     const allProducts = app.db.select().from(products).all();
+    const parentOf = new Map<number, number>();
     const variantCounts = new Map<number, number>();
     for (const product of allProducts) {
       if (product.parentId !== null) {
+        parentOf.set(product.id, product.parentId);
         variantCounts.set(product.parentId, (variantCounts.get(product.parentId) ?? 0) + 1);
       }
     }
+    const statsByProduct = loadProductStatsMap(app.db, parentOf);
+    // A variant is left out (T40, ADR-0019, F2): its purchases already count under its parent's
+    // folded stats, so a child's own line here would count the same habit twice.
     const topProducts = allProducts
+      .filter((product) => product.parentId === null)
       .map((product) =>
         toProduct(
           product,

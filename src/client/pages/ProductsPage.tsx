@@ -14,6 +14,10 @@ function timesBoughtLabel(count: number): string {
   return count === 1 ? 'Kjøpt 1 gang' : `Kjøpt ${count} ganger`;
 }
 
+function variantCountLabel(count: number): string {
+  return count === 1 ? '1 variant' : `${count} varianter`;
+}
+
 function candidateKey(productIds: number[]): string {
   return [...productIds].sort((a, b) => a - b).join(',');
 }
@@ -55,6 +59,9 @@ function ProductRow({
             </span>
           )}
         </div>
+        {product.variantCount > 0 && (
+          <span className="text-sm text-gray-500">{variantCountLabel(product.variantCount)}</span>
+        )}
         <span className="text-sm text-gray-600">{product.category ?? 'Annet'}</span>
         {parentName !== null && !indented && (
           <span className="text-sm text-gray-500">variant av {parentName}</span>
