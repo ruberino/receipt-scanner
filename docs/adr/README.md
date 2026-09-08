@@ -24,6 +24,7 @@ To change a decision, write a new ADR that supersedes the old one and link both 
 | [0016](0016-llm-shopping-list-proposal.md) | An LLM proposal beside the rule engine, user-triggered and reviewed | Superseded in part by ADR-0017 |
 | [0017](0017-llm-provider-per-purpose.md) | One LLM provider per purpose | Accepted |
 | [0018](0018-shopping-trip-outcome.md) | A receipt belongs to a list; the outcome is computed, not stored | Accepted |
+| [0019](0019-product-groups-fold-variants.md) | A parent product folds its variants | Accepted |
 
 ## Template
 
