@@ -45,3 +45,20 @@ All five scripts exit 0 in a clean worktree at `878c2dd`, 812 tests, Vitest at t
 Approved: re-read this file, commit it on the branch, push, wait for green, merge with `gh pr merge --rebase --delete-branch`, `git pull --ff-only`.
 After the merge the foreman updates the demo once its scan queue is empty, with a database backup first, and runs the real-data check described in the plan.
 The Kvitteringer queue is empty after this task.
+
+## Real-data check, 2026-09-08
+
+Run by the foreman on the demo at `c2c2abc` against the household database (337 products), after a backup and with an empty scan queue; migration `0007` applied at start-up with no error lines and `PRAGMA foreign_key_check` clean.
+Through the API, counts only:
+
+| Step | Result |
+| --- | --- |
+| `GET /api/products/group-candidates` | 10 candidates (the cap), the two largest with 4 members each, one with 3, seven with 2; the yoghurt group the task started from is among the two largest, so the heuristic proposed it unaided |
+| `GET /api/suggestions` before grouping | 38 suggestions, two of them variants of that yoghurt with 2 and 1 in quantity |
+| `POST /api/product-groups` with the candidate's four members | `201`, `variantCount` 4, `groupStats` 4 purchases with a median gap of 8 days, variants with 2, 1, 2 and 1 purchases |
+| `GET /api/suggestions` after grouping | 37 suggestions; the two variant rows are gone and one row for the group stands in their place with quantity 2 and the reason "Kjøpes ca. hver 7. dag" |
+| `GET /api/products/group-candidates` after | 10 (the next candidate moved up into the cap) |
+
+Judgement: the fold does what the plan promised on real rows: one habit, one row, the weekly quantity from the summed variants.
+One observation for the household rather than the code: the candidate heuristic groups by name prefix, so a multi-pack variant landed in the same group as the single cups; the quantity `2 stk` then means two of whichever the household picks, and the product page's `Fjern fra gruppen` is the way to split it if that matters.
+The group created here stays in the demo database as the first real varegruppe; product names went to Ruben directly (architecture section 11).
