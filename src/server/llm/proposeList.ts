@@ -141,12 +141,10 @@ export async function runProposal(
   for (const item of parsed.data.items) {
     let productId = item.productId;
     let name = item.name;
-    if (productId === null) {
-      const parentId = childNameToParentId.get(normalizeText(name));
-      if (parentId !== undefined) {
-        productId = parentId;
-        name = productsById.get(parentId)?.name ?? name;
-      }
+    const parentId = childNameToParentId.get(normalizeText(name));
+    if (parentId !== undefined) {
+      productId = parentId;
+      name = productsById.get(parentId)?.name ?? name;
     }
 
     if (productId !== null && !productsById.has(productId)) {

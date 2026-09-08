@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { and, desc, eq, inArray, like } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   attachProductParentSchema,
@@ -162,26 +162,27 @@ export default async function productsRoutes(app: FastifyInstance): Promise<void
   app.get('/api/products', async (request) => {
     const query = listQuerySchema.parse(request.query);
 
-    const conditions = [
-      query.q !== undefined
-        ? like(products.nameNormalized, `%${normalizeText(query.q)}%`)
-        : undefined,
-      query.includeSuppressed === 'true' ? undefined : eq(products.suppressed, 0),
-    ].filter((condition) => condition !== undefined);
+    // Unfiltered, then filtered in JS (household scale, at most two SQL statements either way):
+    // folding a parent's stats needs every child's id system-wide, not only the ones that happen
+    // to also match the current search text (T40, ADR-0019, F2).
+    const allRows = app.db.select().from(products).all();
+    const normalizedQuery = query.q !== undefined ? normalizeText(query.q) : undefined;
+    const includeSuppressed = query.includeSuppressed === 'true';
+    const rows = allRows.filter(
+      (row) =>
+        (includeSuppressed || row.suppressed === 0) &&
+        (normalizedQuery === undefined || row.nameNormalized.includes(normalizedQuery)),
+    );
 
-    const rows = app.db
-      .select()
-      .from(products)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .all();
-
-    const statsByProduct = loadProductStatsMap(app.db);
+    const parentOf = new Map<number, number>();
     const variantCounts = new Map<number, number>();
-    for (const row of rows) {
+    for (const row of allRows) {
       if (row.parentId !== null) {
+        parentOf.set(row.id, row.parentId);
         variantCounts.set(row.parentId, (variantCounts.get(row.parentId) ?? 0) + 1);
       }
     }
+    const statsByProduct = loadProductStatsMap(app.db, parentOf);
 
     const sorted = rows
       .map((row) =>

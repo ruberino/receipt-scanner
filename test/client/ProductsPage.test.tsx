@@ -182,6 +182,18 @@ describe('ProductsPage', () => {
   });
 
   describe('product groups (T40)', () => {
+    it("shows a parent's variant count under its name (F2)", () => {
+      mockProducts([
+        product({ id: 1, name: 'Skyr mini', variantCount: 2, timesBought: 8 }),
+        product({ id: 2, name: 'Skyr mini banan', parentId: 1 }),
+      ]);
+
+      renderProductsPage();
+
+      expect(screen.getByText('2 varianter')).toBeInTheDocument();
+      expect(screen.queryByText('1 variant')).not.toBeInTheDocument();
+    });
+
     it('indents a child directly under its parent when both are in the result', () => {
       mockProducts([
         product({ id: 1, name: 'Skyr mini', variantCount: 1 }),
