@@ -5,6 +5,7 @@ import { products, receiptLines, receipts } from '../../../src/server/db/schema.
 import {
   computeProductStats,
   loadProductHistories,
+  loadProductHistoriesUnfolded,
   loadProductStats,
   loadProductStatsMap,
 } from '../../../src/server/domain/productStats.ts';
@@ -241,5 +242,36 @@ describe('loadProductHistories', () => {
     insertProduct('Never bought');
 
     expect(loadProductHistories(opened.db)).toEqual([]);
+  });
+
+  it("folds a variant's purchases into its parent's row (T40)", () => {
+    opened = createDb();
+    const parentId = insertProduct('Skyr mini');
+    const childId = insertProduct('Skyr mini jordbær', { parentId });
+    const r1 = insertReceipt('2026-08-01');
+    insertLine(r1, 1, childId, { quantity: 2, unit: 'stk' });
+
+    const histories = loadProductHistories(opened.db);
+
+    expect(histories).toHaveLength(1);
+    expect(histories[0]).toMatchObject({
+      productId: parentId,
+      name: 'Skyr mini',
+      variants: ['Skyr mini jordbær'],
+    });
+    expect(histories[0]!.purchases).toEqual([{ date: '2026-08-01', quantity: 2, unit: 'stk' }]);
+  });
+
+  it("loadProductHistoriesUnfolded keeps a variant's purchases on its own row (T40)", () => {
+    opened = createDb();
+    const parentId = insertProduct('Skyr mini');
+    const childId = insertProduct('Skyr mini jordbær', { parentId });
+    const r1 = insertReceipt('2026-08-01');
+    insertLine(r1, 1, childId, { quantity: 2, unit: 'stk' });
+
+    const histories = loadProductHistoriesUnfolded(opened.db);
+
+    expect(histories).toHaveLength(1);
+    expect(histories[0]).toMatchObject({ productId: childId, name: 'Skyr mini jordbær' });
   });
 });

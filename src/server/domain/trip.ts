@@ -28,6 +28,9 @@ export type ComputeTripInput = {
   /** Product names for the products referenced by `lines`, so an unplanned/matched line can show
    * its canonical name rather than the raw receipt text. */
   productNames: Map<number, string>;
+  /** `productId -> parentId` for every variant referenced by `lines` (T40, ADR-0019); empty for a
+   * household with no groups, in which case this function behaves exactly as it did before T40. */
+  parentOf: ReadonlyMap<number, number>;
 };
 
 export type TripPlannedRow = {
@@ -64,22 +67,29 @@ function lineDisplayName(line: TripLine, productNames: Map<number, string>): str
  * Compares a list's items against the item lines of its linked receipts (T39, ADR-0018): pure
  * given its inputs, computed on every read, nothing stored back.
  *
- * A planned item is `bought` when a line shares its `productId` (for an item with a product), or
+ * A planned item is `bought` when a line shares its `productId`, or a line's product is a variant
+ * of it (`parentOf`, T40, ADR-0019 — an item whose own product is itself a variant only matches
+ * its own id this way, since depth is exactly one and nothing points at a variant as a parent), or
  * when a line's display name (its product's name, or its raw text when it has none) normalises to
  * the same text as the item's name — the name check applies to every item, with or without a
  * product, since a line can fail product matching (ADR-0004) and still read the same text as a
  * planned item that did match a product; otherwise `notBought`.
- * A line is `unplanned` when its own `productId` is not one of the planned items' product ids
- * (for a line with a product), or its normalised raw text matches no planned item's name (for a
- * line without one); unplanned lines are grouped by product id (or normalised text when there is
- * none), quantities summed, keeping the unit of the first line in each group.
+ * A line is `unplanned` when neither its own `productId` nor its parent is one of the planned
+ * items' product ids (for a line with a product), or its normalised raw text matches no planned
+ * item's name (for a line without one); unplanned lines are grouped by product id (or normalised
+ * text when there is none) — a variant stays its own group, so the household sees which flavour
+ * came home — quantities summed, keeping the unit of the first line in each group.
  */
-export function computeTrip({ items, lines, productNames }: ComputeTripInput): Trip {
-  const lineProductIds = new Set<number>();
+export function computeTrip({ items, lines, productNames, parentOf }: ComputeTripInput): Trip {
+  const lineProductIdsOrParents = new Set<number>();
   const lineNames = new Set<string>();
   for (const line of lines) {
     if (line.productId !== null) {
-      lineProductIds.add(line.productId);
+      lineProductIdsOrParents.add(line.productId);
+      const parentId = parentOf.get(line.productId);
+      if (parentId !== undefined) {
+        lineProductIdsOrParents.add(parentId);
+      }
     }
     lineNames.add(normalizeText(lineDisplayName(line, productNames)));
   }
@@ -95,7 +105,7 @@ export function computeTrip({ items, lines, productNames }: ComputeTripInput): T
 
   const planned: TripPlannedRow[] = items.map((item) => {
     const bought =
-      (item.productId !== null && lineProductIds.has(item.productId)) ||
+      (item.productId !== null && lineProductIdsOrParents.has(item.productId)) ||
       lineNames.has(normalizeText(item.name));
     return {
       itemId: item.id,
@@ -110,7 +120,11 @@ export function computeTrip({ items, lines, productNames }: ComputeTripInput): T
   const unplannedGroups = new Map<string, TripUnplannedRow>();
   for (const line of lines) {
     if (line.productId !== null) {
-      if (plannedProductIds.has(line.productId)) {
+      const parentId = parentOf.get(line.productId);
+      if (
+        plannedProductIds.has(line.productId) ||
+        (parentId !== undefined && plannedProductIds.has(parentId))
+      ) {
         continue;
       }
       const key = `p:${line.productId}`;

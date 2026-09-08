@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeTrip, type TripItem, type TripLine } from '../../../src/server/domain/trip.ts';
+import {
+  computeTrip,
+  type ComputeTripInput,
+  type TripItem,
+  type TripLine,
+} from '../../../src/server/domain/trip.ts';
 
 function item(overrides: Partial<TripItem> = {}): TripItem {
   return {
@@ -24,9 +29,17 @@ function line(overrides: Partial<TripLine> = {}): TripLine {
   };
 }
 
+/** Defaults `parentOf` to empty (no groups), the shape every pre-T40 test relies on. */
+function runTrip(
+  input: Omit<ComputeTripInput, 'parentOf'> & { parentOf?: ReadonlyMap<number, number> },
+) {
+  const { parentOf, ...rest } = input;
+  return computeTrip({ parentOf: parentOf ?? new Map(), ...rest });
+}
+
 describe('computeTrip', () => {
   it('matches a planned item to a line by productId', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 1, productId: 5, name: 'Lettmelk 1 l' })],
       lines: [line({ productId: 5, rawText: 'TINE LETTMELK 1L' })],
       productNames: new Map([[5, 'Lettmelk 1 l']]),
@@ -46,7 +59,7 @@ describe('computeTrip', () => {
   });
 
   it('matches a manual item with no productId to a line by normalised name', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 2, productId: null, name: 'Handlenett', source: 'manual' })],
       lines: [line({ productId: null, rawText: 'Handlenett' })],
       productNames: new Map(),
@@ -56,7 +69,7 @@ describe('computeTrip', () => {
   });
 
   it('marks a manual item spelt differently as notBought', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 2, productId: null, name: 'Handlenett' })],
       lines: [line({ productId: null, rawText: 'Handle-nett spesial' })],
       productNames: new Map(),
@@ -67,7 +80,7 @@ describe('computeTrip', () => {
   });
 
   it('matches a nameless item against a receipt line that does have a product, by the product name', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 1, productId: null, name: 'Lettmelk 1 l' })],
       lines: [line({ productId: 5, rawText: 'TINE LETTMELK 1L' })],
       productNames: new Map([[5, 'Lettmelk 1 l']]),
@@ -77,7 +90,7 @@ describe('computeTrip', () => {
   });
 
   it('matches an item with a product to a line whose matching failed but reads the same (F1)', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 1, productId: 7, name: 'Melk' })],
       lines: [line({ productId: null, rawText: 'MELK' })],
       productNames: new Map(),
@@ -88,7 +101,7 @@ describe('computeTrip', () => {
   });
 
   it('collects lines from two receipts on one trip', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [
         item({ id: 1, productId: 5, name: 'Lettmelk 1 l' }),
         item({ id: 2, productId: 6, name: 'Kaffe' }),
@@ -108,7 +121,7 @@ describe('computeTrip', () => {
   });
 
   it('groups unplanned lines and sums quantities across lines, keeping the first unit', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [],
       lines: [
         line({ receiptId: 1, productId: 9, rawText: 'BANAN', quantity: 3, unit: 'stk' }),
@@ -122,7 +135,7 @@ describe('computeTrip', () => {
   });
 
   it('sorts unplanned rows by name (nb)', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [],
       lines: [
         line({ receiptId: 1, productId: 1, rawText: 'YOGHURT' }),
@@ -138,7 +151,7 @@ describe('computeTrip', () => {
   });
 
   it('excludes a line from unplanned once its productId is among the planned items', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 1, productId: 5, name: 'Lettmelk 1 l' })],
       lines: [line({ productId: 5 })],
       productNames: new Map([[5, 'Lettmelk 1 l']]),
@@ -148,7 +161,7 @@ describe('computeTrip', () => {
   });
 
   it('keeps checked: true and status: notBought for a checked-but-not-bought item', () => {
-    const trip = computeTrip({
+    const trip = runTrip({
       items: [item({ id: 1, productId: 5, name: 'Lettmelk 1 l', checked: true })],
       lines: [],
       productNames: new Map(),
@@ -159,13 +172,62 @@ describe('computeTrip', () => {
   });
 
   it('returns zero counts and empty arrays for an empty list and no receipts', () => {
-    const trip = computeTrip({ items: [], lines: [], productNames: new Map() });
+    const trip = runTrip({ items: [], lines: [], productNames: new Map() });
 
     expect(trip).toEqual({
       planned: [],
       unplanned: [],
       counts: { planned: 0, bought: 0, notBought: 0, unplanned: 0 },
       receiptIds: [],
+    });
+  });
+
+  describe('product groups (T40, ADR-0019)', () => {
+    // Parent 1 "Skyr mini" has two variants: 2 "Skyr mini jordbær", 3 "Skyr mini banan".
+    const parentOf = new Map([
+      [2, 1],
+      [3, 1],
+    ]);
+    const productNames = new Map([
+      [1, 'Skyr mini'],
+      [2, 'Skyr mini jordbær'],
+      [3, 'Skyr mini banan'],
+    ]);
+
+    it('satisfies a planned group when the receipt has any of its variants', () => {
+      const trip = runTrip({
+        items: [item({ id: 1, productId: 1, name: 'Skyr mini' })],
+        lines: [line({ productId: 2, rawText: 'SKYR MINI JORDBÆR' })],
+        productNames,
+        parentOf,
+      });
+
+      expect(trip.planned[0]).toMatchObject({ status: 'bought' });
+      expect(trip.unplanned).toEqual([]);
+    });
+
+    it('does not satisfy a planned variant with a sibling variant', () => {
+      const trip = runTrip({
+        items: [item({ id: 1, productId: 2, name: 'Skyr mini jordbær' })],
+        lines: [line({ productId: 3, rawText: 'SKYR MINI BANAN' })],
+        productNames,
+        parentOf,
+      });
+
+      expect(trip.planned[0]).toMatchObject({ status: 'notBought' });
+    });
+
+    it('shows a sibling of a planned variant as unplanned', () => {
+      const trip = runTrip({
+        items: [item({ id: 1, productId: 2, name: 'Skyr mini jordbær' })],
+        lines: [line({ productId: 3, rawText: 'SKYR MINI BANAN' })],
+        productNames,
+        parentOf,
+      });
+
+      expect(trip.unplanned).toEqual([
+        { productId: 3, name: 'Skyr mini banan', quantity: 1, unit: 'stk' },
+      ]);
     });
   });
 });

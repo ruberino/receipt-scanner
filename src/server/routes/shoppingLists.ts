@@ -204,6 +204,26 @@ function loadProductNames(db: AppDatabase, productIds: number[]): Map<number, st
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
+/** `productId -> parentId` for whichever of `productIds` are variants (T40, ADR-0019); empty when
+ * none are grouped. */
+function loadParentOf(db: AppDatabase, productIds: number[]): Map<number, number> {
+  if (productIds.length === 0) {
+    return new Map();
+  }
+  const rows = db
+    .select({ id: products.id, parentId: products.parentId })
+    .from(products)
+    .where(inArray(products.id, productIds))
+    .all();
+  const parentOf = new Map<number, number>();
+  for (const row of rows) {
+    if (row.parentId !== null) {
+      parentOf.set(row.id, row.parentId);
+    }
+  }
+  return parentOf;
+}
+
 /** `null` while the list is `open` or has no linked receipt (T39, ADR-0018); otherwise the
  * comparison of the list's items against the linked receipts' item lines, computed fresh.
  * Exported for the stats route, which sums trip counts across every `done` list. */
@@ -232,7 +252,12 @@ export function computeTripForList(
     checked: item.checked === 1,
   }));
 
-  return computeTrip({ items, lines, productNames: loadProductNames(db, productIds) });
+  return computeTrip({
+    items,
+    lines,
+    productNames: loadProductNames(db, productIds),
+    parentOf: loadParentOf(db, productIds),
+  });
 }
 
 function buildShoppingListDetail(db: AppDatabase, list: typeof shoppingLists.$inferSelect) {

@@ -24,6 +24,9 @@ export type ProposalContextProduct = {
   onList: boolean;
   dismissed: boolean;
   rejected: boolean;
+  /** Names of this product's variants (T40, ADR-0019), omitted from the JSON when empty so an
+   * ungrouped product (the common case) costs no extra tokens. */
+  variants?: string[];
 };
 
 export type ProposalContext = {
@@ -116,6 +119,7 @@ function buildProducts(
       onList: flags.onList.has(history.productId),
       dismissed: flags.dismissed.has(history.productId),
       rejected: flags.rejected.has(history.productId),
+      variants: history.variants.length > 0 ? history.variants : undefined,
     });
   }
 

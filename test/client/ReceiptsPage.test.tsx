@@ -88,6 +88,8 @@ function product(overrides: Partial<Product> = {}): Product {
     timesBought: 3,
     lastBought: null,
     medianIntervalDays: null,
+    parentId: null,
+    variantCount: 0,
     ...overrides,
   };
 }

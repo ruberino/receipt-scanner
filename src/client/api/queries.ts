@@ -7,7 +7,9 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
+  CreateProductGroupRequest,
   CreateShoppingListItemRequest,
+  GroupCandidate,
   PatchProductRequest,
   PatchReceiptLineFieldsRequest,
   PatchReceiptLineRequest,
@@ -321,6 +323,55 @@ export function useDeleteProductAlias() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['products'] });
     },
+  });
+}
+
+/** Bound to the variant; attaches it to whichever product id is passed to `.mutate()` (T40). */
+export function useAttachProductParent(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (parentId: number) =>
+      fetchJson<Product>(`/api/products/${id}/parent`, {
+        method: 'POST',
+        body: JSON.stringify({ parentId }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useDetachProductParent(id: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => fetchJson<void>(`/api/products/${id}/parent`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useCreateProductGroup() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: CreateProductGroupRequest) =>
+      fetchJson<ProductDetail>('/api/product-groups', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+  });
+}
+
+export function useGroupCandidates() {
+  return useQuery({
+    queryKey: ['products', 'group-candidates'],
+    queryFn: () => fetchJson<GroupCandidate[]>('/api/products/group-candidates'),
   });
 }
 

@@ -23,6 +23,8 @@ function product(id: number, name: string): Product {
     timesBought: 1,
     lastBought: null,
     medianIntervalDays: null,
+    parentId: null,
+    variantCount: 0,
   };
 }
 

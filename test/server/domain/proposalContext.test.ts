@@ -16,6 +16,7 @@ function history(overrides: Partial<ProductHistory> = {}): ProductHistory {
     category: 'Meieri',
     suppressed: false,
     purchases: [{ date: '2026-09-01', quantity: 1, unit: 'stk' }],
+    variants: [],
     ...overrides,
   };
 }
@@ -114,6 +115,22 @@ describe('buildProposalContext', () => {
     );
 
     expect(context.products[0]?.purchases).toEqual(['2026-09-04 x2']);
+  });
+
+  it('carries variants for a grouped product and omits the key for an ungrouped one (T40)', () => {
+    const context = buildProposalContext(
+      baseInput({
+        histories: [
+          history({ productId: 1, variants: ['Skyr mini jordbær', 'Skyr mini banan'] }),
+          history({ productId: 2, name: 'Kaffe' }),
+        ],
+      }),
+    );
+
+    const grouped = context.products.find((product) => product.id === 1);
+    const ungrouped = context.products.find((product) => product.id === 2);
+    expect(grouped?.variants).toEqual(['Skyr mini jordbær', 'Skyr mini banan']);
+    expect(JSON.stringify(ungrouped)).not.toContain('variants');
   });
 
   it('flags a product as onList when a list item points at it', () => {

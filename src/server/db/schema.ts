@@ -62,15 +62,25 @@ export const receiptImages = sqliteTable('receipt_images', {
   sha256: text('sha256').notNull().unique(),
 });
 
-export const products = sqliteTable('products', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  nameNormalized: text('name_normalized').notNull().unique(),
-  category: text('category'),
-  suppressed: integer('suppressed').notNull().default(0),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-});
+export const products = sqliteTable(
+  'products',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    nameNormalized: text('name_normalized').notNull().unique(),
+    category: text('category'),
+    suppressed: integer('suppressed').notNull().default(0),
+    /** The group this product is a variant of (T40, ADR-0019); depth exactly one, enforced in the
+     * route handlers, not here. A parent is an ordinary product row and may have receipt lines of
+     * its own. */
+    parentId: integer('parent_id').references((): AnySQLiteColumn => products.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [index('products_parent').on(table.parentId)],
+);
 
 export const productAliases = sqliteTable(
   'product_aliases',

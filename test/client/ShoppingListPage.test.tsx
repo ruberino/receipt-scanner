@@ -142,6 +142,8 @@ function product(overrides: Partial<Product> = {}): Product {
     timesBought: 3,
     lastBought: '2026-09-01',
     medianIntervalDays: 14,
+    parentId: null,
+    variantCount: 0,
     ...overrides,
   };
 }
