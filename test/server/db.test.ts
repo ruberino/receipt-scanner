@@ -41,6 +41,7 @@ const preShoppingListLinkMigrationsFolder = path.resolve(
   'migrations',
   '0005-only',
 );
+const preParentIdMigrationsFolder = path.resolve(here, '..', 'fixtures', 'migrations', '0006-only');
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -66,7 +67,11 @@ function insertReceipt(
     .get();
 }
 
-function insertProduct(opened: OpenedDatabase, name: string) {
+function insertProduct(
+  opened: OpenedDatabase,
+  name: string,
+  overrides: Partial<typeof products.$inferInsert> = {},
+) {
   return opened.db
     .insert(products)
     .values({
@@ -74,6 +79,7 @@ function insertProduct(opened: OpenedDatabase, name: string) {
       nameNormalized: name.toUpperCase(),
       createdAt: NOW,
       updatedAt: NOW,
+      ...overrides,
     })
     .returning()
     .get();
@@ -193,7 +199,15 @@ describe('database schema and migrations', () => {
       .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
       .returning()
       .get();
-    const product = insertProduct(opened, 'Lettmelk');
+    // Raw SQL, not `insertProduct`: the live `products` schema object now has `parent_id` too
+    // (T40), which the old table this fixture recreates does not have yet.
+    const productId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into products (name, name_normalized, created_at, updated_at) values (?, ?, ?, ?)`,
+        )
+        .run('Lettmelk', 'LETTMELK', NOW, NOW).lastInsertRowid,
+    );
     // Raw SQL, not the drizzle query builder: the live `shoppingListItems` schema object now has
     // `category` too, and drizzle's insert names every schema column, which the old table this
     // fixture recreates does not have yet (T37 F2).
@@ -203,7 +217,7 @@ describe('database schema and migrations', () => {
           `insert into shopping_list_items (list_id, product_id, name, source, checked, position, created_at)
            values (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(list.id, product.id, 'Lettmelk 1 l', 'suggested', 0, 1, NOW).lastInsertRowid,
+        .run(list.id, productId, 'Lettmelk 1 l', 'suggested', 0, 1, NOW).lastInsertRowid,
     );
 
     runMigrations(opened);
@@ -213,11 +227,11 @@ describe('database schema and migrations', () => {
     ).toMatchObject({ status: 'open', weekStart: '2026-08-31' });
     expect(
       opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
-    ).toMatchObject({ name: 'Lettmelk 1 l', productId: product.id });
+    ).toMatchObject({ name: 'Lettmelk 1 l', productId });
     expect(() =>
       opened.db
         .insert(shoppingListDismissals)
-        .values({ listId: list.id, productId: product.id, createdAt: NOW })
+        .values({ listId: list.id, productId, createdAt: NOW })
         .run(),
     ).not.toThrow();
   });
@@ -231,7 +245,15 @@ describe('database schema and migrations', () => {
       .values({ weekStart: '2026-08-31', status: 'open', createdAt: NOW })
       .returning()
       .get();
-    const product = insertProduct(opened, 'Lettmelk');
+    // Raw SQL, not `insertProduct`: the live `products` schema object now has `parent_id` too
+    // (T40), which the old table this fixture recreates does not have yet.
+    const productId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into products (name, name_normalized, created_at, updated_at) values (?, ?, ?, ?)`,
+        )
+        .run('Lettmelk', 'LETTMELK', NOW, NOW).lastInsertRowid,
+    );
     // Raw SQL, see the T34 test above: the pre-T37 fixture predates `category`.
     const itemId = Number(
       opened.sqlite
@@ -239,11 +261,11 @@ describe('database schema and migrations', () => {
           `insert into shopping_list_items (list_id, product_id, name, source, checked, position, created_at)
            values (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(list.id, product.id, 'Lettmelk 1 l', 'suggested', 0, 1, NOW).lastInsertRowid,
+        .run(list.id, productId, 'Lettmelk 1 l', 'suggested', 0, 1, NOW).lastInsertRowid,
     );
     const dismissal = opened.db
       .insert(shoppingListDismissals)
-      .values({ listId: list.id, productId: product.id, createdAt: NOW })
+      .values({ listId: list.id, productId, createdAt: NOW })
       .returning()
       .get();
 
@@ -254,14 +276,14 @@ describe('database schema and migrations', () => {
     ).toMatchObject({ status: 'open', weekStart: '2026-08-31' });
     expect(
       opened.db.select().from(shoppingListItems).where(eq(shoppingListItems.id, itemId)).get(),
-    ).toMatchObject({ name: 'Lettmelk 1 l', productId: product.id, source: 'suggested' });
+    ).toMatchObject({ name: 'Lettmelk 1 l', productId, source: 'suggested' });
     expect(
       opened.db
         .select()
         .from(shoppingListDismissals)
         .where(eq(shoppingListDismissals.listId, dismissal.listId))
         .get(),
-    ).toMatchObject({ productId: product.id });
+    ).toMatchObject({ productId });
     expect(() =>
       opened.db
         .insert(shoppingListItems)
@@ -384,6 +406,47 @@ describe('database schema and migrations', () => {
 
     const stored = opened.db.select().from(receipts).where(eq(receipts.id, receipt.id)).get();
     expect(stored?.shoppingListId).toBeNull();
+  });
+
+  it('keeps an existing product intact, with parent_id null, when migrating in products.parent_id (T40)', () => {
+    opened = openDatabase(':memory:');
+    migrate(opened.db, { migrationsFolder: preParentIdMigrationsFolder });
+
+    // Raw SQL: the live `products` schema object now has `parent_id` too, which the table this
+    // fixture recreates does not have yet.
+    const productId = Number(
+      opened.sqlite
+        .prepare(
+          `insert into products (name, name_normalized, suppressed, created_at, updated_at)
+           values (?, ?, ?, ?, ?)`,
+        )
+        .run('Skyr mini', 'SKYR MINI', 0, NOW, NOW).lastInsertRowid,
+    );
+
+    runMigrations(opened);
+
+    const stored = opened.db.select().from(products).where(eq(products.id, productId)).get();
+    expect(stored).toMatchObject({ name: 'Skyr mini', parentId: null });
+
+    const child = insertProduct(opened, 'Skyr mini jordbær');
+    expect(() =>
+      opened.db
+        .update(products)
+        .set({ parentId: productId })
+        .where(eq(products.id, child.id))
+        .run(),
+    ).not.toThrow();
+  });
+
+  it("deleting a parent product sets its children's parent_id to null (T40)", () => {
+    opened = createDb();
+    const parent = insertProduct(opened, 'Skyr mini');
+    const child = insertProduct(opened, 'Skyr mini jordbær', { parentId: parent.id });
+
+    opened.db.delete(products).where(eq(products.id, parent.id)).run();
+
+    const stored = opened.db.select().from(products).where(eq(products.id, child.id)).get();
+    expect(stored?.parentId).toBeNull();
   });
 
   it('rejects an unknown shopping_list_items source', () => {

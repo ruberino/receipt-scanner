@@ -34,6 +34,7 @@ function history(
       quantity: options.quantities?.[i] ?? 1,
       unit: options.unit ?? null,
     })),
+    variants: [],
   };
 }
 

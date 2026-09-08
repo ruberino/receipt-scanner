@@ -111,6 +111,12 @@ export type PatchReceiptLineRequest = z.infer<typeof patchReceiptLineSchema>;
 
 const productAliasSourceSchema = z.enum(['llm', 'user']);
 
+const productStatsSchema = z.object({
+  timesBought: z.number().int(),
+  lastBought: z.string().nullable(),
+  medianIntervalDays: z.number().nullable(),
+});
+
 export const productSchema = z.object({
   id: z.number().int(),
   name: z.string(),
@@ -119,6 +125,10 @@ export const productSchema = z.object({
   timesBought: z.number().int(),
   lastBought: z.string().nullable(),
   medianIntervalDays: z.number().nullable(),
+  /** The group this product is a variant of, or null (T40, ADR-0019). */
+  parentId: z.number().int().nullable(),
+  /** Number of variants, 0 for anything that is not a group (T40, ADR-0019). */
+  variantCount: z.number().int(),
 });
 
 export type Product = z.infer<typeof productSchema>;
@@ -141,6 +151,19 @@ export const productDetailSchema = productSchema.extend({
       totalOre: z.number().int(),
     }),
   ),
+  /** The group this product is a variant of, with its name for display (T40, ADR-0019). */
+  parent: z.object({ id: z.number().int(), name: z.string() }).nullable(),
+  /** This product's variants, each with its own stats (T40, ADR-0019); empty when not a group. */
+  variants: z.array(
+    z.object({
+      id: z.number().int(),
+      name: z.string(),
+      timesBought: z.number().int(),
+      lastBought: z.string().nullable(),
+    }),
+  ),
+  /** The group's folded stats, only set for a parent (T40, ADR-0019). */
+  groupStats: productStatsSchema.nullable(),
 });
 
 export type ProductDetail = z.infer<typeof productDetailSchema>;
@@ -172,6 +195,31 @@ export const mergeProductSchema = z
   .strict();
 
 export type MergeProductRequest = z.infer<typeof mergeProductSchema>;
+
+export const attachProductParentSchema = z
+  .object({
+    parentId: z.number().int().positive(),
+  })
+  .strict();
+
+export type AttachProductParentRequest = z.infer<typeof attachProductParentSchema>;
+
+export const createProductGroupSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    category: productCategorySchema.optional(),
+    memberIds: z.array(z.number().int().positive()).min(1),
+  })
+  .strict();
+
+export type CreateProductGroupRequest = z.infer<typeof createProductGroupSchema>;
+
+export const groupCandidateSchema = z.object({
+  suggestedName: z.string(),
+  productIds: z.array(z.number().int()),
+});
+
+export type GroupCandidate = z.infer<typeof groupCandidateSchema>;
 
 const shoppingListStatusSchema = z.enum(['open', 'done']);
 const shoppingListItemSourceSchema = z.enum(['suggested', 'manual', 'ai']);

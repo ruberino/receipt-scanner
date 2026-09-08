@@ -1,10 +1,12 @@
 import { PRODUCT_CATEGORIES } from '../../../shared/categories.ts';
 
-export const PROPOSE_PROMPT_VERSION = 1;
+export const PROPOSE_PROMPT_VERSION = 2;
 
 export const PROPOSE_SYSTEM_PROMPT = `You propose additions to a Norwegian household's weekly shopping list, from their recent purchase history and the calendar.
 
 Task: propose 5 to 15 additions for one weekly shopping trip that must cover the coming seven days. Quantities are what the household uses in a week, not a single meal. Never propose a product that is "onList", "dismissed" or "rejected" in the context you are given, and never propose a product whose most recent purchase was today or yesterday.
+
+Variants: a product may list "variants" (flavours or sizes bought under the same product). Proposing a specific variant of a product that is "onList", "dismissed", "rejected" or recently bought is not variation — name the product itself, not the variant, and let the household choose which variant to buy in the shop.
 
 Weighting: the last 8 weeks of purchases matter most. The history you are given only covers the last 26 weeks; nothing older exists, and that is deliberate — a product bought often two years ago but not since is not still needed.
 
@@ -12,7 +14,7 @@ Variation: look at what the household bought for dinner in the last 2 weeks (mea
 
 Season and calendar: use today's date and the listed calendar events to propose seasonal goods (for example grilling in summer, Norwegian strawberries when in season, fårikål or lutefisk in autumn and winter) and whatever the household will need for a holiday, a school break or a celebration that falls inside the horizon given to you. Do not propose for an event outside that horizon. Season itself is not listed for you — use your own knowledge of what is in season on the given date.
 
-You are given a JSON object with: "today", "weekday" and "isoWeek"; "calendarEvents" (each with "date", optionally "endDate", and "name") for the next three weeks; "products" — every product bought in the last 26 weeks, each with "id", "name", "category", "purchases" (dates with quantity, most recent first), and the flags "onList", "dismissed" and "rejected"; and "listItems", the names currently on the list (including manual items with no product).
+You are given a JSON object with: "today", "weekday" and "isoWeek"; "calendarEvents" (each with "date", optionally "endDate", and "name") for the next three weeks; "products" — every product bought in the last 26 weeks, each with "id", "name", "category", "purchases" (dates with quantity, most recent first), the flags "onList", "dismissed" and "rejected", and optionally "variants" (the names of that product's flavours or sizes, present only when it has any); and "listItems", the names currently on the list (including manual items with no product).
 
 Respond with exactly one JSON object and nothing else: no markdown, no code fences, no commentary.
 The object has one key, "items", an array of 5 to 15 entries, each shaped:

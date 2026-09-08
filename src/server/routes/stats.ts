@@ -131,11 +131,21 @@ export default async function statsRoutes(
     // else in the app (the products list, the product page), so a second, window-scoped
     // `timesBought` here would show a different number for the same product depending on screen.
     const statsByProduct = loadProductStatsMap(app.db);
-    const topProducts = app.db
-      .select()
-      .from(products)
-      .all()
-      .map((product) => toProduct(product, statsByProduct.get(product.id) ?? NO_STATS))
+    const allProducts = app.db.select().from(products).all();
+    const variantCounts = new Map<number, number>();
+    for (const product of allProducts) {
+      if (product.parentId !== null) {
+        variantCounts.set(product.parentId, (variantCounts.get(product.parentId) ?? 0) + 1);
+      }
+    }
+    const topProducts = allProducts
+      .map((product) =>
+        toProduct(
+          product,
+          statsByProduct.get(product.id) ?? NO_STATS,
+          variantCounts.get(product.id) ?? 0,
+        ),
+      )
       .sort((a, b) => b.timesBought - a.timesBought || a.name.localeCompare(b.name, 'nb'))
       .slice(0, TOP_PRODUCTS_LIMIT);
 

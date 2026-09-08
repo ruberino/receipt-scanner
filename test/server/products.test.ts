@@ -264,6 +264,55 @@ describe('GET /api/products/:id', () => {
       },
     ]);
   });
+
+  it('returns parent, variants and groupStats for a parent product (T40)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const jordbaer = insertProduct('Skyr mini jordbær', { parentId: parent });
+    const banan = insertProduct('Skyr mini banan', { parentId: parent });
+    const r1 = insertReceipt('2026-08-01');
+    insertLine(r1, jordbaer, { quantity: 2 });
+    const r2 = insertReceipt('2026-08-08');
+    insertLine(r2, banan, { quantity: 1 });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/products/${parent}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.parent).toBeNull();
+    expect(body.variantCount).toBe(2);
+    expect(body.variants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: jordbaer, name: 'Skyr mini jordbær', timesBought: 1 }),
+        expect.objectContaining({ id: banan, name: 'Skyr mini banan', timesBought: 1 }),
+      ]),
+    );
+    expect(body.groupStats).toMatchObject({ timesBought: 2, lastBought: '2026-08-08' });
+  });
+
+  it('returns the parent link and null groupStats for a variant (T40)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const jordbaer = insertProduct('Skyr mini jordbær', { parentId: parent });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/products/${jordbaer}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.parent).toEqual({ id: parent, name: 'Skyr mini' });
+    expect(body.variants).toEqual([]);
+    expect(body.groupStats).toBeNull();
+  });
 });
 
 describe('POST /api/products', () => {
@@ -456,6 +505,281 @@ describe('POST /api/products/:id/merge', () => {
     });
 
     expect(response.statusCode).toBe(404);
+  });
+
+  it('merging a variant into a sibling keeps the parent, unaffected (T40)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const jordbaer = insertProduct('Skyr mini jordbær', { parentId: parent });
+    const banan = insertProduct('Skyr mini banan', { parentId: parent });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${jordbaer}/merge`,
+      payload: { intoProductId: banan },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const parentRow = app.db.select().from(products).where(eq(products.id, parent)).get();
+    expect(parentRow).toBeDefined();
+    expect(app.db.select().from(products).where(eq(products.id, banan)).get()?.parentId).toBe(
+      parent,
+    );
+  });
+
+  it('merging away a parent leaves its children ungrouped (T40)', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const otherParent = insertProduct('Skyr');
+    const jordbaer = insertProduct('Skyr mini jordbær', { parentId: parent });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${parent}/merge`,
+      payload: { intoProductId: otherParent },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(
+      app.db.select().from(products).where(eq(products.id, jordbaer)).get()?.parentId,
+    ).toBeNull();
+  });
+});
+
+describe('POST /api/products/:id/parent', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/products/1/parent',
+      payload: { parentId: 2 },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('attaches a product to a parent', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const child = insertProduct('Skyr mini jordbær');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${child}/parent`,
+      payload: { parentId: parent },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: child, parentId: parent });
+  });
+
+  it('gives 400 when parentId equals the product id', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertProduct('Skyr mini');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${id}/parent`,
+      payload: { parentId: id },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('gives 404 when either product is missing', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertProduct('Skyr mini');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${id}/parent`,
+      payload: { parentId: 999 },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('gives 409 when the product itself already has children', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const groupWithChildren = insertProduct('Skyr mini');
+    insertProduct('Skyr mini jordbær', { parentId: groupWithChildren });
+    const otherParent = insertProduct('Kaffe');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${groupWithChildren}/parent`,
+      payload: { parentId: otherParent },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('gives 409 when the target already has a parent', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const alreadyChild = insertProduct('Skyr mini jordbær', { parentId: parent });
+    const newChild = insertProduct('Skyr mini banan');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/products/${newChild}/parent`,
+      payload: { parentId: alreadyChild },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+});
+
+describe('DELETE /api/products/:id/parent', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'DELETE', url: '/api/products/1/parent' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('detaches a product from its parent', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const parent = insertProduct('Skyr mini');
+    const child = insertProduct('Skyr mini jordbær', { parentId: parent });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/products/${child}/parent`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(app.db.select().from(products).where(eq(products.id, child)).get()?.parentId).toBeNull();
+  });
+
+  it('gives 404 when the product has no parent', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertProduct('Skyr mini');
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/products/${id}/parent`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('POST /api/product-groups', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/product-groups',
+      payload: { name: 'Skyr mini', memberIds: [1, 2] },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('creates a parent and attaches every member', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const jordbaer = insertProduct('Skyr mini jordbær', { category: 'Meieri' });
+    const banan = insertProduct('Skyr mini banan', { category: 'Meieri' });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/product-groups',
+      payload: { name: 'Skyr mini', memberIds: [jordbaer, banan] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json();
+    expect(body).toMatchObject({ name: 'Skyr mini', category: 'Meieri', variantCount: 2 });
+    expect(app.db.select().from(products).where(eq(products.id, jordbaer)).get()?.parentId).toBe(
+      body.id,
+    );
+    expect(app.db.select().from(products).where(eq(products.id, banan)).get()?.parentId).toBe(
+      body.id,
+    );
+  });
+
+  it('gives 409 on a duplicate normalised name', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    insertProduct('Skyr mini');
+    const jordbaer = insertProduct('Skyr mini jordbær');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/product-groups',
+      payload: { name: 'Skyr mini', memberIds: [jordbaer] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+
+  it('gives 409 when a member already has a parent', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const existingParent = insertProduct('Skyr');
+    const alreadyChild = insertProduct('Skyr mini jordbær', { parentId: existingParent });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/product-groups',
+      payload: { name: 'Skyr mini', memberIds: [alreadyChild] },
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(409);
+  });
+});
+
+describe('GET /api/products/group-candidates', () => {
+  it('gives 401 without the auth cookie', async () => {
+    app = createTestApp();
+
+    const response = await app.inject({ method: 'GET', url: '/api/products/group-candidates' });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns a candidate for two flavours sharing a category and name prefix', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const jordbaer = insertProduct('Skyr mini jordbær', { category: 'Meieri' });
+    const banan = insertProduct('Skyr mini banan', { category: 'Meieri' });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/products/group-candidates',
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      { suggestedName: 'Skyr mini', productIds: expect.arrayContaining([jordbaer, banan]) },
+    ]);
   });
 });
 

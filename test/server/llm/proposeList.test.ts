@@ -244,6 +244,41 @@ describe('runProposal', () => {
     expect(result.items).toEqual([]);
   });
 
+  it('maps a variant name to its parent id and name (T40)', async () => {
+    const llm = new FakeLlmClient([
+      completion([{ ...validItem, productId: null, name: 'Skyr mini jordbær' }]),
+    ]);
+    const ctx = context({
+      products: [
+        product({ id: 1, name: 'Skyr mini', variants: ['Skyr mini jordbær', 'Skyr mini banan'] }),
+      ],
+    });
+
+    const result = await runProposal(llm, ctx, 9);
+
+    expect(result.items).toEqual([expect.objectContaining({ productId: 1, name: 'Skyr mini' })]);
+  });
+
+  it('filters a variant name like its parent when the parent is on the list (T40)', async () => {
+    const llm = new FakeLlmClient([
+      completion([{ ...validItem, productId: null, name: 'Skyr mini jordbær' }]),
+    ]);
+    const ctx = context({
+      products: [
+        product({
+          id: 1,
+          name: 'Skyr mini',
+          onList: true,
+          variants: ['Skyr mini jordbær', 'Skyr mini banan'],
+        }),
+      ],
+    });
+
+    const result = await runProposal(llm, ctx, 9);
+
+    expect(result.items).toEqual([]);
+  });
+
   it('filters out a new item whose name collides with an item already on the list', async () => {
     const llm = new FakeLlmClient([
       completion([{ ...validItem, productId: null, name: 'Godteri', category: 'Snacks' }]),

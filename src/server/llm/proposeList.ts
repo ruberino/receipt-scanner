@@ -68,13 +68,16 @@ function isProductCategory(value: string): value is ProductCategory {
 }
 
 /**
- * Calls the LLM for a list proposal and filters its answer (T37, ADR-0016): drops an item whose
- * `productId` is not in the context or whose `category` is unknown, de-duplicates by normalised
- * name (against the response itself and against `listItems`), filters out anything `onList`,
- * `dismissed`, `rejected` or bought today or yesterday as a defence against the model ignoring
- * the prompt's own rule, and returns at most 15 items. Any failure — network, timeout, an answer
- * cut off at the token budget, or one that does not parse — surfaces as `ProposalFailedError`,
- * since a proposal with no result is not a useful degraded answer the way partial matching is.
+ * Calls the LLM for a list proposal and filters its answer (T37, ADR-0016): a returned name that
+ * matches one of a product's `variants` (T40, ADR-0019) is rewritten to that product's id and
+ * name, whatever `productId` came with it, so a model naming a specific flavour still adds the
+ * group and is filtered exactly like the group would be; drops an item whose `productId` is not
+ * in the context or whose `category` is unknown, de-duplicates by normalised name (against the
+ * response itself and against `listItems`), filters out anything `onList`, `dismissed`, `rejected`
+ * or bought today or yesterday as a defence against the model ignoring the prompt's own rule, and
+ * returns at most 15 items. Any failure — network, timeout, an answer cut off at the token budget,
+ * or one that does not parse — surfaces as `ProposalFailedError`, since a proposal with no result
+ * is not a useful degraded answer the way partial matching is.
  */
 export async function runProposal(
   llm: LlmClient,
@@ -121,12 +124,32 @@ export async function runProposal(
   const productsById = new Map(context.products.map((product) => [product.id, product]));
   const listItemNames = new Set(context.listItems.map((name) => normalizeText(name)));
 
+  // A variant's name (T40, ADR-0019) never gets its own entry in `context.products` — it is
+  // folded into its parent's `variants` — so a model that names a variant by itself, instead of
+  // the group, can only be recognised by that name, not by a productId it was never given.
+  const childNameToParentId = new Map<string, number>();
+  for (const product of context.products) {
+    for (const variant of product.variants ?? []) {
+      childNameToParentId.set(normalizeText(variant), product.id);
+    }
+  }
+
   let droppedUnknown = 0;
   const seenNames = new Set<string>();
   const filtered: Omit<ProposedItem, 'index'>[] = [];
 
   for (const item of parsed.data.items) {
-    if (item.productId !== null && !productsById.has(item.productId)) {
+    let productId = item.productId;
+    let name = item.name;
+    if (productId === null) {
+      const parentId = childNameToParentId.get(normalizeText(name));
+      if (parentId !== undefined) {
+        productId = parentId;
+        name = productsById.get(parentId)?.name ?? name;
+      }
+    }
+
+    if (productId !== null && !productsById.has(productId)) {
       droppedUnknown += 1;
       continue;
     }
@@ -135,13 +158,13 @@ export async function runProposal(
       continue;
     }
 
-    const normalizedName = normalizeText(item.name);
+    const normalizedName = normalizeText(name);
     if (seenNames.has(normalizedName)) {
       continue;
     }
 
-    if (item.productId !== null) {
-      const product = productsById.get(item.productId)!;
+    if (productId !== null) {
+      const product = productsById.get(productId)!;
       if (product.onList || product.dismissed || product.rejected) {
         continue;
       }
@@ -155,8 +178,8 @@ export async function runProposal(
 
     seenNames.add(normalizedName);
     filtered.push({
-      productId: item.productId,
-      name: item.name,
+      productId,
+      name,
       category: item.category,
       quantityText: item.quantityText,
       reason: item.reason,

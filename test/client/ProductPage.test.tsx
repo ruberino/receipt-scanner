@@ -23,11 +23,22 @@ vi.mock('../../src/client/api/queries.ts', async (importOriginal) => {
     useMergeProduct: vi.fn(),
     useDeleteProductAlias: vi.fn(),
     useProducts: vi.fn(),
+    useAttachProductParent: vi.fn(),
+    useDetachProductParent: vi.fn(),
+    useCreateProductGroup: vi.fn(),
   };
 });
 
-const { useProductDetail, useUpdateProduct, useMergeProduct, useDeleteProductAlias, useProducts } =
-  await import('../../src/client/api/queries.ts');
+const {
+  useProductDetail,
+  useUpdateProduct,
+  useMergeProduct,
+  useDeleteProductAlias,
+  useProducts,
+  useAttachProductParent,
+  useDetachProductParent,
+  useCreateProductGroup,
+} = await import('../../src/client/api/queries.ts');
 
 function productDetail(overrides: Partial<ProductDetail> = {}): ProductDetail {
   return {
@@ -49,6 +60,11 @@ function productDetail(overrides: Partial<ProductDetail> = {}): ProductDetail {
         totalOre: 3200,
       },
     ],
+    parentId: null,
+    variantCount: 0,
+    parent: null,
+    variants: [],
+    groupStats: null,
     ...overrides,
   };
 }
@@ -62,6 +78,8 @@ function product(overrides: Partial<Product> = {}): Product {
     timesBought: 1,
     lastBought: null,
     medianIntervalDays: null,
+    parentId: null,
+    variantCount: 0,
     ...overrides,
   };
 }
@@ -90,12 +108,18 @@ describe('ProductPage', () => {
   let updateMutate: ReturnType<typeof vi.fn>;
   let mergeMutate: ReturnType<typeof vi.fn>;
   let deleteAliasMutate: ReturnType<typeof vi.fn>;
+  let attachMutate: ReturnType<typeof vi.fn>;
+  let detachMutate: ReturnType<typeof vi.fn>;
+  let createGroupMutate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     navigateMock.mockReset();
     updateMutate = vi.fn();
     mergeMutate = vi.fn();
     deleteAliasMutate = vi.fn();
+    attachMutate = vi.fn();
+    detachMutate = vi.fn();
+    createGroupMutate = vi.fn();
     vi.mocked(useUpdateProduct).mockReturnValue({
       mutate: updateMutate,
       isPending: false,
@@ -111,6 +135,18 @@ describe('ProductPage', () => {
     vi.mocked(useProducts).mockReturnValue({
       data: [],
     } as unknown as ReturnType<typeof useProducts>);
+    vi.mocked(useAttachProductParent).mockReturnValue({
+      mutate: attachMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useAttachProductParent>);
+    vi.mocked(useDetachProductParent).mockReturnValue({
+      mutate: detachMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDetachProductParent>);
+    vi.mocked(useCreateProductGroup).mockReturnValue({
+      mutate: createGroupMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useCreateProductGroup>);
   });
 
   afterEach(() => {
@@ -233,7 +269,8 @@ describe('ProductPage', () => {
     await user.click(screen.getByRole('button', { name: 'Yoghurt' }));
 
     expect(window.confirm).toHaveBeenCalledWith(
-      'Slå sammen «Lettmelk 1 l» med «Yoghurt»? Dette kan ikke angres.',
+      'Slå sammen «Lettmelk 1 l» med «Yoghurt»? Dette kan ikke angres.\n\n' +
+        'Er det varianter av samme vare, bruk Varegruppe i stedet.',
     );
     expect(mergeMutate).toHaveBeenCalledWith(2, expect.anything());
     expect(navigateMock).toHaveBeenCalledWith('/products/2');
@@ -254,5 +291,106 @@ describe('ProductPage', () => {
 
     expect(mergeMutate).not.toHaveBeenCalled();
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  describe('Varegruppe section (T40)', () => {
+    it('shows a variant with a link to its parent and a detach button', async () => {
+      mockDetail(
+        productDetail({ id: 2, name: 'Skyr mini jordbær', parent: { id: 1, name: 'Skyr mini' } }),
+      );
+      renderProductPage(2);
+      const user = userEvent.setup();
+
+      expect(screen.getByRole('link', { name: 'Variant av «Skyr mini»' })).toHaveAttribute(
+        'href',
+        '/products/1',
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Fjern fra gruppen' }));
+
+      expect(detachMutate).toHaveBeenCalled();
+    });
+
+    it('shows a parent with its variants and folded group stats, no Legg i gruppe button', () => {
+      mockDetail(
+        productDetail({
+          id: 1,
+          name: 'Skyr mini',
+          variantCount: 2,
+          variants: [
+            { id: 2, name: 'Skyr mini jordbær', timesBought: 3, lastBought: '2026-08-20' },
+            { id: 3, name: 'Skyr mini banan', timesBought: 1, lastBought: null },
+          ],
+          groupStats: { timesBought: 4, lastBought: '2026-08-20', medianIntervalDays: 7 },
+        }),
+      );
+      renderProductPage(1);
+
+      expect(screen.getByText('Varianter (2)')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Skyr mini jordbær/ })).toHaveAttribute(
+        'href',
+        '/products/2',
+      );
+      expect(
+        screen.getByText(/Gruppen: kjøpt 4 ganger, sist.*ca\. hver 7\. dag/),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Legg i gruppe…' })).not.toBeInTheDocument();
+    });
+
+    it('attaches directly to a candidate that is already a group', async () => {
+      mockDetail(productDetail({ id: 1, name: 'Skyr mini jordbær' }));
+      vi.mocked(useProducts).mockReturnValue({
+        data: [product({ id: 5, name: 'Skyr mini', variantCount: 2 })],
+      } as unknown as ReturnType<typeof useProducts>);
+      renderProductPage(1);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Legg i gruppe…' }));
+      await user.type(screen.getByLabelText('Legg i gruppe'), 'Skyr');
+      await user.click(screen.getByRole('button', { name: 'Skyr mini' }));
+
+      expect(attachMutate).toHaveBeenCalledWith(5, expect.anything());
+      expect(createGroupMutate).not.toHaveBeenCalled();
+    });
+
+    it('opens a naming dialog for an ungrouped candidate and creates the group with both ids', async () => {
+      mockDetail(productDetail({ id: 1, name: 'Skyr mini jordbær' }));
+      vi.mocked(useProducts).mockReturnValue({
+        data: [product({ id: 6, name: 'Skyr mini banan', variantCount: 0 })],
+      } as unknown as ReturnType<typeof useProducts>);
+      renderProductPage(1);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Legg i gruppe…' }));
+      await user.type(screen.getByLabelText('Legg i gruppe'), 'Skyr mini banan');
+      await user.click(screen.getByRole('button', { name: 'Skyr mini banan' }));
+
+      const nameInput = screen.getByLabelText('Navn på varegruppen');
+      expect(nameInput).toHaveValue('Skyr mini');
+      await user.click(screen.getByRole('button', { name: 'Lag gruppe' }));
+
+      expect(createGroupMutate).toHaveBeenCalledWith(
+        { name: 'Skyr mini', memberIds: [1, 6] },
+        expect.anything(),
+      );
+    });
+
+    it('creates a solo group from a typed name with no match', async () => {
+      mockDetail(productDetail({ id: 1, name: 'Skyr mini jordbær' }));
+      vi.mocked(useProducts).mockReturnValue({
+        data: [],
+      } as unknown as ReturnType<typeof useProducts>);
+      renderProductPage(1);
+      const user = userEvent.setup();
+
+      await user.click(screen.getByRole('button', { name: 'Legg i gruppe…' }));
+      await user.type(screen.getByLabelText('Legg i gruppe'), 'Skyr mini');
+      await user.click(screen.getByRole('button', { name: 'Opprett «Skyr mini»' }));
+
+      expect(createGroupMutate).toHaveBeenCalledWith(
+        { name: 'Skyr mini', memberIds: [1] },
+        expect.anything(),
+      );
+    });
   });
 });

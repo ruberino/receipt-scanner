@@ -1,7 +1,8 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { diffDays } from '../../shared/dates.ts';
 import type { AppDatabase } from '../db/client.ts';
 import { products, receiptLines, receipts } from '../db/schema.ts';
+import { foldHistories, type ProductGroupParent } from './productGroups.ts';
 
 export type ProductStats = {
   timesBought: number;
@@ -86,14 +87,69 @@ export type ProductHistory = {
   category: string | null;
   suppressed: boolean;
   purchases: ProductPurchase[];
+  /** Names of the children folded into this row (T40, ADR-0019), sorted `nb`; empty for an
+   * ungrouped product or for a row from `loadProductHistoriesUnfolded`. */
+  variants: string[];
 };
+
+/** `products.id -> parentId` for every grouped product, and the product rows for every parent
+ * referenced, needed by `foldHistories` to build a row for a parent with no purchases of its own. */
+function loadParentInfo(db: AppDatabase): {
+  parentOf: Map<number, number>;
+  parents: ProductGroupParent[];
+} {
+  const rows = db.select({ id: products.id, parentId: products.parentId }).from(products).all();
+  const parentOf = new Map<number, number>();
+  const parentIds = new Set<number>();
+  for (const row of rows) {
+    if (row.parentId !== null) {
+      parentOf.set(row.id, row.parentId);
+      parentIds.add(row.parentId);
+    }
+  }
+  if (parentIds.size === 0) {
+    return { parentOf, parents: [] };
+  }
+  const parentRows = db
+    .select({
+      id: products.id,
+      name: products.name,
+      category: products.category,
+      suppressed: products.suppressed,
+    })
+    .from(products)
+    .where(inArray(products.id, [...parentIds]))
+    .all();
+  return {
+    parentOf,
+    parents: parentRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      suppressed: row.suppressed === 1,
+    })),
+  };
+}
 
 /**
  * Purchase history per product, purchases aggregated per receipt date (quantities summed), from
- * `done` receipts' `item` lines only. Used by the suggestion engine (T12); only includes products
- * with at least one such purchase, which is exactly what `computeSuggestions`'s `n < 2` rule needs.
+ * `done` receipts' `item` lines only, folded so a variant's purchases count under its parent (T40,
+ * ADR-0019). Used by the suggestion engine (T12), `refresh` and the AI proposal context; only
+ * includes products with at least one such purchase, which is exactly what `computeSuggestions`'s
+ * `n < 2` rule needs.
  */
 export function loadProductHistories(db: AppDatabase): ProductHistory[] {
+  const unfolded = loadProductHistoriesUnfolded(db);
+  const { parentOf, parents } = loadParentInfo(db);
+  if (parentOf.size === 0) {
+    return unfolded;
+  }
+  return foldHistories(unfolded, parentOf, parents);
+}
+
+/** The raw, unfolded history per product (T40, ADR-0019): for the places that need a variant's
+ * own purchases rather than the group's, such as a parent's product page. */
+export function loadProductHistoriesUnfolded(db: AppDatabase): ProductHistory[] {
   const rows = db
     .select({
       productId: products.id,
@@ -150,5 +206,6 @@ export function loadProductHistories(db: AppDatabase): ProductHistory[] {
     category: entry.category,
     suppressed: entry.suppressed,
     purchases: [...entry.byDate.values()],
+    variants: [],
   }));
 }
