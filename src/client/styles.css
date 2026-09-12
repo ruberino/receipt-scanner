@@ -1,15 +1,35 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens. One type ratio, one ground colour, one accent; every size and colour in the
- * client comes from here (see .claude/skills/subtractive-design/SKILL.md).
+ * Self-hosted, latin subset only: the packages also ship Hebrew, Cyrillic and latin-ext, which
+ * this app never renders. Declaring the faces here instead of importing the package stylesheets
+ * keeps those files out of the build entirely (ADR-0020).
+ */
+@font-face {
+  font-family: 'Outfit Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Jakarta Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('@fontsource-variable/plus-jakarta-sans/files/plus-jakarta-sans-latin-wght-normal.woff2')
+    format('woff2-variations');
+}
+
+/*
+ * Design tokens. One type ratio, one ground, one accent; every size and colour in the client
+ * comes from here (ADR-0020, and .claude/skills/subtractive-design/SKILL.md).
  */
 @theme {
-  --font-sans:
-    'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, Roboto,
-    sans-serif;
-  --font-display:
-    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, ui-serif, serif;
+  --font-sans: 'Jakarta Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Outfit Variable', 'Segoe UI', system-ui, sans-serif;
 
   /* Type scale: minor third (1.25) from a 16 px body. Three sizes in use: meta, body, display. */
   --text-meta: 0.8rem;
@@ -18,18 +38,20 @@
   --text-body--line-height: 1.5rem;
   --text-display: 2.441rem;
   --text-display--line-height: 1.05;
-  --text-display--letter-spacing: -0.015em;
+  --text-display--letter-spacing: -0.02em;
 
-  /* Palette: receipt paper, ink, one green accent. */
-  --color-paper: oklch(96.5% 0.018 85);
-  --color-field: oklch(99.4% 0.004 85);
-  --color-ink: oklch(24% 0.022 60);
-  --color-ink-muted: oklch(49% 0.02 60);
-  --color-ink-faint: oklch(78% 0.014 60);
-  --color-accent: oklch(45% 0.135 152);
-  --color-accent-ink: oklch(99% 0 0);
-  --color-danger: oklch(50% 0.19 28);
-  --color-warn: oklch(50% 0.12 65);
+  /* Palette: cream ground, blue ink and accent, blush for the blocks that need the eye, one
+   * brick red kept apart for destructive actions only. */
+  --color-paper: #f1ede1;
+  --color-field: #ffffff;
+  --color-ink: #1e3f72;
+  --color-ink-muted: #2b5ea9;
+  --color-ink-faint: #b9cbe4;
+  --color-shell: #b9cbe4;
+  --color-accent: #2b5ea9;
+  --color-accent-ink: #ffffff;
+  --color-blush: #eba9b5;
+  --color-danger: #ab3730;
 }
 
 @layer base {
@@ -38,12 +60,13 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: var(--text-body);
+    font-weight: 500;
     line-height: var(--text-body--line-height);
     -webkit-tap-highlight-color: transparent;
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 3px solid var(--color-accent);
     outline-offset: 2px;
   }
 
@@ -64,41 +87,50 @@
 
   /* Type */
   .page-title {
-    @apply font-display text-display font-bold text-ink;
+    @apply font-display text-display text-accent font-semibold;
   }
   .eyebrow {
-    @apply text-meta font-semibold tracking-wide text-ink-muted uppercase;
+    @apply font-display text-meta text-ink-muted font-semibold tracking-widest uppercase;
   }
   .meta {
-    @apply text-meta text-ink-muted;
+    @apply text-meta text-ink-muted font-normal;
+  }
+  /* A summary stays `display: list-item` so the browser keeps drawing its open/closed marker;
+   * `flex` here would silently remove it. */
+  .disclosure {
+    @apply font-display text-accent min-h-11 cursor-pointer py-2 font-semibold;
   }
   .label {
-    @apply text-meta font-semibold text-ink;
+    @apply text-meta text-ink font-bold;
   }
   .link {
-    @apply text-accent underline decoration-accent/40 underline-offset-2;
+    @apply text-accent font-semibold underline decoration-2 underline-offset-2;
   }
   .chip {
-    @apply text-meta text-ink-muted whitespace-nowrap;
+    @apply text-meta text-ink-muted font-semibold whitespace-nowrap;
   }
   /* Inline separator, kept out of the text nodes so each value stays its own element. */
   .sep::before {
     content: '·';
     @apply mx-1.5;
   }
+  /* A flat block of colour, used where something genuinely needs the eye: receipt warnings. */
+  .note {
+    @apply bg-blush text-ink rounded-3xl px-4 py-3 font-semibold;
+  }
 
   /* Controls */
   .field {
-    @apply min-h-11 w-full rounded-md border border-ink-faint bg-field px-3 py-2 text-ink;
+    @apply border-shell bg-field text-ink min-h-11 w-full rounded-2xl border-2 px-4 py-2;
   }
   .btn {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 font-semibold disabled:opacity-50;
+    @apply font-display inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2 font-semibold disabled:opacity-50;
   }
   .btn-primary {
     @apply bg-accent text-accent-ink;
   }
   .btn-secondary {
-    @apply border border-ink/25 text-ink;
+    @apply border-accent text-accent border-2;
   }
   .btn-quiet {
     @apply text-ink-muted;
@@ -107,9 +139,9 @@
     @apply text-danger;
   }
   .option {
-    @apply min-h-11 w-full px-3 py-2 text-left hover:bg-ink/5 disabled:opacity-50;
+    @apply hover:bg-shell/40 min-h-11 w-full rounded-xl px-4 py-2 text-left disabled:opacity-50;
   }
   .popover {
-    @apply absolute z-10 mt-1 w-full rounded-md bg-field shadow-lg ring-1 ring-ink/10;
+    @apply bg-field ring-shell absolute z-10 mt-1 w-full rounded-2xl p-1 shadow-lg ring-2;
   }
 }

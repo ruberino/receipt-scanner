@@ -153,9 +153,7 @@ function GroupCandidatesSection({ allProducts }: { allProducts: Product[] }) {
 
   return (
     <details onToggle={(event) => setIsOpen(event.currentTarget.open)}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-2 font-semibold text-accent">
-        Kan være samme vare ({visible.length})
-      </summary>
+      <summary className="disclosure">Kan være samme vare ({visible.length})</summary>
       {isOpen && (
         <ul className="flex flex-col pt-2">
           {visible.map((candidate) => (
