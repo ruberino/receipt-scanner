@@ -727,6 +727,7 @@ Bottom navigation: Handleliste (`/`), Skann (`/scan`), Kvitteringer (`/receipts`
 - Every mutation invalidates the affected queries: receipts, receipt detail, products, suggestions, current list.
 - A `401` clears the query cache and navigates to `/login`.
 - Layout is mobile-first at 360 px, tap targets at least 44 px, safe-area padding for the bottom bar.
+- Every size and colour comes from the tokens in `src/client/styles.css`, and the `subtractive-design` skill in `.claude/skills/` is normative for how a screen looks; this section decides what it contains (ADR-0020).
 
 ## 11. Cross-cutting rules
 
