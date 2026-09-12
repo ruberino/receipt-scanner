@@ -13,14 +13,16 @@ export default function AppShell() {
       <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))]">
         <Outlet />
       </main>
-      <nav className="fixed inset-x-0 bottom-0 flex border-t bg-white pb-[env(safe-area-inset-bottom)]">
+      <nav className="fixed inset-x-0 bottom-0 flex border-t border-ink/10 bg-paper pb-[env(safe-area-inset-bottom)]">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
             end={tab.end}
             className={({ isActive }) =>
-              `flex min-h-11 flex-1 items-center justify-center ${isActive ? 'font-bold' : ''}`
+              `flex min-h-12 flex-1 items-center justify-center ${
+                isActive ? 'font-semibold text-accent' : 'text-ink-muted'
+              }`
             }
           >
             {tab.label}

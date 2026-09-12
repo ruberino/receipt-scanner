@@ -96,20 +96,17 @@ export default function ProductPicker({ lineId, receiptId, currentProduct }: Pro
         onBlur={() => setIsOpen(false)}
         onKeyDown={handleKeyDown}
         placeholder="Søk etter vare …"
-        className="min-h-11 w-full rounded border border-gray-400 px-3 py-2"
+        className="field"
       />
       {isOpen && (
-        <ul
-          role="listbox"
-          className="absolute z-10 mt-1 w-full rounded border border-gray-300 bg-white shadow-lg"
-        >
+        <ul role="listbox" className="popover">
           {(results ?? []).map((product) => (
             <li key={product.id} role="option" aria-selected={currentProduct?.id === product.id}>
               <button
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => selectProduct(product)}
-                className="min-h-11 w-full px-3 py-2 text-left hover:bg-gray-100"
+                className="option"
               >
                 {product.name}
               </button>
@@ -121,7 +118,7 @@ export default function ProductPicker({ lineId, receiptId, currentProduct }: Pro
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={createProduct}
-                className="min-h-11 w-full px-3 py-2 text-left font-medium text-blue-600 hover:bg-gray-100"
+                className="option font-semibold text-accent"
               >
                 Opprett «{trimmedQuery}»
               </button>

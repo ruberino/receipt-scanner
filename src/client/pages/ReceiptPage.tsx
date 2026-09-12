@@ -47,12 +47,12 @@ function ProcessingView({ imageUrl, status, updatedAt }: ProcessingViewProps) {
   }, [updatedAt]);
 
   return (
-    <div className="flex flex-col items-center gap-4 p-6">
-      <img src={imageUrl} alt="Kvittering" className="max-h-96 rounded" />
+    <div className="page items-center">
+      <img src={imageUrl} alt="Kvittering" className="max-h-96 rounded-md" />
       <div
         role="status"
         aria-label="Laster"
-        className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"
+        className="h-8 w-8 animate-spin rounded-full border-4 border-ink/15 border-t-accent"
       />
       <p>
         {PROCESSING_LABELS[status]} ({elapsedSeconds} s)
@@ -88,7 +88,7 @@ function DeleteReceiptButton({ receiptId }: { receiptId: number }) {
       type="button"
       onClick={handleDelete}
       disabled={deleteReceipt.isPending}
-      className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
+      className="btn btn-danger"
     >
       Slett kvittering
     </button>
@@ -106,13 +106,13 @@ function UploadedView({ receipt }: { receipt: ReceiptDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <img src={receipt.imageUrl} alt="Kvittering" className="max-h-96 rounded" />
+    <div className="page">
+      <img src={receipt.imageUrl} alt="Kvittering" className="max-h-96 rounded-md" />
       <button
         type="button"
         onClick={handleScan}
         disabled={scan.isPending}
-        className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+        className="btn btn-primary"
       >
         Skann
       </button>
@@ -134,13 +134,13 @@ const WARNING_LABELS: Record<string, (receipt: ReceiptDetail) => string> = {
 
 function WarningChip({ code, receipt }: { code: string; receipt: ReceiptDetail }) {
   const label = WARNING_LABELS[code]?.(receipt) ?? code;
-  const chipClassName = 'inline-block rounded-full bg-yellow-100 px-3 py-1 text-xs text-yellow-800';
+  const chipClassName = 'text-warn';
 
   if (code === 'POSSIBLE_DUPLICATE' && receipt.possibleDuplicateOf !== null) {
     return (
       <Link
         to={`/receipts/${receipt.possibleDuplicateOf}`}
-        className={`${chipClassName} underline`}
+        className={`${chipClassName} underline underline-offset-2`}
       >
         {label}
       </Link>
@@ -203,11 +203,7 @@ function ReceiptImageToggle({ imageUrl }: { imageUrl: string }) {
   if (!visible) {
     return (
       <div className="md:hidden">
-        <button
-          type="button"
-          onClick={toggle}
-          className="mx-4 min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
-        >
+        <button type="button" onClick={toggle} className="btn btn-secondary self-start">
           Vis bilde
         </button>
       </div>
@@ -215,14 +211,14 @@ function ReceiptImageToggle({ imageUrl }: { imageUrl: string }) {
   }
 
   return (
-    <div className="sticky top-0 z-10 mt-2 h-[45vh] overflow-hidden bg-gray-100 md:hidden">
+    <div className="sticky top-0 z-10 -mx-5 h-[45vh] overflow-hidden bg-ink/5 md:hidden">
       <div className="h-full overflow-auto">
         <ReceiptImageLink imageUrl={imageUrl} />
       </div>
       <button
         type="button"
         onClick={toggle}
-        className="absolute right-2 top-2 min-h-11 min-w-11 rounded border border-gray-400 bg-white px-3 py-2 text-sm font-medium shadow"
+        className="btn btn-secondary absolute top-2 right-2 bg-field px-3 shadow"
       >
         Skjul bilde
       </button>
@@ -265,8 +261,8 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 p-4">
-      <label htmlFor="store-name" className="text-sm font-medium">
+    <div className="stack">
+      <label htmlFor="store-name" className="label">
         Butikk
       </label>
       <input
@@ -274,10 +270,10 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
         type="text"
         value={storeName}
         onChange={(event) => setStoreName(event.target.value)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
       />
 
-      <label htmlFor="purchased-at" className="text-sm font-medium">
+      <label htmlFor="purchased-at" className="label">
         Dato
       </label>
       <input
@@ -285,10 +281,10 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
         type="date"
         value={purchasedAt}
         onChange={(event) => setPurchasedAt(event.target.value)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
       />
 
-      <label htmlFor="total-kroner" className="text-sm font-medium">
+      <label htmlFor="total-kroner" className="label">
         Totalsum (kr)
       </label>
       <input
@@ -297,10 +293,10 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
         inputMode="decimal"
         value={totalText}
         onChange={(event) => setTotalText(event.target.value)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
       />
       {totalError !== null && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {totalError}
         </p>
       )}
@@ -309,18 +305,18 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
         type="button"
         onClick={handleSave}
         disabled={updateReceipt.isPending}
-        className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+        className="btn btn-primary"
       >
         Lagre
       </button>
       {error !== null && (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {error}
         </p>
       )}
 
       {receipt.warnings.length > 0 && (
-        <div className="flex flex-wrap gap-2 pt-2">
+        <div className="stack gap-0 pt-2">
           {receipt.warnings.map((code) => (
             <WarningChip key={code} code={code} receipt={receipt} />
           ))}
@@ -359,15 +355,12 @@ function ShoppingListSelector({ receipt }: { receipt: ReceiptDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-1 px-4 pb-4">
-      <label htmlFor="shopping-list" className="text-sm font-medium">
+    <div className="stack">
+      <label htmlFor="shopping-list" className="label">
         Handleliste
       </label>
       {receipt.shoppingList !== null && (
-        <Link
-          to={`/shopping-lists/${receipt.shoppingList.id}`}
-          className="text-sm text-blue-600 underline"
-        >
+        <Link to={`/shopping-lists/${receipt.shoppingList.id}`} className="link">
           Handleliste uke {weekNumber(receipt.shoppingList.weekStart)}
         </Link>
       )}
@@ -376,7 +369,7 @@ function ShoppingListSelector({ receipt }: { receipt: ReceiptDetail }) {
         value={receipt.shoppingListId ?? ''}
         onChange={handleChange}
         disabled={updateReceipt.isPending}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
       >
         <option value="">Ingen</option>
         {(lists ?? []).map((list) => (
@@ -385,7 +378,7 @@ function ShoppingListSelector({ receipt }: { receipt: ReceiptDetail }) {
           </option>
         ))}
       </select>
-      <p className="text-xs text-gray-500">Knyttes automatisk når datoene stemmer</p>
+      <p className="meta">Knyttes automatisk når datoene stemmer</p>
     </div>
   );
 }
@@ -416,13 +409,13 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 p-4">
+    <div className="stack">
       {hasUnmatchedLines && (
         <button
           type="button"
           onClick={handleRematch}
           disabled={rematch.isPending}
-          className="min-h-11 rounded border border-blue-600 px-4 py-2 font-medium text-blue-600 disabled:opacity-50"
+          className="btn btn-secondary"
         >
           Prøv matching igjen
         </button>
@@ -431,7 +424,7 @@ function ReceiptActions({ receipt }: { receipt: ReceiptDetail }) {
         type="button"
         onClick={handleFinish}
         disabled={updateReceipt.isPending}
-        className="min-h-11 rounded bg-green-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+        className="btn btn-primary"
       >
         Ferdig
       </button>
@@ -449,11 +442,11 @@ export default function ReceiptPage() {
   useInvalidateShoppingListsOnDone(data?.status);
 
   if (isPending) {
-    return <p className="p-4">Laster …</p>;
+    return <p className="page text-ink-muted">Laster …</p>;
   }
 
   if (isError || !data) {
-    return <p className="p-4">Fant ikke kvitteringen.</p>;
+    return <p className="page">Fant ikke kvitteringen.</p>;
   }
 
   if (data.status === 'uploaded') {
@@ -473,10 +466,10 @@ export default function ReceiptPage() {
 
   if (data.status === 'failed') {
     return (
-      <div className="flex flex-col gap-4 p-6">
-        <img src={data.imageUrl} alt="Kvittering" className="max-h-96 rounded" />
+      <div className="page">
+        <img src={data.imageUrl} alt="Kvittering" className="max-h-96 rounded-md" />
         <ReceiptStatusBadge status={data.status} />
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="text-danger">
           {data.errorMessage ?? 'Noe gikk galt'}
         </p>
         <button
@@ -487,7 +480,7 @@ export default function ReceiptPage() {
             })
           }
           disabled={scan.isPending}
-          className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="btn btn-primary"
         >
           Prøv igjen
         </button>
@@ -497,15 +490,15 @@ export default function ReceiptPage() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row md:items-start md:gap-4 md:p-4">
+    <div className="page md:max-w-5xl md:flex-row md:items-start">
       <div className="hidden md:sticky md:top-0 md:block md:max-h-[calc(100vh-4rem)] md:w-1/2 md:overflow-auto">
         <ReceiptImageLink imageUrl={data.imageUrl} />
       </div>
-      <div className="flex flex-col md:w-1/2">
+      <div className="flex flex-col gap-8 md:w-1/2">
         <ReceiptHeader key={data.id} receipt={data} />
         <ShoppingListSelector receipt={data} />
         <ReceiptImageToggle imageUrl={data.imageUrl} />
-        <div className="px-4">
+        <div className="flex flex-col">
           {data.lines.map((line) => (
             <ReceiptLineRow key={line.id} line={line} receiptId={data.id} />
           ))}

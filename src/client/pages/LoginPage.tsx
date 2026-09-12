@@ -31,33 +31,31 @@ export default function LoginPage() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-4 p-6"
+      className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center gap-8 px-5 py-8"
     >
-      <h1 className="text-xl font-bold">Kvitteringer</h1>
-      <label htmlFor="password" className="font-medium">
-        Passord
-      </label>
-      <input
-        id="password"
-        name="password"
-        type="password"
-        autoComplete="current-password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
-      />
-      <button
-        type="submit"
-        disabled={login.isPending}
-        className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
-      >
-        Logg inn
-      </button>
-      {error !== null && (
-        <p role="alert" className="text-red-600">
-          {error}
-        </p>
-      )}
+      <h1 className="page-title">Kvitteringer</h1>
+      <div className="stack">
+        <label htmlFor="password" className="label">
+          Passord
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          className="field"
+        />
+        <button type="submit" disabled={login.isPending} className="btn btn-primary">
+          Logg inn
+        </button>
+        {error !== null && (
+          <p role="alert" className="text-danger">
+            {error}
+          </p>
+        )}
+      </div>
     </form>
   );
 }

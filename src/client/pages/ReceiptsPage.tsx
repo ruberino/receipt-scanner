@@ -68,15 +68,15 @@ function MonthlyBarsSection({ months }: { months: MonthlyStats[] }) {
   const maxOre = Math.max(0, ...months.map((month) => month.totalOre));
 
   return (
-    <section>
-      <h3 className="mb-2 font-medium">Per måned</h3>
-      <ul className="flex flex-col gap-2">
+    <section className="stack">
+      <h3 className="eyebrow">Per måned</h3>
+      <ul className="flex flex-col gap-1">
         {months.map((month) => (
-          <li key={month.month} className="flex items-center gap-3 text-sm">
-            <span className="w-16 flex-shrink-0 text-gray-600">{formatMonth(month.month)}</span>
-            <div className="h-3 flex-1 rounded bg-gray-100">
+          <li key={month.month} className="flex items-center gap-3">
+            <span className="w-16 flex-shrink-0 text-ink-muted">{formatMonth(month.month)}</span>
+            <div className="h-3 flex-1 rounded-sm bg-ink/10">
               <div
-                className="h-3 rounded bg-blue-600"
+                className="h-3 rounded-sm bg-accent"
                 style={{ width: `${maxOre === 0 ? 0 : (month.totalOre / maxOre) * 100}%` }}
               />
             </div>
@@ -90,13 +90,13 @@ function MonthlyBarsSection({ months }: { months: MonthlyStats[] }) {
 
 function TopProductsSection({ products }: { products: Product[] }) {
   return (
-    <section>
-      <h3 className="mb-2 font-medium">Mest kjøpt, alle kvitteringer</h3>
-      <ol className="flex flex-col gap-1">
+    <section className="stack">
+      <h3 className="eyebrow">Mest kjøpt, alle kvitteringer</h3>
+      <ol className="flex flex-col">
         {products.map((product) => (
-          <li key={product.id} className="flex justify-between gap-3 text-sm">
+          <li key={product.id} className="flex justify-between gap-3">
             <span className="truncate">{product.name}</span>
-            <span className="flex-shrink-0 text-gray-600">{product.timesBought}×</span>
+            <span className="flex-shrink-0 text-ink-muted">{product.timesBought}×</span>
           </li>
         ))}
       </ol>
@@ -106,20 +106,20 @@ function TopProductsSection({ products }: { products: Product[] }) {
 
 function ShoppingListHistorySection({ lists }: { lists: ShoppingListSummary[] }) {
   return (
-    <section>
-      <h3 className="mb-2 font-medium">Handlelistehistorikk</h3>
-      <ul className="flex flex-col gap-1">
+    <section className="stack">
+      <h3 className="eyebrow">Handlelistehistorikk</h3>
+      <ul className="flex flex-col">
         {lists.map((list) => {
           const tripLabel = tripCountsLabel(list.tripCounts);
           return (
             <li key={list.id}>
               <Link
                 to={`/shopping-lists/${list.id}`}
-                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1 text-sm"
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 py-1"
               >
                 <span>{formatWeek(list.weekStart)}</span>
-                {tripLabel !== null && <span className="text-gray-600">{tripLabel}</span>}
-                <span className="flex-shrink-0 text-gray-600">
+                {tripLabel !== null && <span className="text-ink-muted">{tripLabel}</span>}
+                <span className="flex-shrink-0 text-ink-muted">
                   {list.itemCount} {list.itemCount === 1 ? 'vare' : 'varer'}
                 </span>
                 <span className="flex-shrink-0">{shoppingListStatusLabel(list.status)}</span>
@@ -145,9 +145,9 @@ function TripsSection({ trips }: { trips: TripsStats }) {
       : '0';
 
   return (
-    <section>
-      <h3 className="mb-2 font-medium">Handleturer</h3>
-      <ul className="flex flex-col gap-1 text-sm">
+    <section className="stack">
+      <h3 className="eyebrow">Handleturer</h3>
+      <ul className="flex flex-col">
         <li className="flex justify-between">
           <span>Fullførte lister</span>
           <span>{trips.completedLists}</span>
@@ -174,9 +174,9 @@ function TripsSection({ trips }: { trips: TripsStats }) {
  * (from the linked trip) added next to proposed and accepted. */
 function AiProposalsSection({ aiProposals }: { aiProposals: AiProposalsStats }) {
   return (
-    <section>
-      <h3 className="mb-2 font-medium">AI-forslag</h3>
-      <ul className="flex flex-col gap-1 text-sm">
+    <section className="stack">
+      <h3 className="eyebrow">AI-forslag</h3>
+      <ul className="flex flex-col">
         <li className="flex justify-between">
           <span>Forslag</span>
           <span>{aiProposals.proposals}</span>
@@ -204,14 +204,13 @@ function StatsAndHistory() {
   const history = useShoppingListHistory(isOpen);
 
   return (
-    <details
-      className="border-b border-gray-200 p-4"
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="cursor-pointer font-medium">Statistikk og historikk</summary>
+    <details onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-2 font-semibold text-accent">
+        Statistikk og historikk
+      </summary>
       {isOpen && (
-        <div className="mt-4 flex flex-col gap-6">
-          {stats.isPending && <p>Laster …</p>}
+        <div className="flex flex-col gap-8 pt-4 pb-2">
+          {stats.isPending && <p className="text-ink-muted">Laster …</p>}
           {stats.isError && <p>Noe gikk galt</p>}
           {stats.isSuccess && (
             <>
@@ -222,7 +221,7 @@ function StatsAndHistory() {
             </>
           )}
 
-          {history.isPending && <p>Laster …</p>}
+          {history.isPending && <p className="text-ink-muted">Laster …</p>}
           {history.isError && <p>Noe gikk galt</p>}
           {history.isSuccess && <ShoppingListHistorySection lists={history.data} />}
         </div>
@@ -243,23 +242,26 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
   }
 
   return (
-    <li className="flex items-center justify-between gap-3 border-b border-gray-200 p-4">
-      <Link to={`/receipts/${receipt.id}`} className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate font-medium">{storeNameLabel(receipt)}</span>
-        <span className="text-sm text-gray-600">{dateLabel(receipt)}</span>
-        {warningLabel !== null && <span className="text-xs text-yellow-800">{warningLabel}</span>}
+    <li className="flex items-center justify-between gap-3 py-3">
+      <Link to={`/receipts/${receipt.id}`} className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">{storeNameLabel(receipt)}</span>
+        <span className="meta">
+          {dateLabel(receipt)}
+          {warningLabel !== null && <span className="sep text-warn">{warningLabel}</span>}
+        </span>
       </Link>
-      <div className="flex flex-shrink-0 items-center gap-2">
+      <div className="flex flex-shrink-0 flex-col items-end">
         <span className="whitespace-nowrap">
           {receipt.totalOre !== null ? formatOre(receipt.totalOre) : '–'}
         </span>
         <ReceiptStatusBadge status={receipt.status} />
+
         {receipt.status === 'uploaded' && (
           <button
             type="button"
             onClick={handleScan}
             disabled={scan.isPending}
-            className="min-h-11 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="btn btn-primary px-3"
           >
             Skann
           </button>
@@ -291,34 +293,34 @@ export default function ReceiptsPage() {
   }
 
   if (isPending) {
-    return <p className="p-4">Laster …</p>;
+    return <p className="page text-ink-muted">Laster …</p>;
   }
 
   if (isError) {
-    return <p className="p-4">Noe gikk galt</p>;
+    return <p className="page">Noe gikk galt</p>;
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="page">
+      <h1 className="page-title">Kvitteringer</h1>
+
       {uploadedIds.length > 0 && (
-        <div className="p-4">
-          <button
-            type="button"
-            onClick={() => void handleScanAll()}
-            disabled={scanAll.isPending}
-            className="min-h-11 w-full rounded bg-green-600 px-4 py-2 font-medium text-white disabled:opacity-50"
-          >
-            {uploadedIds.length === 1 ? 'Skann (1)' : `Skann alle (${uploadedIds.length})`}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void handleScanAll()}
+          disabled={scanAll.isPending}
+          className="btn btn-primary"
+        >
+          {uploadedIds.length === 1 ? 'Skann (1)' : `Skann alle (${uploadedIds.length})`}
+        </button>
       )}
 
       <StatsAndHistory />
 
       {receipts.length === 0 ? (
-        <p className="p-4">Ingen kvitteringer ennå.</p>
+        <p className="text-ink-muted">Ingen kvitteringer ennå.</p>
       ) : (
-        <ul>
+        <ul className="flex flex-col">
           {receipts.map((receipt) => (
             <ReceiptRow key={receipt.id} receipt={receipt} />
           ))}
@@ -326,16 +328,14 @@ export default function ReceiptsPage() {
       )}
 
       {hasNextPage && (
-        <div className="p-4">
-          <button
-            type="button"
-            onClick={() => void fetchNextPage()}
-            disabled={isFetchingNextPage}
-            className="min-h-11 w-full rounded border border-gray-400 px-4 py-2 font-medium disabled:opacity-50"
-          >
-            Last flere
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void fetchNextPage()}
+          disabled={isFetchingNextPage}
+          className="btn btn-secondary"
+        >
+          Last flere
+        </button>
       )}
     </div>
   );

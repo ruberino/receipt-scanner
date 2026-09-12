@@ -49,32 +49,28 @@ function ProductRow({
   indented: boolean;
 }) {
   return (
-    <li className={`border-b border-gray-200 ${indented ? 'pl-8' : ''}`}>
-      <Link to={`/products/${product.id}`} className="flex flex-col gap-1 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate font-medium">{product.name}</span>
-          {product.suppressed && (
-            <span className="whitespace-nowrap rounded-full bg-gray-200 px-2 py-1 text-xs text-gray-700">
-              Skjult
-            </span>
-          )}
+    <li className={`${indented ? 'pl-8' : ''}`}>
+      <Link to={`/products/${product.id}`} className="flex flex-col py-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="truncate">{product.name}</span>
+          {product.suppressed && <span className="chip">Skjult</span>}
         </div>
-        {product.variantCount > 0 && (
-          <span className="text-sm text-gray-500">{variantCountLabel(product.variantCount)}</span>
-        )}
-        <span className="text-sm text-gray-600">{product.category ?? 'Annet'}</span>
-        {parentName !== null && !indented && (
-          <span className="text-sm text-gray-500">variant av {parentName}</span>
-        )}
-        <span className="text-sm text-gray-600">{timesBoughtLabel(product.timesBought)}</span>
-        {product.lastBought !== null && (
-          <span className="text-sm text-gray-600">
-            Sist {formatRelativeDate(product.lastBought)}
-          </span>
-        )}
-        {product.medianIntervalDays !== null && (
-          <span className="text-sm text-gray-600">ca. hver {product.medianIntervalDays}. dag</span>
-        )}
+        <p className="meta">
+          <span>{product.category ?? 'Annet'}</span>
+          {product.variantCount > 0 && (
+            <span className="sep">{variantCountLabel(product.variantCount)}</span>
+          )}
+          {parentName !== null && !indented && <span className="sep">variant av {parentName}</span>}
+        </p>
+        <p className="meta">
+          <span>{timesBoughtLabel(product.timesBought)}</span>
+          {product.lastBought !== null && (
+            <span className="sep">Sist {formatRelativeDate(product.lastBought)}</span>
+          )}
+          {product.medianIntervalDays !== null && (
+            <span className="sep">ca. hver {product.medianIntervalDays}. dag</span>
+          )}
+        </p>
       </Link>
     </li>
   );
@@ -102,8 +98,8 @@ function GroupCandidateRow({
   }
 
   return (
-    <li className="flex flex-col gap-2 border-b border-gray-200 py-3">
-      <p className="text-sm">
+    <li className="stack py-3">
+      <p>
         {memberNames} → «{candidate.suggestedName}»
       </p>
       <label htmlFor={`candidate-name-${candidateKey(candidate.productIds)}`} className="sr-only">
@@ -114,22 +110,18 @@ function GroupCandidateRow({
         type="text"
         value={name}
         onChange={(event) => setName(event.target.value)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
       />
       <div className="flex gap-2">
         <button
           type="button"
           onClick={handleCreate}
           disabled={createGroup.isPending || name.trim().length === 0}
-          className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="btn btn-primary"
         >
           Grupper
         </button>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="min-h-11 text-sm text-gray-600 underline"
-        >
+        <button type="button" onClick={onDismiss} className="btn btn-quiet px-0">
           Ikke nå
         </button>
       </div>
@@ -160,15 +152,12 @@ function GroupCandidatesSection({ allProducts }: { allProducts: Product[] }) {
   }
 
   return (
-    <details
-      className="border-b border-gray-200 p-4"
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="cursor-pointer font-medium">
+    <details onToggle={(event) => setIsOpen(event.currentTarget.open)}>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-2 font-semibold text-accent">
         Kan være samme vare ({visible.length})
       </summary>
       {isOpen && (
-        <ul className="mt-2 flex flex-col">
+        <ul className="flex flex-col pt-2">
           {visible.map((candidate) => (
             <GroupCandidateRow
               key={candidateKey(candidate.productIds)}
@@ -195,11 +184,13 @@ export default function ProductsPage() {
   const { data, isPending, isError } = useProducts({ q: debouncedQuery, includeSuppressed });
 
   return (
-    <div className="flex flex-col">
+    <div className="page">
+      <h1 className="page-title">Varer</h1>
+
       <GroupCandidatesSection allProducts={allProducts ?? []} />
 
-      <div className="flex flex-col gap-2 p-4">
-        <label htmlFor="product-search" className="text-sm font-medium">
+      <div className="stack">
+        <label htmlFor="product-search" className="sr-only">
           Søk etter vare
         </label>
         <input
@@ -208,9 +199,9 @@ export default function ProductsPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Søk etter vare …"
-          className="min-h-11 rounded border border-gray-400 px-3 py-2"
+          className="field"
         />
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-11 items-center gap-3">
           <input
             type="checkbox"
             checked={includeSuppressed}
@@ -220,11 +211,13 @@ export default function ProductsPage() {
         </label>
       </div>
 
-      {isPending && <p className="p-4">Laster …</p>}
-      {isError && <p className="p-4">Noe gikk galt</p>}
-      {!isPending && !isError && data.length === 0 && <p className="p-4">Ingen varer funnet.</p>}
+      {isPending && <p className="text-ink-muted">Laster …</p>}
+      {isError && <p>Noe gikk galt</p>}
+      {!isPending && !isError && data.length === 0 && (
+        <p className="text-ink-muted">Ingen varer funnet.</p>
+      )}
       {!isPending && !isError && data.length > 0 && (
-        <ul>
+        <ul className="flex flex-col">
           {data.map((product) => {
             // The server places every child right after its parent, as one block, when both are
             // in the result (T40); a sibling further down that block is still indented, so "both
