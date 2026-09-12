@@ -156,15 +156,17 @@ export function receiptsListRefetchInterval(pages: ReceiptSummary[][] | undefine
 export function useReceiptsList() {
   return useInfiniteQuery({
     queryKey: ['receipts', 'list'],
-    queryFn: ({ pageParam }: { pageParam: number | undefined }) =>
+    queryFn: ({ pageParam }: { pageParam: number }) =>
       fetchJson<ReceiptSummary[]>(
-        pageParam === undefined
-          ? `/api/receipts?limit=${RECEIPTS_LIST_PAGE_SIZE}`
-          : `/api/receipts?limit=${RECEIPTS_LIST_PAGE_SIZE}&before=${pageParam}`,
+        `/api/receipts?limit=${RECEIPTS_LIST_PAGE_SIZE}&offset=${pageParam}`,
       ),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (lastPage) =>
-      lastPage.length === RECEIPTS_LIST_PAGE_SIZE ? lastPage[lastPage.length - 1]?.id : undefined,
+    initialPageParam: 0,
+    // Offset, not a cursor on id: the list is ordered by the receipt's own date, so the id of the
+    // last row says nothing about where the next page starts.
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === RECEIPTS_LIST_PAGE_SIZE
+        ? allPages.reduce((total, page) => total + page.length, 0)
+        : undefined,
     refetchInterval: (query) => receiptsListRefetchInterval(query.state.data?.pages),
   });
 }

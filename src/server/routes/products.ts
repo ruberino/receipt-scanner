@@ -24,6 +24,25 @@ import { normalizeText } from '../../shared/normalize.ts';
 
 const NO_STATS: ProductStats = { timesBought: 0, lastBought: null, medianIntervalDays: null };
 
+/** Newest first: the product bought most recently is the one the household is most likely looking
+ * for. `lastBought` is a `YYYY-MM-DD` string, so a plain string compare orders it. A product with
+ * no purchase at all has no date and sorts last, and equal dates fall back to the name. */
+function byNewestFirst(
+  a: { lastBought: string | null; name: string },
+  b: { lastBought: string | null; name: string },
+): number {
+  if (a.lastBought !== b.lastBought) {
+    if (a.lastBought === null) {
+      return 1;
+    }
+    if (b.lastBought === null) {
+      return -1;
+    }
+    return b.lastBought.localeCompare(a.lastBought);
+  }
+  return a.name.localeCompare(b.name, 'nb');
+}
+
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const listQuerySchema = z.object({
   q: z.string().trim().min(1).optional(),
@@ -188,7 +207,7 @@ export default async function productsRoutes(app: FastifyInstance): Promise<void
       .map((row) =>
         toProduct(row, statsByProduct.get(row.id) ?? NO_STATS, variantCounts.get(row.id) ?? 0),
       )
-      .sort((a, b) => b.timesBought - a.timesBought || a.name.localeCompare(b.name, 'nb'));
+      .sort(byNewestFirst);
 
     // A child sorts directly after its parent when both are in the result (T40, ADR-0019).
     const resultIds = new Set(sorted.map((row) => row.id));

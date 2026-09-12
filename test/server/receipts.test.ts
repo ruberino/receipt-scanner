@@ -113,7 +113,7 @@ describe('GET /api/receipts', () => {
 
     const secondPage = await app.inject({
       method: 'GET',
-      url: `/api/receipts?limit=3&before=${ids[2]}`,
+      url: '/api/receipts?limit=3&offset=3',
       headers: { cookie },
     });
     const secondIds = secondPage.json().map((r: { id: number }) => r.id);
@@ -121,6 +121,41 @@ describe('GET /api/receipts', () => {
 
     const allSeen = [...firstBody.map((r: { id: number }) => r.id), ...secondIds];
     expect(new Set(allSeen).size).toBe(allSeen.length);
+  });
+
+  it('orders by the date on the receipt, newest first, not by upload order', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const oldest = insertDoneReceipt({
+      purchasedAt: '2026-08-01',
+      createdAt: '2026-09-10T09:00:00.000Z',
+    });
+    const newest = insertDoneReceipt({
+      purchasedAt: '2026-09-05',
+      createdAt: '2026-09-10T10:00:00.000Z',
+    });
+    const middle = insertDoneReceipt({
+      purchasedAt: '2026-08-20',
+      createdAt: '2026-09-10T11:00:00.000Z',
+    });
+    // Not scanned yet, so it has no purchase date: it falls back to the day it was uploaded.
+    const uploaded = insertDoneReceipt({
+      status: 'uploaded',
+      storeName: null,
+      purchasedAt: null,
+      totalOre: null,
+      createdAt: '2026-09-12T08:00:00.000Z',
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/api/receipts', headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().map((r: { id: number }) => r.id)).toEqual([
+      uploaded,
+      newest,
+      middle,
+      oldest,
+    ]);
   });
 
   it('includes updatedAt, distinct from createdAt (T30)', async () => {
