@@ -95,7 +95,7 @@ describe('GET /api/products', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('matches a hand-computed fixture: three receipts, two products, ordered by timesBought desc', async () => {
+  it('matches a hand-computed fixture: three receipts, two products, newest purchase first', async () => {
     app = createTestApp();
     cookie = await loginCookie(app);
     const milk = insertProduct('Lettmelk 1 l');
@@ -120,6 +120,27 @@ describe('GET /api/products', () => {
       medianIntervalDays: 10.5,
     });
     expect(body[1]).toMatchObject({ id: oats, timesBought: 1, medianIntervalDays: null });
+  });
+
+  it('puts the most recently bought product first, whatever the counts are', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const staple = insertProduct('Lettmelk 1 l');
+    const oneOff = insertProduct('Bursdagskake');
+    const r1 = insertReceipt('2026-08-01');
+    insertLine(r1, staple);
+    const r2 = insertReceipt('2026-08-08');
+    insertLine(r2, staple);
+    const r3 = insertReceipt('2026-09-05');
+    insertLine(r3, oneOff);
+
+    const response = await app.inject({ method: 'GET', url: '/api/products', headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.map((p: { id: number }) => p.id)).toEqual([oneOff, staple]);
+    expect(body[0]).toMatchObject({ timesBought: 1, lastBought: '2026-09-05' });
+    expect(body[1]).toMatchObject({ timesBought: 2, lastBought: '2026-08-08' });
   });
 
   it('filters case- and punctuation-insensitively with q', async () => {

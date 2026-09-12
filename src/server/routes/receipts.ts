@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { patchReceiptSchema } from '../../shared/schemas.ts';
 import { diffDays, todayInOslo } from '../../shared/dates.ts';
@@ -20,8 +20,14 @@ export type ReceiptsRouteOptions = {
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  before: z.coerce.number().int().positive().optional(),
+  offset: z.coerce.number().int().min(0).default(0),
 });
+
+/** What the household means by a receipt's date: the day it was bought, falling back to the day
+ * it was uploaded while it is still `uploaded`/`failed` and has no `purchased_at` yet. `created_at`
+ * is a UTC timestamp, so its first ten characters are its UTC date — close enough to order by,
+ * and the row shows the Oslo date either way. `id` breaks ties, so a page never repeats a row. */
+const receiptDateKey = sql`coalesce(${receipts.purchasedAt}, substr(${receipts.createdAt}, 1, 10))`;
 const MATCHING_WARNINGS: readonly MatchLinesWarning[] = ['UNMATCHED_LINES', 'MATCHING_FAILED'];
 
 /** Exported for the shopping list routes, which build a receipt summary for each linked receipt
@@ -183,9 +189,9 @@ export default async function receiptsRoutes(
     const rows = app.db
       .select()
       .from(receipts)
-      .where(query.before !== undefined ? lt(receipts.id, query.before) : undefined)
-      .orderBy(desc(receipts.id))
+      .orderBy(desc(receiptDateKey), desc(receipts.id))
       .limit(query.limit)
+      .offset(query.offset)
       .all();
 
     const lineCounts = loadLineCounts(
