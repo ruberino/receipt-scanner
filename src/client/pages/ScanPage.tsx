@@ -147,7 +147,7 @@ export default function ScanPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="page">
       <input
         ref={cameraInputRef}
         type="file"
@@ -167,40 +167,37 @@ export default function ScanPage() {
         onChange={handleFilesSelected}
       />
 
-      <button
-        type="button"
-        onClick={() => cameraInputRef.current?.click()}
-        className="min-h-11 rounded bg-blue-600 px-4 py-3 text-lg font-medium text-white"
-      >
-        Ta bilde
-      </button>
-      <button
-        type="button"
-        onClick={() => libraryInputRef.current?.click()}
-        className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
-      >
-        Velg fra bilder
-      </button>
+      <div className="stack">
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="btn btn-primary"
+        >
+          Ta bilde
+        </button>
+        <button
+          type="button"
+          onClick={() => libraryInputRef.current?.click()}
+          className="btn btn-secondary"
+        >
+          Velg fra bilder
+        </button>
+      </div>
 
       {entries.length > 0 && (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col">
           {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-center justify-between gap-2 rounded border border-gray-200 px-3 py-2"
-            >
-              <span className="truncate text-sm">{entry.name}</span>
+            <li key={entry.id} className="flex min-h-11 items-center justify-between gap-3">
+              <span className="truncate">{entry.name}</span>
               {entry.state.kind === 'duplicate' && entry.state.existingReceiptId !== undefined ? (
                 <Link
                   to={`/receipts/${entry.state.existingReceiptId}`}
-                  className="whitespace-nowrap text-sm text-blue-600 underline"
+                  className="whitespace-nowrap link"
                 >
                   {fileStateLabel(entry.state)}
                 </Link>
               ) : (
-                <span className="whitespace-nowrap text-sm text-gray-600">
-                  {fileStateLabel(entry.state)}
-                </span>
+                <span className="whitespace-nowrap meta">{fileStateLabel(entry.state)}</span>
               )}
             </li>
           ))}
@@ -212,7 +209,7 @@ export default function ScanPage() {
           type="button"
           onClick={() => void handleScanAll()}
           disabled={scan.isPending || isQueueBusy}
-          className="min-h-11 rounded bg-green-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="btn btn-primary"
         >
           {uploadedReceipts.length === 1 ? 'Skann (1)' : `Skann alle (${uploadedReceipts.length})`}
         </button>

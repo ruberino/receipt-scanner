@@ -64,44 +64,47 @@ function SuggestionsPreview() {
     completedTodayInOslo(latestList.completedAt);
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <h1 className="text-lg font-semibold">Forslag til uke {isoWeekNumber(todayInOslo())}</h1>
-
-      {completedToday && latestList.completedAt !== null && (
-        <div className="flex flex-col gap-2 rounded border border-gray-300 p-4">
-          <p className="text-gray-600">
-            Handleturen ble fullført kl. {formatTimeInOslo(latestList.completedAt)}
+    <div className="page">
+      <div className="stack">
+        <h1 className="page-title">Forslag til uke {isoWeekNumber(todayInOslo())}</h1>
+        {completedToday && latestList.completedAt !== null && (
+          <p className="text-ink-muted">
+            <span>Handleturen ble fullført kl. {formatTimeInOslo(latestList.completedAt)}</span>
+            <Link to={`/shopping-lists/${latestList.id}`} className="link sep">
+              Se handleturen
+            </Link>
           </p>
-          <Link to={`/shopping-lists/${latestList.id}`} className="text-blue-600 underline">
-            Se handleturen
-          </Link>
+        )}
+      </div>
+
+      <div className="stack">
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={createList.isPending}
+          className="btn btn-primary"
+        >
+          Lag handleliste
+        </button>
+        {completedToday && (
           <button
             type="button"
             onClick={handleReopen}
             disabled={reopen.isPending}
-            className="min-h-11 rounded border border-blue-600 px-4 py-2 font-medium text-blue-600 disabled:opacity-50"
+            className="btn btn-secondary"
           >
             Gjenåpne listen
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
-      <button
-        type="button"
-        onClick={handleCreate}
-        disabled={createList.isPending}
-        className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
-      >
-        Lag handleliste
-      </button>
-
-      {isPending && <p>Laster …</p>}
+      {isPending && <p className="text-ink-muted">Laster …</p>}
       {isError && <p>Noe gikk galt</p>}
       {!isPending && !isError && suggestions.length === 0 && (
-        <p className="text-gray-600">Ingen forslag ennå.</p>
+        <p className="text-ink-muted">Ingen forslag ennå.</p>
       )}
       {!isPending && !isError && suggestions.length > 0 && (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col">
           {suggestions.map((suggestion) => (
             <SuggestionCard key={suggestion.productId} suggestion={suggestion} />
           ))}
@@ -167,20 +170,17 @@ function AddItemField({ listId }: { listId: number }) {
         onBlur={() => setIsOpen(false)}
         onKeyDown={handleKeyDown}
         placeholder="Legg til vare …"
-        className="min-h-11 w-full rounded border border-gray-400 px-3 py-2"
+        className="field"
       />
       {isOpen && (
-        <ul
-          role="listbox"
-          className="absolute z-10 mt-1 w-full rounded border border-gray-300 bg-white shadow-lg"
-        >
+        <ul role="listbox" className="popover">
           {(results ?? []).map((product) => (
             <li key={product.id} role="option">
               <button
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => addItem(product.name, product.id)}
-                className="min-h-11 w-full px-3 py-2 text-left hover:bg-gray-100"
+                className="option"
               >
                 {product.name}
               </button>
@@ -192,7 +192,7 @@ function AddItemField({ listId }: { listId: number }) {
                 type="button"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => addItem(trimmedQuery)}
-                className="min-h-11 w-full px-3 py-2 text-left font-medium text-blue-600 hover:bg-gray-100"
+                className="option font-semibold text-accent"
               >
                 Legg til «{trimmedQuery}»
               </button>
@@ -359,22 +359,20 @@ function OpenListView({ list }: { list: ShoppingList }) {
   }
 
   return (
-    <div className="flex flex-col">
-      <div className="p-4">
-        <h1 className="text-lg font-semibold">Handleliste uke {isoWeekNumber(list.weekStart)}</h1>
-        <p className="text-sm text-gray-600">
+    <div className="page">
+      <div className="stack">
+        <h1 className="page-title">Handleliste uke {isoWeekNumber(list.weekStart)}</h1>
+        <p className="text-ink-muted">
           {checkedItems.length} av {items.length} kjøpt
         </p>
       </div>
 
       {uncheckedItems.length === 0 && checkedItems.length === 0 ? (
-        <p className="p-4 text-gray-600">Handlelisten er tom.</p>
+        <p className="text-ink-muted">Handlelisten er tom.</p>
       ) : (
         groupedUncheckedItems.map(({ category, items: categoryItems }) => (
-          <div key={category}>
-            <h2 className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              {category}
-            </h2>
+          <div key={category} className="stack gap-0">
+            <h2 className="eyebrow">{category}</h2>
             <ul>
               {categoryItems.map((item) => (
                 <ShoppingListItemRow
@@ -390,8 +388,8 @@ function OpenListView({ list }: { list: ShoppingList }) {
       )}
 
       {checkedItems.length > 0 && (
-        <div className="px-4 pt-2">
-          <p className="py-2 text-sm text-gray-600">{boughtLabel(checkedItems.length)}</p>
+        <div className="stack gap-0">
+          <p className="eyebrow">{boughtLabel(checkedItems.length)}</p>
           <ul>
             {checkedItems.map((item) => (
               <ShoppingListItemRow
@@ -405,14 +403,15 @@ function OpenListView({ list }: { list: ShoppingList }) {
         </div>
       )}
 
-      <div className="flex flex-col gap-4 p-4">
-        <AddItemField listId={list.id} />
+      <AddItemField listId={list.id} />
+
+      <div className="stack">
         <ProposalPanel listId={list.id} />
         <button
           type="button"
           onClick={handleRefresh}
           disabled={refresh.isPending}
-          className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium disabled:opacity-50"
+          className="btn btn-secondary"
         >
           Oppdater forslag
         </button>
@@ -420,7 +419,7 @@ function OpenListView({ list }: { list: ShoppingList }) {
           type="button"
           onClick={handleComplete}
           disabled={completeList.isPending}
-          className="min-h-11 rounded bg-green-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="btn btn-primary"
         >
           Ferdig handlet
         </button>
@@ -428,7 +427,7 @@ function OpenListView({ list }: { list: ShoppingList }) {
           type="button"
           onClick={handleDeleteList}
           disabled={deleteList.isPending}
-          className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
+          className="btn btn-danger"
         >
           Slett listen
         </button>
@@ -441,16 +440,12 @@ export default function ShoppingListPage() {
   const { data: list, isPending, isError } = useCurrentShoppingList();
 
   if (isPending) {
-    return <p className="p-4">Laster …</p>;
+    return <p className="page text-ink-muted">Laster …</p>;
   }
 
   if (isError) {
-    return <p className="p-4">Noe gikk galt</p>;
+    return <p className="page">Noe gikk galt</p>;
   }
 
-  return (
-    <div className="mx-auto w-full max-w-2xl">
-      {list === null ? <SuggestionsPreview /> : <OpenListView list={list} />}
-    </div>
-  );
+  return list === null ? <SuggestionsPreview /> : <OpenListView list={list} />;
 }

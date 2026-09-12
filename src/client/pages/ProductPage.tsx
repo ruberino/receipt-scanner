@@ -86,8 +86,8 @@ function GroupPicker({ product, onDone }: { product: ProductDetail; onDone: () =
 
   if (namingCandidate) {
     return (
-      <div className="flex flex-col gap-2">
-        <label htmlFor="group-name" className="text-sm font-medium">
+      <div className="stack">
+        <label htmlFor="group-name" className="label">
           Navn på varegruppen
         </label>
         <input
@@ -95,7 +95,7 @@ function GroupPicker({ product, onDone }: { product: ProductDetail; onDone: () =
           type="text"
           value={groupName}
           onChange={(event) => setGroupName(event.target.value)}
-          className="min-h-11 rounded border border-gray-400 px-3 py-2"
+          className="field"
           autoFocus
         />
         <div className="flex gap-2">
@@ -103,14 +103,14 @@ function GroupPicker({ product, onDone }: { product: ProductDetail; onDone: () =
             type="button"
             onClick={handleCreateGroup}
             disabled={createGroup.isPending || groupName.trim().length === 0}
-            className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="btn btn-primary"
           >
             Lag gruppe
           </button>
           <button
             type="button"
             onClick={() => setNamingCandidate(null)}
-            className="min-h-11 text-sm text-gray-600 underline"
+            className="btn btn-quiet px-0"
           >
             Avbryt
           </button>
@@ -120,8 +120,8 @@ function GroupPicker({ product, onDone }: { product: ProductDetail; onDone: () =
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor="group-search" className="text-sm font-medium">
+    <div className="stack">
+      <label htmlFor="group-search" className="label">
         Legg i gruppe
       </label>
       <input
@@ -130,18 +130,18 @@ function GroupPicker({ product, onDone }: { product: ProductDetail; onDone: () =
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Søk etter vare …"
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
         autoFocus
       />
       {candidates.length > 0 && (
-        <ul className="rounded border border-gray-300">
+        <ul className="stack gap-0">
           {candidates.map((candidate) => (
             <li key={candidate.id}>
               <button
                 type="button"
                 onClick={() => handlePick(candidate)}
                 disabled={attachParent.isPending}
-                className="min-h-11 w-full px-3 py-2 text-left hover:bg-gray-100 disabled:opacity-50"
+                className="option"
               >
                 {candidate.name}
               </button>
@@ -154,16 +154,12 @@ function GroupPicker({ product, onDone }: { product: ProductDetail; onDone: () =
           type="button"
           onClick={handleCreateSolo}
           disabled={createGroup.isPending}
-          className="min-h-11 self-start px-3 py-2 text-left font-medium text-blue-600 hover:bg-gray-100"
+          className="btn self-start px-0 text-accent"
         >
           Opprett «{trimmedQuery}»
         </button>
       )}
-      <button
-        type="button"
-        onClick={onDone}
-        className="min-h-11 self-start text-sm text-gray-600 underline"
-      >
+      <button type="button" onClick={onDone} className="btn btn-quiet self-start px-0">
         Avbryt
       </button>
     </div>
@@ -182,31 +178,31 @@ function VaregruppeSection({ product }: { product: ProductDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <h2 className="text-sm font-medium">Varegruppe</h2>
+    <div className="stack">
+      <h2 className="eyebrow">Varegruppe</h2>
       {product.parent !== null ? (
-        <div className="flex flex-col gap-2">
-          <Link to={`/products/${product.parent.id}`} className="text-sm text-blue-600 underline">
+        <div className="stack">
+          <Link to={`/products/${product.parent.id}`} className="link">
             Variant av «{product.parent.name}»
           </Link>
           <button
             type="button"
             onClick={handleDetach}
             disabled={detachParent.isPending}
-            className="min-h-11 self-start rounded border border-gray-400 px-4 py-2 font-medium disabled:opacity-50"
+            className="btn btn-secondary self-start"
           >
             Fjern fra gruppen
           </button>
         </div>
       ) : product.variantCount > 0 ? (
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">Varianter ({product.variantCount})</h3>
+        <div className="stack gap-0">
+          <h3 className="label">Varianter ({product.variantCount})</h3>
           <ul>
             {product.variants.map((variant) => (
-              <li key={variant.id} className="border-b border-gray-200 py-2">
-                <Link to={`/products/${variant.id}`} className="flex flex-col gap-0.5">
-                  <span className="text-sm">{variant.name}</span>
-                  <span className="text-sm text-gray-600">
+              <li key={variant.id} className="py-2">
+                <Link to={`/products/${variant.id}`} className="flex flex-col">
+                  <span>{variant.name}</span>
+                  <span className="meta">
                     {timesBoughtLabel(variant.timesBought)}
                     {variant.lastBought !== null ? `, sist ${formatDate(variant.lastBought)}` : ''}
                   </span>
@@ -215,7 +211,7 @@ function VaregruppeSection({ product }: { product: ProductDetail }) {
             ))}
           </ul>
           {product.groupStats !== null && (
-            <p className="text-sm text-gray-600">
+            <p className="meta">
               Gruppen: kjøpt {timesBoughtLabel(product.groupStats.timesBought)}
               {product.groupStats.lastBought !== null
                 ? `, sist ${formatDate(product.groupStats.lastBought)}`
@@ -232,7 +228,7 @@ function VaregruppeSection({ product }: { product: ProductDetail }) {
         <button
           type="button"
           onClick={() => setIsPicking(true)}
-          className="min-h-11 self-start rounded border border-gray-400 px-4 py-2 font-medium"
+          className="btn btn-secondary self-start"
         >
           Legg i gruppe…
         </button>
@@ -266,8 +262,8 @@ function MergeSearch({ product, onDone }: { product: ProductDetail; onDone: () =
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor="merge-search" className="text-sm font-medium">
+    <div className="stack">
+      <label htmlFor="merge-search" className="label">
         Slå sammen med
       </label>
       <input
@@ -276,18 +272,18 @@ function MergeSearch({ product, onDone }: { product: ProductDetail; onDone: () =
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Søk etter vare …"
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
+        className="field"
         autoFocus
       />
       {candidates.length > 0 && (
-        <ul className="rounded border border-gray-300">
+        <ul className="stack gap-0">
           {candidates.map((candidate) => (
             <li key={candidate.id}>
               <button
                 type="button"
                 onClick={() => handlePick(candidate)}
                 disabled={merge.isPending}
-                className="min-h-11 w-full px-3 py-2 text-left hover:bg-gray-100 disabled:opacity-50"
+                className="option"
               >
                 {candidate.name}
               </button>
@@ -295,11 +291,7 @@ function MergeSearch({ product, onDone }: { product: ProductDetail; onDone: () =
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        onClick={onDone}
-        className="min-h-11 self-start text-sm text-gray-600 underline"
-      >
+      <button type="button" onClick={onDone} className="btn btn-quiet self-start px-0">
         Avbryt
       </button>
     </div>
@@ -317,15 +309,15 @@ function AliasRow({ alias }: { alias: ProductDetail['aliases'][number] }) {
   }
 
   return (
-    <li className="flex items-center justify-between gap-2 border-b border-gray-200 py-2">
-      <span className="text-sm">{alias.alias}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-500">{alias.source === 'user' ? 'Bruker' : 'KI'}</span>
+    <li className="flex items-center justify-between gap-3">
+      <span className="truncate">{alias.alias}</span>
+      <div className="flex flex-shrink-0 items-center gap-3">
+        <span className="meta">{alias.source === 'user' ? 'Bruker' : 'KI'}</span>
         <button
           type="button"
           onClick={handleDelete}
           disabled={deleteAlias.isPending}
-          className="min-h-11 px-2 text-sm text-red-600 disabled:opacity-50"
+          className="btn btn-danger px-2 text-meta"
         >
           Slett
         </button>
@@ -340,11 +332,11 @@ export default function ProductPage() {
   const { data, isPending, isError } = useProductDetail(id);
 
   if (isPending) {
-    return <p className="p-4">Laster …</p>;
+    return <p className="page text-ink-muted">Laster …</p>;
   }
 
   if (isError || !data) {
-    return <p className="p-4">Fant ikke varen.</p>;
+    return <p className="page">Fant ikke varen.</p>;
   }
 
   // Keyed on the product's id so navigating between products (e.g. after a merge) remounts this
@@ -392,44 +384,48 @@ function ProductDetailView({ product }: { product: ProductDetail }) {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <label htmlFor="product-name" className="text-sm font-medium">
-        Navn
-      </label>
-      <input
-        id="product-name"
-        type="text"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
-      />
+    <div className="page">
+      <h1 className="page-title">{product.name}</h1>
 
-      <label htmlFor="product-category" className="text-sm font-medium">
-        Kategori
-      </label>
-      <select
-        id="product-category"
-        value={category}
-        onChange={(event) => setCategory(event.target.value as ProductCategory)}
-        className="min-h-11 rounded border border-gray-400 px-3 py-2"
-      >
-        {PRODUCT_CATEGORIES.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+      <div className="stack">
+        <label htmlFor="product-name" className="label">
+          Navn
+        </label>
+        <input
+          id="product-name"
+          type="text"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="field"
+        />
 
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={updateProduct.isPending}
-        className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
-      >
-        Lagre
-      </button>
+        <label htmlFor="product-category" className="label">
+          Kategori
+        </label>
+        <select
+          id="product-category"
+          value={category}
+          onChange={(event) => setCategory(event.target.value as ProductCategory)}
+          className="field"
+        >
+          {PRODUCT_CATEGORIES.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
 
-      <label className="flex items-center gap-2 text-sm">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={updateProduct.isPending}
+          className="btn btn-primary"
+        >
+          Lagre
+        </button>
+      </div>
+
+      <label className="flex min-h-11 items-center gap-3">
         <input type="checkbox" checked={suppressed} onChange={handleToggleSuppressed} />
         Ikke foreslå
       </label>
@@ -442,16 +438,16 @@ function ProductDetailView({ product }: { product: ProductDetail }) {
         <button
           type="button"
           onClick={() => setIsMerging(true)}
-          className="min-h-11 self-start rounded border border-gray-400 px-4 py-2 font-medium"
+          className="btn btn-secondary self-start"
         >
           Slå sammen med…
         </button>
       )}
 
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium">Alias</h2>
+      <div className="stack gap-0">
+        <h2 className="eyebrow">Alias</h2>
         {product.aliases.length === 0 ? (
-          <p className="text-sm text-gray-500">Ingen alias.</p>
+          <p className="meta">Ingen alias.</p>
         ) : (
           <ul>
             {product.aliases.map((alias) => (
@@ -461,20 +457,20 @@ function ProductDetailView({ product }: { product: ProductDetail }) {
         )}
       </div>
 
-      <div className="flex flex-col gap-1">
-        <h2 className="text-sm font-medium">Kjøpshistorikk</h2>
+      <div className="stack gap-0">
+        <h2 className="eyebrow">Kjøpshistorikk</h2>
         {product.purchases.length === 0 ? (
-          <p className="text-sm text-gray-500">Ingen kjøp registrert.</p>
+          <p className="meta">Ingen kjøp registrert.</p>
         ) : (
           <ul>
             {product.purchases.map((purchase, index) => (
-              <li key={`${purchase.receiptId}-${index}`} className="border-b border-gray-200 py-2">
-                <Link to={`/receipts/${purchase.receiptId}`} className="flex flex-col gap-0.5">
-                  <span className="text-sm">
+              <li key={`${purchase.receiptId}-${index}`} className="py-2">
+                <Link to={`/receipts/${purchase.receiptId}`} className="flex flex-col">
+                  <span>
                     {formatDate(purchase.date)}
                     {purchase.storeName !== null ? ` — ${purchase.storeName}` : ''}
                   </span>
-                  <span className="text-sm text-gray-600">
+                  <span className="meta">
                     {formatQuantity(purchase.quantity, purchase.unit)} ·{' '}
                     {formatOre(purchase.totalOre)}
                   </span>

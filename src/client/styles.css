@@ -1,1 +1,115 @@
 @import 'tailwindcss';
+
+/*
+ * Design tokens. One type ratio, one ground colour, one accent; every size and colour in the
+ * client comes from here (see .claude/skills/subtractive-design/SKILL.md).
+ */
+@theme {
+  --font-sans:
+    'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, Roboto,
+    sans-serif;
+  --font-display:
+    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, ui-serif, serif;
+
+  /* Type scale: minor third (1.25) from a 16 px body. Three sizes in use: meta, body, display. */
+  --text-meta: 0.8rem;
+  --text-meta--line-height: 1.25rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-display: 2.441rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.015em;
+
+  /* Palette: receipt paper, ink, one green accent. */
+  --color-paper: oklch(96.5% 0.018 85);
+  --color-field: oklch(99.4% 0.004 85);
+  --color-ink: oklch(24% 0.022 60);
+  --color-ink-muted: oklch(49% 0.02 60);
+  --color-ink-faint: oklch(78% 0.014 60);
+  --color-accent: oklch(45% 0.135 152);
+  --color-accent-ink: oklch(99% 0 0);
+  --color-danger: oklch(50% 0.19 28);
+  --color-warn: oklch(50% 0.12 65);
+}
+
+@layer base {
+  html {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  input[type='checkbox'] {
+    accent-color: var(--color-accent);
+  }
+}
+
+@layer components {
+  /* Layout: one outer margin, one left axis, two levels of vertical spacing (2 within a group,
+   * 8 between groups), 4 px base unit throughout. */
+  .page {
+    @apply mx-auto flex w-full max-w-2xl flex-col gap-8 px-5 pt-6 pb-8;
+  }
+  .stack {
+    @apply flex flex-col gap-2;
+  }
+
+  /* Type */
+  .page-title {
+    @apply font-display text-display font-bold text-ink;
+  }
+  .eyebrow {
+    @apply text-meta font-semibold tracking-wide text-ink-muted uppercase;
+  }
+  .meta {
+    @apply text-meta text-ink-muted;
+  }
+  .label {
+    @apply text-meta font-semibold text-ink;
+  }
+  .link {
+    @apply text-accent underline decoration-accent/40 underline-offset-2;
+  }
+  .chip {
+    @apply text-meta text-ink-muted whitespace-nowrap;
+  }
+  /* Inline separator, kept out of the text nodes so each value stays its own element. */
+  .sep::before {
+    content: '·';
+    @apply mx-1.5;
+  }
+
+  /* Controls */
+  .field {
+    @apply min-h-11 w-full rounded-md border border-ink-faint bg-field px-3 py-2 text-ink;
+  }
+  .btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 py-2 font-semibold disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-ink;
+  }
+  .btn-secondary {
+    @apply border border-ink/25 text-ink;
+  }
+  .btn-quiet {
+    @apply text-ink-muted;
+  }
+  .btn-danger {
+    @apply text-danger;
+  }
+  .option {
+    @apply min-h-11 w-full px-3 py-2 text-left hover:bg-ink/5 disabled:opacity-50;
+  }
+  .popover {
+    @apply absolute z-10 mt-1 w-full rounded-md bg-field shadow-lg ring-1 ring-ink/10;
+  }
+}

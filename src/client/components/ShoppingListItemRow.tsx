@@ -70,8 +70,8 @@ export default function ShoppingListItemRow({
 
   if (isEditing) {
     return (
-      <li className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3">
-        <label htmlFor={`shopping-item-name-${item.id}`} className="text-xs font-medium">
+      <li className="stack py-2">
+        <label htmlFor={`shopping-item-name-${item.id}`} className="label">
           Navn
         </label>
         <input
@@ -79,15 +79,15 @@ export default function ShoppingListItemRow({
           type="text"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="min-h-11 rounded border border-gray-400 px-3 py-2"
+          className="field"
         />
         {nameError !== null && (
-          <p role="alert" className="text-red-600">
+          <p role="alert" className="text-danger">
             {nameError}
           </p>
         )}
 
-        <label htmlFor={`shopping-item-quantity-${item.id}`} className="text-xs font-medium">
+        <label htmlFor={`shopping-item-quantity-${item.id}`} className="label">
           Antall
         </label>
         <input
@@ -95,7 +95,7 @@ export default function ShoppingListItemRow({
           type="text"
           value={quantityText}
           onChange={(event) => setQuantityText(event.target.value)}
-          className="min-h-11 rounded border border-gray-400 px-3 py-2"
+          className="field"
         />
 
         <div className="flex gap-2">
@@ -103,15 +103,11 @@ export default function ShoppingListItemRow({
             type="button"
             onClick={handleSave}
             disabled={updateItem.isPending}
-            className="min-h-11 flex-1 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="btn btn-primary flex-1"
           >
             Lagre
           </button>
-          <button
-            type="button"
-            onClick={() => setIsEditing(false)}
-            className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
-          >
+          <button type="button" onClick={() => setIsEditing(false)} className="btn btn-secondary">
             Avbryt
           </button>
         </div>
@@ -120,8 +116,8 @@ export default function ShoppingListItemRow({
   }
 
   return (
-    <li className="flex items-center gap-1 border-b border-gray-200 py-1">
-      <label className="flex min-h-11 flex-1 items-center gap-3 py-1">
+    <li className="flex items-center">
+      <label className="flex min-h-12 flex-1 items-center gap-3 py-1">
         <input
           type="checkbox"
           checked={item.checked}
@@ -130,20 +126,22 @@ export default function ShoppingListItemRow({
           className="h-5 w-5 flex-shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <p className={`truncate ${item.checked ? 'text-gray-400 line-through' : ''}`}>
-            {item.name}
-          </p>
-          {item.quantityText !== null && (
-            <p className="text-sm text-gray-500">{item.quantityText}</p>
-          )}
-          {item.reason !== null && <p className="text-xs text-gray-500">{item.reason}</p>}
+          <div
+            className={`flex items-baseline ${item.checked ? 'text-ink-muted line-through' : ''}`}
+          >
+            <p className="truncate">{item.name}</p>
+            {item.quantityText !== null && (
+              <span className="meta sep flex-shrink-0">{item.quantityText}</span>
+            )}
+          </div>
+          {item.reason !== null && !item.checked && <p className="meta">{item.reason}</p>}
         </div>
       </label>
       <button
         type="button"
         onClick={openEdit}
         aria-label={`Rediger ${item.name}`}
-        className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-gray-400"
+        className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-ink-muted"
       >
         ✎
       </button>
@@ -151,7 +149,7 @@ export default function ShoppingListItemRow({
         type="button"
         onClick={onRemove}
         aria-label={`Fjern ${item.name}`}
-        className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-lg text-gray-400"
+        className="flex h-11 w-11 flex-shrink-0 items-center justify-center text-ink-muted"
       >
         ×
       </button>

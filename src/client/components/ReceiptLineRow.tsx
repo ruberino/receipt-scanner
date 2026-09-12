@@ -95,10 +95,10 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
 
   if (isEditing) {
     return (
-      <div className="flex flex-col gap-3 border-b py-3">
-        <p className="text-sm text-gray-600">{line.rawText}</p>
+      <div className="stack py-3">
+        <p className="meta">{line.rawText}</p>
 
-        <label htmlFor={`amount-${line.id}`} className="text-xs font-medium">
+        <label htmlFor={`amount-${line.id}`} className="label">
           Beløp (kr)
         </label>
         <input
@@ -107,22 +107,22 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
           inputMode="decimal"
           value={amountText}
           onChange={(event) => setAmountText(event.target.value)}
-          className="min-h-11 rounded border border-gray-400 px-3 py-2"
+          className="field"
         />
         {amountError !== null && (
-          <p role="alert" className="text-red-600">
+          <p role="alert" className="text-danger">
             {amountError}
           </p>
         )}
 
-        <label htmlFor={`kind-${line.id}`} className="text-xs font-medium">
+        <label htmlFor={`kind-${line.id}`} className="label">
           Type
         </label>
         <select
           id={`kind-${line.id}`}
           value={kind}
           onChange={(event) => setKind(event.target.value as LineKind)}
-          className="min-h-11 rounded border border-gray-400 px-3 py-2"
+          className="field"
         >
           {KIND_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -136,15 +136,11 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
             type="button"
             onClick={handleSave}
             disabled={updateFields.isPending}
-            className="min-h-11 flex-1 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="btn btn-primary flex-1"
           >
             Lagre
           </button>
-          <button
-            type="button"
-            onClick={() => setIsEditing(false)}
-            className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium"
-          >
+          <button type="button" onClick={() => setIsEditing(false)} className="btn btn-secondary">
             Avbryt
           </button>
         </div>
@@ -152,7 +148,7 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
           type="button"
           onClick={handleDelete}
           disabled={deleteLine.isPending}
-          className="min-h-11 rounded border border-red-600 px-4 py-2 font-medium text-red-600 disabled:opacity-50"
+          className="btn btn-danger"
         >
           Slett linje
         </button>
@@ -161,10 +157,12 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
   }
 
   return (
-    <div className="flex items-start gap-3 border-b py-3">
-      <div className={`flex-1 ${isItem ? '' : 'opacity-50'}`}>
-        <p className="text-sm text-gray-600">{line.rawText}</p>
-        <p className="text-xs text-gray-500">{formatQuantity(line.quantity, line.unit)}</p>
+    <div className="flex items-start gap-3 py-3">
+      <div className={`stack flex-1 ${isItem ? '' : 'opacity-50'}`}>
+        <p className="meta">
+          <span>{line.rawText}</span>
+          <span className="sep">{formatQuantity(line.quantity, line.unit)}</span>
+        </p>
         {line.kind === 'item' ? (
           <ProductPicker
             key={line.product?.id ?? 'none'}
@@ -173,16 +171,12 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
             currentProduct={line.product}
           />
         ) : (
-          <p className="text-sm italic text-gray-500">{NON_ITEM_LABELS[line.kind]}</p>
+          <p className="meta italic">{NON_ITEM_LABELS[line.kind]}</p>
         )}
       </div>
       <div className="flex flex-shrink-0 flex-col items-end gap-2">
-        <p className="whitespace-nowrap font-medium">{formatOre(line.totalOre)}</p>
-        <button
-          type="button"
-          onClick={openEdit}
-          className="min-h-11 rounded border border-gray-400 px-3 text-sm font-medium"
-        >
+        <p className="whitespace-nowrap">{formatOre(line.totalOre)}</p>
+        <button type="button" onClick={openEdit} className="btn btn-quiet px-0 text-meta">
           Rediger
         </button>
       </div>

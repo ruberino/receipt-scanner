@@ -72,12 +72,12 @@ export default function ProposalPanel({ listId }: { listId: number }) {
 
   if (proposal !== null) {
     return (
-      <div className="flex flex-col gap-3 rounded border border-gray-300 p-4">
-        <h2 className="font-semibold">Forslag fra AI</h2>
-        <ul className="flex flex-col gap-1">
+      <div className="stack">
+        <h2 className="eyebrow">Forslag fra AI</h2>
+        <ul className="flex flex-col">
           {proposal.items.map((item) => (
-            <li key={item.index} className="flex items-center gap-2 border-b border-gray-200">
-              <label className="flex min-h-11 flex-1 items-start gap-3 py-2">
+            <li key={item.index} className="flex items-center gap-3">
+              <label className="flex min-h-12 flex-1 items-start gap-3 py-2">
                 <input
                   type="checkbox"
                   checked={selectedIndexes.has(item.index)}
@@ -89,24 +89,23 @@ export default function ProposalPanel({ listId }: { listId: number }) {
                   <p className="truncate">
                     {item.name}
                     {item.quantityText !== null && (
-                      <span className="text-gray-500"> · {item.quantityText}</span>
+                      <span className="meta sep">{item.quantityText}</span>
                     )}
                   </p>
-                  <p className="text-xs text-gray-500">{item.reason}</p>
+                  <p className="meta">{item.reason}</p>
                 </div>
               </label>
-              <span className="flex-shrink-0 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                {KIND_LABELS[item.kind] ?? item.kind}
-              </span>
+              <span className="chip flex-shrink-0">{KIND_LABELS[item.kind] ?? item.kind}</span>
             </li>
           ))}
         </ul>
-        <div className="flex gap-2">
+        <div className="flex gap-2 pt-2">
           <button
             type="button"
             onClick={() => resolve([...selectedIndexes])}
+
             disabled={acceptProposal.isPending}
-            className="min-h-11 flex-1 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+            className="btn btn-primary flex-1"
           >
             Legg til valgte ({selectedIndexes.size})
           </button>
@@ -114,7 +113,7 @@ export default function ProposalPanel({ listId }: { listId: number }) {
             type="button"
             onClick={() => resolve([])}
             disabled={acceptProposal.isPending}
-            className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium disabled:opacity-50"
+            className="btn btn-secondary"
           >
             Avbryt
           </button>
@@ -128,7 +127,7 @@ export default function ProposalPanel({ listId }: { listId: number }) {
       type="button"
       onClick={handlePropose}
       disabled={createProposal.isPending}
-      className="min-h-11 rounded border border-gray-400 px-4 py-2 font-medium disabled:opacity-50"
+      className="btn btn-secondary"
     >
       {createProposal.isPending ? <ThinkingLabel /> : 'Foreslå med AI'}
     </button>

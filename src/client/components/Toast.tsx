@@ -71,14 +71,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {toast !== null && (
         <div
           role="status"
-          className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 mx-auto flex w-fit items-center gap-3 rounded bg-gray-900 px-4 py-2 text-white shadow-lg"
+          className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-10 mx-auto flex w-fit items-center gap-3 rounded-md bg-ink px-4 py-2 text-paper shadow-lg"
         >
           <span>{toast.text}</span>
           {toast.action && (
             <button
               type="button"
               onClick={handleAction}
-              className="min-h-11 min-w-11 font-medium text-blue-300"
+              className="min-h-11 min-w-11 font-semibold text-accent-ink underline underline-offset-2"
             >
               {toast.action.actionLabel}
             </button>

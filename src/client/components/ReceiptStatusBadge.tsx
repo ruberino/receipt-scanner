@@ -8,18 +8,16 @@ const LABELS: Record<ReceiptStatus, string> = {
   failed: 'Feilet',
 };
 
+// Plain small text, coloured only where the status asks for attention: `done` is the normal case
+// on the receipts list and should be quiet, `processing` is live, `failed` needs a look.
 const COLORS: Record<ReceiptStatus, string> = {
-  uploaded: 'bg-gray-200 text-gray-800',
-  pending: 'bg-gray-200 text-gray-800',
-  processing: 'bg-blue-200 text-blue-800',
-  done: 'bg-green-200 text-green-800',
-  failed: 'bg-red-200 text-red-800',
+  uploaded: 'text-ink',
+  pending: 'text-ink',
+  processing: 'text-accent',
+  done: 'text-ink-muted',
+  failed: 'text-danger',
 };
 
 export default function ReceiptStatusBadge({ status }: { status: ReceiptStatus }) {
-  return (
-    <span className={`rounded-full px-2 py-1 text-xs font-medium ${COLORS[status]}`}>
-      {LABELS[status]}
-    </span>
-  );
+  return <span className={`chip ${COLORS[status]}`}>{LABELS[status]}</span>;
 }
