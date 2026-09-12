@@ -205,9 +205,7 @@ function StatsAndHistory() {
 
   return (
     <details onToggle={(event) => setIsOpen(event.currentTarget.open)}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-2 font-semibold text-accent">
-        Statistikk og historikk
-      </summary>
+      <summary className="disclosure">Statistikk og historikk</summary>
       {isOpen && (
         <div className="flex flex-col gap-8 pt-4 pb-2">
           {stats.isPending && <p className="text-ink-muted">Laster …</p>}
@@ -247,7 +245,7 @@ function ReceiptRow({ receipt }: { receipt: ReceiptSummary }) {
         <span className="truncate">{storeNameLabel(receipt)}</span>
         <span className="meta">
           {dateLabel(receipt)}
-          {warningLabel !== null && <span className="sep text-warn">{warningLabel}</span>}
+          {warningLabel !== null && <span className="sep text-danger">{warningLabel}</span>}
         </span>
       </Link>
       <div className="flex flex-shrink-0 flex-col items-end">

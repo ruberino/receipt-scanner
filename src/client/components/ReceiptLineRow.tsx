@@ -159,9 +159,9 @@ export default function ReceiptLineRow({ line, receiptId }: ReceiptLineRowProps)
   return (
     <div className="flex items-start gap-3 py-3">
       <div className={`stack flex-1 ${isItem ? '' : 'opacity-50'}`}>
-        <p className="meta">
-          <span>{line.rawText}</span>
-          <span className="sep">{formatQuantity(line.quantity, line.unit)}</span>
+        <p className="meta flex">
+          <span className="truncate">{line.rawText}</span>
+          <span className="sep flex-shrink-0">{formatQuantity(line.quantity, line.unit)}</span>
         </p>
         {line.kind === 'item' ? (
           <ProductPicker

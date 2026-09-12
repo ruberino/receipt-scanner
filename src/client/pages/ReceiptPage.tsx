@@ -134,7 +134,7 @@ const WARNING_LABELS: Record<string, (receipt: ReceiptDetail) => string> = {
 
 function WarningChip({ code, receipt }: { code: string; receipt: ReceiptDetail }) {
   const label = WARNING_LABELS[code]?.(receipt) ?? code;
-  const chipClassName = 'text-warn';
+  const chipClassName = 'block';
 
   if (code === 'POSSIBLE_DUPLICATE' && receipt.possibleDuplicateOf !== null) {
     return (
@@ -316,7 +316,7 @@ function ReceiptHeader({ receipt }: { receipt: ReceiptDetail }) {
       )}
 
       {receipt.warnings.length > 0 && (
-        <div className="stack gap-0 pt-2">
+        <div className="note stack gap-1">
           {receipt.warnings.map((code) => (
             <WarningChip key={code} code={code} receipt={receipt} />
           ))}
