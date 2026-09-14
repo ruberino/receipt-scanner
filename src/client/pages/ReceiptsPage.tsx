@@ -73,10 +73,12 @@ function MonthlyBarsSection({ months }: { months: MonthlyStats[] }) {
       <ul className="flex flex-col gap-1">
         {months.map((month) => (
           <li key={month.month} className="flex items-center gap-3">
-            <span className="w-16 flex-shrink-0 text-ink-muted">{formatMonth(month.month)}</span>
-            <div className="h-3 flex-1 rounded-sm bg-ink/10">
+            <span className="meta w-20 flex-shrink-0 whitespace-nowrap">
+              {formatMonth(month.month)}
+            </span>
+            <div className="bg-shell/60 h-3 flex-1 rounded-full">
               <div
-                className="h-3 rounded-sm bg-accent"
+                className="bg-accent h-3 rounded-full"
                 style={{ width: `${maxOre === 0 ? 0 : (month.totalOre / maxOre) * 100}%` }}
               />
             </div>
