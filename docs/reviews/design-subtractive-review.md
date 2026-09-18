@@ -32,6 +32,14 @@ All five scripts exit 0 in a clean worktree at `850af23` (Node 24.21.0): lint, t
 - ADR-0020 says no CDN reaches "the content security policy". The app sends no CSP at all, so the sentence describes a header that does not exist. The fonts are genuinely same-origin either way.
 - Two stray blank lines inside JSX attribute lists (`ProposalPanel.tsx:106`, `SuggestionCard.tsx:9`). Prettier keeps them, so `format:check` is green; they are noise in an otherwise tidy diff.
 
+## Go-ahead, 2026-09-18
+
+F1 verified at `cb937d0`: `theme-color` in `index.html` and `theme_color` and `background_color` in the manifest all read `#F1EDE1`, the same value as `--color-paper`, and the commit changes those three fields and nothing else.
+`FFF8EF` no longer occurs anywhere in the repository except in the F1 paragraph above, which quotes it.
+All five scripts exit 0 in a clean worktree at `cb937d0` (Node 24.21.0, 814 tests in 54 files, build with the two woff2 at 27.35 kB and 32.29 kB); CI is green on both jobs.
+Approved: merge with `gh pr merge --rebase --delete-branch`, then `git pull --ff-only`.
+The follow-up below is not part of this branch and needs its own task.
+
 ## Follow-up, not this branch
 
 - `Ligner på kvittering #null, er den skannet to ganger?` — visible in `after-50-kvittering-varsel.png` on the household's own data.
