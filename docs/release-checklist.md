@@ -4,6 +4,7 @@ Run this by hand against the deployed app after every release.
 
 - [ ] Log in with the household password.
 - [ ] Scan a receipt from a phone camera.
+- [ ] Drag a receipt image from the file manager onto /scan and confirm it uploads, and that the browser does not open the image instead.
 - [ ] Review the result and correct one line's product.
 - [ ] Merge two products.
 - [ ] Create a shopping list from suggestions.
