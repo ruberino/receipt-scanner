@@ -63,3 +63,21 @@ The mutation check both sessions now run — revert the file under test, run its
 A run that failed to run and a run that ran and failed look the same from the exit code alone, and the wrong one reads as "the tests fail without the fix" — the exact conclusion the check exists to establish.
 Read the `Tests  n failed | m passed` line, not the exit code, and check that the failures are the tests you expected by name.
 Hit by the foreman on 2026-09-18 while verifying T45; the real run was `6 failed | 14 passed` and the first "result" was nothing at all.
+
+## E7 — A pull request's head can lag the branch ref, and the merge takes the old one silently
+
+E5's two cases both refuse and say why. This one succeeds and looks exactly like a correct merge.
+
+On 2026-09-18 the foreman's review commit `4154544` was pushed to `task/T45-proposal-size-guard` and GitHub's pull request object still reported `11c506a` as its head several minutes later: no check-runs for the new commit, no workflow run for it, `mergeStateStatus: UNKNOWN`.
+The merge then went through against the stale head, and `docs/reviews/T45-review.md` and E6 were simply not on `main` afterwards, with the branch deleted.
+Nothing was lost, because the commit was still reachable locally, but nothing warned either.
+
+Before merging, compare what the pull request thinks it is merging with what the branch actually is:
+
+```
+gh pr view <n> --json headRefOid -q .headRefOid
+git rev-parse origin/<branch>
+```
+
+Equal, or do not merge yet.
+A refusal is not the only bad outcome; this is E6's lesson in another costume — the call succeeded and the success was not the one anyone wanted.
