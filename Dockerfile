@@ -15,6 +15,16 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
+# The five checks that define "done" (T46). It sits on `build`, which has already run `npm ci`
+# from package.json and package-lock.json before the source was copied, so the install layer is
+# cached on the lockfile alone: a source change re-copies the source and reruns nothing else.
+# The checks themselves are not a layer — they run with `docker run`, so there is no cached
+# "tests passed" to inherit from an older source tree.
+FROM build AS checks
+COPY docker/run-checks.sh /usr/local/bin/run-checks
+RUN chmod +x /usr/local/bin/run-checks
+ENTRYPOINT ["run-checks"]
+
 FROM litestream/litestream:0.3.13 AS litestream
 
 FROM node:22-alpine AS runtime

@@ -29,6 +29,8 @@ Mitigation: `testTimeout: 15000` in `vitest.config.ts`, with the comment "First 
 
 ## E3 — `node` is not on `PATH` in a fresh shell on this machine
 
+Superseded as the way the checks are run: since T46 they run in a container (`docker compose -f docker-compose.checks.yml run --build --rm checks`), which is why this note exists at all — a toolchain that has to be repaired by hand in every shell is one that will eventually be repaired wrongly. What follows stays as the host fallback, for the day Docker is unavailable, and as the record of what the rule replaced.
+
 Verified by the foreman on 2026-09-18 while reviewing the subtractive design pass, and hit independently by the working session the same day.
 
 - nvm for Windows is installed with five versions under `%APPDATA%\nvm`, the newest `v24.21.0`, but the shim directory `C:\Program Files\nodejs` does not exist, so `node` and every `npm` script fail in a new shell: `npm` itself resolves and then dies with `The term 'node.exe' is not recognized`, exit 127. A run that "fails" that way has not run at all; read the exit code before believing a red result.

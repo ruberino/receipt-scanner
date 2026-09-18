@@ -1,0 +1,24 @@
+# The five checks that define "done", in the image rather than on a host toolchain (T46).
+#
+#   docker compose -f docker-compose.checks.yml run --build --rm checks
+#   docker compose -f docker-compose.checks.yml run --build --rm checks test/server/receipts.test.ts
+#
+# The second form runs vitest on that path alone, which is what the mutation check needs.
+# `--build` rebuilds the image first; `npm ci` is cached on package-lock.json, so an unchanged
+# lockfile does not reinstall. The checks run in the container, never as a build layer, so there
+# is no cached pass to inherit from an older source tree.
+services:
+  checks:
+    build:
+      context: .
+      target: checks
+    # No bind mount on purpose: the source under test is the source in the image, so a run cannot
+    # quietly test the host's working tree. A host `node_modules` would be useless here anyway —
+    # better-sqlite3 and sharp are native, and ours are Windows builds.
+    init: true
+    environment:
+      # Plain output. E6 says to read the `Tests  n failed | m passed` line rather than the exit
+      # code, and ANSI colour codes sit between that label and its numbers, so a grep for it
+      # matches or misses depending on the run. A guard that cannot be searched reliably is not a
+      # guard.
+      NO_COLOR: '1'
