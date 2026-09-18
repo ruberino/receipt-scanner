@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ApiRequestError } from '../api/client.ts';
 import { useReceipts, useScanReceipt, useUploadReceipt } from '../api/queries.ts';
@@ -44,8 +44,16 @@ function fileStateLabel(state: FileState): string {
   }
 }
 
+/** A drag concerns this page only while it carries files; dragging selected text or a link must
+ * leave it alone. */
+function carriesFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files');
+}
+
 export default function ScanPage() {
   const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const dragDepthRef = useRef(0);
   const queueRef = useRef<{ id: string; file: File }[]>([]);
   const isProcessingRef = useRef(false);
   const nextIdRef = useRef(0);
@@ -109,9 +117,9 @@ export default function ScanPage() {
     }
   }
 
-  function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
+  /** The one way a file enters the queue, whether it was chosen in the file picker or dropped on
+   * the page. */
+  function enqueueFiles(files: File[]) {
     if (files.length === 0) {
       return;
     }
@@ -128,6 +136,77 @@ export default function ScanPage() {
     queueRef.current.push(...items);
     void processNext();
   }
+
+  function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    enqueueFiles(files);
+  }
+
+  // The listeners below are registered once, so they must not close over the render that
+  // registered them; this ref carries the current `enqueueFiles` to them.
+  const enqueueFilesRef = useRef(enqueueFiles);
+  useEffect(() => {
+    enqueueFilesRef.current = enqueueFiles;
+  });
+
+  useEffect(() => {
+    function onDragEnter(event: DragEvent) {
+      if (!carriesFiles(event)) {
+        return;
+      }
+      // `dragenter` and `dragleave` fire again for every element the pointer crosses, so the depth
+      // counter, not the last event, decides when the drag has really left the window.
+      dragDepthRef.current += 1;
+      setIsDropTarget(true);
+    }
+
+    function onDragOver(event: DragEvent) {
+      if (!carriesFiles(event)) {
+        return;
+      }
+      // Without this the browser handles the drop itself and navigates away from the app to the
+      // dropped file — the one failure in this feature that a jsdom test cannot see.
+      event.preventDefault();
+    }
+
+    function onDragLeave(event: DragEvent) {
+      if (!carriesFiles(event)) {
+        return;
+      }
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setIsDropTarget(false);
+      }
+    }
+
+    function onDrop(event: DragEvent) {
+      if (!carriesFiles(event)) {
+        return;
+      }
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDropTarget(false);
+
+      const files = Array.from(event.dataTransfer?.files ?? []);
+      const images = files.filter((file) => file.type.startsWith('image/'));
+      if (images.length < files.length) {
+        showToast('Bare bilder kan lastes opp');
+      }
+      enqueueFilesRef.current(images);
+    }
+
+    window.addEventListener('dragenter', onDragEnter);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [showToast]);
 
   async function handleScanAll() {
     const targets = uploadedReceipts.map((receipt) => receipt.id);
@@ -148,6 +227,17 @@ export default function ScanPage() {
 
   return (
     <div className="page">
+      {/* Only in the DOM while a file is over the window: a full-screen element that is merely
+          transparent would swallow taps on a phone, which has no drag-and-drop at all. */}
+      {isDropTarget && (
+        <div
+          className="bg-paper/95 fixed inset-0 z-20 flex items-center justify-center"
+          data-testid="drop-overlay"
+        >
+          <p className="page-title">Slipp bildene her</p>
+        </div>
+      )}
+
       <input
         ref={cameraInputRef}
         type="file"

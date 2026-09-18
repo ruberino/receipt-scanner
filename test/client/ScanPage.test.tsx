@@ -35,13 +35,33 @@ const { useUploadReceipt, useScanReceipt, useReceipts } =
 const { ApiRequestError } = await import('../../src/client/api/client.ts');
 
 function renderScanPage() {
-  render(
+  return render(
     <MemoryRouter initialEntries={['/scan']}>
       <ToastProvider>
         <ScanPage />
       </ToastProvider>
     </MemoryRouter>,
   );
+}
+
+/** jsdom has no `DataTransfer`, so the drag events carry a stand-in with the two properties the
+ * page reads: `types`, which says whether files are coming, and `files`. */
+function dragEvent(type: string, files: File[], types: string[] = ['Files']): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'dataTransfer', { value: { types, files } });
+  return event;
+}
+
+function dispatchDrag(type: string, files: File[] = [], types?: string[]) {
+  const event = types ? dragEvent(type, files, types) : dragEvent(type, files);
+  act(() => {
+    window.dispatchEvent(event);
+  });
+  return event;
+}
+
+function imageFile(name: string): File {
+  return new File(['x'], name, { type: 'image/jpeg' });
 }
 
 function selectFiles(names: string[]) {
@@ -267,5 +287,125 @@ describe('ScanPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Skann (1)' })).not.toBeDisabled(),
     );
+  });
+
+  describe('dropping files on the page (T42)', () => {
+    it('uploads two dropped images in the order they were dropped', async () => {
+      const { mutateAsync, calls } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchDrag('drop', [imageFile('en.jpg'), imageFile('to.jpg')]);
+
+      await waitFor(() => expect(screen.getByText('en.jpg')).toBeInTheDocument());
+      expect(screen.getByText('to.jpg')).toBeInTheDocument();
+
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        callAt(calls, 0).resolve({ id: 1 });
+      });
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        callAt(calls, 1).resolve({ id: 2 });
+      });
+
+      await waitFor(() => expect(screen.getAllByText('Lastet opp')).toHaveLength(2));
+    });
+
+    it('uploads only the images in a mixed drop and says so once', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchDrag('drop', [
+        new File(['x'], 'kvittering.pdf', { type: 'application/pdf' }),
+        imageFile('bilde.jpg'),
+        new File(['x'], 'notat.txt', { type: 'text/plain' }),
+      ]);
+
+      await waitFor(() =>
+        expect(screen.getByText('Bare bilder kan lastes opp')).toBeInTheDocument(),
+      );
+      expect(screen.getAllByText('Bare bilder kan lastes opp')).toHaveLength(1);
+      expect(screen.getByText('bilde.jpg')).toBeInTheDocument();
+      expect(screen.queryByText('kvittering.pdf')).not.toBeInTheDocument();
+      expect(screen.queryByText('notat.txt')).not.toBeInTheDocument();
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    });
+
+    it('uploads nothing when the drop carries no image at all', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchDrag('drop', [new File(['x'], 'kvittering.pdf', { type: 'application/pdf' })]);
+
+      await waitFor(() =>
+        expect(screen.getByText('Bare bilder kan lastes opp')).toBeInTheDocument(),
+      );
+      expect(mutateAsync).not.toHaveBeenCalled();
+    });
+
+    it('shows the overlay while a file is over the window and removes it from the DOM after', () => {
+      mockControllableUpload();
+      renderScanPage();
+
+      expect(screen.queryByTestId('drop-overlay')).not.toBeInTheDocument();
+
+      dispatchDrag('dragenter', [imageFile('a.jpg')]);
+      expect(screen.getByTestId('drop-overlay')).toHaveTextContent('Slipp bildene her');
+
+      // Crossing a child element fires another enter before the matching leave; the overlay has to
+      // survive that pair.
+      dispatchDrag('dragenter', [imageFile('a.jpg')]);
+      dispatchDrag('dragleave', [imageFile('a.jpg')]);
+      expect(screen.getByTestId('drop-overlay')).toBeInTheDocument();
+
+      dispatchDrag('dragleave', [imageFile('a.jpg')]);
+      expect(screen.queryByTestId('drop-overlay')).not.toBeInTheDocument();
+    });
+
+    it('removes the overlay after the drop', () => {
+      mockControllableUpload();
+      renderScanPage();
+
+      dispatchDrag('dragenter', [imageFile('a.jpg')]);
+      expect(screen.getByTestId('drop-overlay')).toBeInTheDocument();
+
+      dispatchDrag('drop', [imageFile('a.jpg')]);
+      expect(screen.queryByTestId('drop-overlay')).not.toBeInTheDocument();
+    });
+
+    it('ignores a drag that carries no files', () => {
+      mockControllableUpload();
+      renderScanPage();
+
+      dispatchDrag('dragenter', [], ['text/plain']);
+
+      expect(screen.queryByTestId('drop-overlay')).not.toBeInTheDocument();
+    });
+
+    it('takes its dragover, so the browser does not navigate to the dropped file', () => {
+      mockControllableUpload();
+      renderScanPage();
+
+      const taken = dispatchDrag('dragover', [imageFile('a.jpg')]);
+      expect(taken.defaultPrevented).toBe(true);
+
+      const ignored = dispatchDrag('dragover', [], ['text/plain']);
+      expect(ignored.defaultPrevented).toBe(false);
+    });
+
+    it('stops listening once the page is gone', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      const { unmount } = renderScanPage();
+
+      // The first drop proves the listeners were there to be removed, so the second one is
+      // evidence of cleanup rather than of nothing having been wired up at all.
+      dispatchDrag('drop', [imageFile('a.jpg')]);
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+
+      unmount();
+      dispatchDrag('drop', [imageFile('b.jpg')]);
+
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    });
   });
 });
