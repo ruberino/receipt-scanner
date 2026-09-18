@@ -43,3 +43,14 @@ A verification run is worthless if the tree moves under it, so the foreman verif
 
 `gh` holds three accounts in one keyring (`rubenr_aboveit`, `rubenring`, `ruberino`) and `gh auth switch` changes the active one for every session at once; only `ruberino` can push to `ruberino/receipt-scanner`, and the others get a `403`.
 The repository is pinned with `git config --local credential.https://github.com.username ruberino` so a push survives the next flip.
+
+## E5 — What resets a merge on this repository
+
+Branch protection requires both CI jobs green **on the head commit** and the branch **current with `main`**.
+Two things therefore delay a merge that looked ready, and with a foreman session and a working session merging into one repository both happen often:
+
+- A commit pushed after CI went green — the foreman's review or go-ahead is exactly that — resets the check requirement, and the checks take about half a minute to register on the new head. A watch started immediately reports "no checks reported" rather than waiting, which is not a failure.
+- Anything else landing on `main` in the meantime leaves the branch `BEHIND`. `gh pr update-branch <n> --rebase` brings it current server-side with no force-push from the working session, and then CI runs once more.
+
+`gh pr view <n> --json mergeStateStatus` says which of the two it is in one call; read that before reading the refusal text.
+Verified on 2026-09-18 while merging #25 and #26, the second of which went `BEHIND` when #16 landed between its green run and its merge.
