@@ -1014,3 +1014,23 @@ Why it is held: iOS Safari has no Web Share Target, so the route is a Shortcut, 
 Waiting on: Ruben's answer on whether the household wants that credential at all, and on the scope the foreman recommends — a token derived from `SESSION_SECRET` under its own label, sent in `X-Kvitteringer-Token`, accepted on `POST /api/receipts` and nowhere else, so a token on a lost phone can add to the pile but cannot read the household's receipts or images.
 
 The claim that a Shortcut cannot send `Cookie` is inferred from NSURLSession's reserved headers and has not been tested on a phone; it does not change the recommendation, since a credential that iOS may silently strip is not one to build an upload on.
+
+---
+
+## T44 — Lim inn et bilde på /scan
+
+Goal: an image on the clipboard — a screenshot, a picture copied from a web page — is uploaded by pasting it on `/scan`, through the same entry point the file input and the drop already use.
+
+Files: `src/client/pages/ScanPage.tsx`, `test/client/ScanPage.test.tsx`, `docs/architecture.md`, `docs/tasks.md`.
+
+Steps: see `docs/reviews/T44-plan.md`.
+
+Acceptance criteria:
+
+- Pasting one image uploads it with the same per-file states the input and the drop produce; an image with an empty filename renders as `Limt inn bilde`.
+- Pasting text uploads nothing and shows no toast; a paste carrying files but no image says `Bare bilder kan lastes opp` once, and a mixed paste uploads the image and shows the toast once.
+- The file input and the drop are unchanged, through the same `enqueueFiles`; the listener is gone after unmount.
+- Section 10 states where pasting works — where the browser delivers a clipboard image to the page — and does not claim the iPhone, whose route is the share sheet.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval.
+
+Tests: one image pasted; the empty-name fallback; text only; a mixed paste; the drop and input after the change; no listener after unmount, proven with a paste before and a paste after. At least one test must be shown to fail without the implementation.
