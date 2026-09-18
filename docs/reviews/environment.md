@@ -54,3 +54,12 @@ Two things therefore delay a merge that looked ready, and with a foreman session
 
 `gh pr view <n> --json mergeStateStatus` says which of the two it is in one call; read that before reading the refusal text.
 Verified on 2026-09-18 while merging #25 and #26, the second of which went `BEHIND` when #16 landed between its green run and its merge.
+
+## E6 — A vitest run against a path that matches nothing exits 1
+
+The mutation check both sessions now run — revert the file under test, run its test file, count the failures — reads an exit code as a result, so it inherits this trap.
+
+`npx vitest run test/server/proposalContext.test.ts` on a file that actually lives at `test/server/domain/proposalContext.test.ts` prints `No test files found, exiting with code 1` and exits 1.
+A run that failed to run and a run that ran and failed look the same from the exit code alone, and the wrong one reads as "the tests fail without the fix" — the exact conclusion the check exists to establish.
+Read the `Tests  n failed | m passed` line, not the exit code, and check that the failures are the tests you expected by name.
+Hit by the foreman on 2026-09-18 while verifying T45; the real run was `6 failed | 14 passed` and the first "result" was nothing at all.
