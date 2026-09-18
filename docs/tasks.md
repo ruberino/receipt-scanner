@@ -1056,3 +1056,23 @@ Acceptance criteria:
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval (the prompt, the schema, the model and the thinking mode are untouched).
 
 Tests: the four fixtures, the stop-at-first-rung case, the unchanged-when-it-fits case, and one asserting the logged lengths are real serialised lengths rather than estimates. At least one test must be shown to fail without the implementation.
+
+---
+
+## T46 — Sjekkene kjører i Docker
+
+Goal: `lint`, `typecheck`, `test`, `build` and `format:check` run in a container built from the repository, the same way for both sessions and for CI — Ruben's standing rule that everything is built and run through Docker, and the answer to E3 and E6, where a check that never ran was read as a check that ran.
+
+Files: `Dockerfile`, a compose entry point for the checks, `.github/workflows/*.yml`, `AGENTS.md`, `README.md`, `docs/reviews/environment.md`, `docs/tasks.md`.
+
+Steps: see `docs/reviews/T46-plan.md`.
+
+Acceptance criteria:
+
+- One documented command runs all five checks in a container and exits non-zero when any fails; the same command with a vitest path runs one test file, so the mutation check works through it.
+- With the lockfile unchanged, a second run does not reinstall dependencies, and the measured warm-cache time is in the pull request.
+- A source change re-runs the checks with no cached pass, demonstrated by making a test fail, running, reverting and running again.
+- CI uses the same path as a session does; `AGENTS.md` says done means the container run.
+- The pasted check output in the pull request is from the container.
+
+Tests: none — this is toolchain. The evidence is the pull request's output, timing and the deliberate-failure demonstration.
