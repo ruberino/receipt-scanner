@@ -810,6 +810,10 @@ Any wrong extraction or wrong match seen in real use is added to the eval set or
 ## 13. Build, run, deploy
 
 Scripts are the same as the sibling app plus `npm run eval:extraction` (`tsx eval/run.ts`).
+Everything is built and run through Docker; nothing is started on the host.
+The five checks that define "done" — `lint`, `typecheck`, `test`, `build`, `format:check` — run in a `checks` stage built from this repository, through `docker compose -f docker-compose.checks.yml run --build --rm checks`, and CI runs the same command (T46).
+The stage sits on `build`, so `npm ci` is cached on `package-lock.json`, and the checks run in the container rather than as a build layer, so a run cannot inherit a cached pass from an older source tree.
+Adding a path runs vitest on that file alone.
 Docker, `start.sh`, `litestream.yml` and `render.yaml` follow ADR-0011 with the database name `receipt-scanner.db`.
 `sharp` needs its prebuilt binary for `linuxmusl` in the Alpine image; `npm ci` in the final stage handles it, and the Dockerfile must not copy `node_modules` from the build stage across architectures.
 

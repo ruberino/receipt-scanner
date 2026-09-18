@@ -10,7 +10,14 @@ The architecture and the ADRs are normative; a task that disagrees with them is 
 - Ask one precise question, with the options you see, when the task is ambiguous, a library or the Kimi API behaves differently than the docs describe, a decision is needed that no ADR covers, an unrelated test fails, or an acceptance criterion cannot be met.
 - Stay inside the task.
   Anything else you notice goes into the PR description as a follow-up.
-- Done means `npm run lint`, `npm run typecheck`, `npm test` and `npm run build` pass locally, with the summary pasted into the PR.
+- Everything is built and run through Docker.
+  Nothing is started on the host as a shortcut: no `npm run dev`, no `npm start`, no host-side server on 8080 or 5173 to check something quickly.
+  What you hand to Ruben is the image the Dockerfile produces, which is what Render builds, so "it works here" stops being a claim about a laptop.
+- Done means all five checks pass **in the container**, with that output pasted into the PR:
+  `docker compose -f docker-compose.checks.yml run --build --rm checks`
+  runs `lint`, `typecheck`, `test`, `build` and `format:check`, every one of them even after an earlier one fails, and exits non-zero if any did.
+  Adding a path runs vitest on that file alone, which is how a single file is checked — for instance when reverting the file under test to see that its new tests can actually fail.
+  Read the `Tests  n failed | m passed` line and check the failures by name; an exit code alone cannot tell a run that failed from a run that never started (`docs/reviews/environment.md` E6).
 - The repository is on GitHub (`ruberino/receipt-scanner`): push the task branch, open a pull request whose description states intent, what changed, risk and how it was tested, wait for CI to be green and for the foreman's go-ahead recorded in `docs/reviews/`, then merge with `gh pr merge --rebase --delete-branch` so `main` stays linear.
 - `docs/reviews/*.md` is a review channel from a foreman session Ruben also runs across his apps; check it after finishing a task and before merging, verify any checkable technical claim empirically before acting on it, and don't delete or move those files.
 

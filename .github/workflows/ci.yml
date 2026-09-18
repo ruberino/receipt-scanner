@@ -10,16 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm install -g npm@12
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npm run format:check
+      # The same command a session runs (T46). If CI ran the five scripts on its own toolchain
+      # instead, the two would drift apart on the day the lockfile moved, and neither would be
+      # the thing we ship.
+      - run: docker compose -f docker-compose.checks.yml run --build --rm checks
 
   docker-build:
     runs-on: ubuntu-latest

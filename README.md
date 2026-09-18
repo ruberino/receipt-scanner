@@ -6,6 +6,24 @@ A household grocery receipt tracker.
 See `docs/architecture.md` for the full design and `docs/adr/` for the decisions behind it.
 `docs/tasks.md` holds the ordered implementation tasks.
 
+## Checks
+
+The five checks that define "done" run in a container built from this repository, not on a host toolchain:
+
+```
+docker compose -f docker-compose.checks.yml run --build --rm checks
+```
+
+That runs `lint`, `typecheck`, `test`, `build` and `format:check` — every one of them, even after an earlier one fails — prints a block naming each result, and exits non-zero if any failed.
+Adding a path runs vitest on that file alone:
+
+```
+docker compose -f docker-compose.checks.yml run --build --rm checks test/server/receipts.test.ts
+```
+
+`npm ci` is cached on `package-lock.json`, so a re-run with an unchanged lockfile does not reinstall; the checks themselves are never a build layer, so no run can inherit a cached pass from an older source tree.
+CI runs the same command.
+
 ## Run locally
 
 Requires Node.js 22 or later and npm 12 or later (`npm install -g npm@12`; on a Node older than 22.22.2 or 24.15 run `npx npm@12 ci` instead, or update Node).
@@ -22,18 +40,19 @@ This starts the Vite dev server (client) and the Fastify server (API) together; 
 
 ## Scripts
 
-| Command                             | What it does                                                                                                         |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                       | Client and server in watch mode.                                                                                     |
-| `npm run build`                     | Production client bundle to `dist/client`.                                                                           |
-| `npm start`                         | Runs the server with `tsx` (production entry point).                                                                 |
-| `npm run lint`                      | ESLint over the whole project.                                                                                       |
-| `npm run typecheck`                 | `tsc --noEmit` for the client and server tsconfigs.                                                                  |
-| `npm test`                          | Vitest unit and API tests (no network, no cost).                                                                     |
-| `npm run format`                    | Prettier over the project (`format:check` only reports); `docs/` is excluded on purpose.                             |
-| `npm run db:generate`               | Generates a Drizzle migration under `drizzle/` from `src/server/db/schema.ts`.                                       |
-| `npm run eval:extraction`           | Runs real receipts through the configured LLM provider and scores extraction quality (costs money, never run in CI). |
-| `npm run eval:bootstrap -- <photo>` | Drafts an `.expected.json` for one receipt photo from a real extraction (see `eval/README.md`).                      |
+| Command                                                               | What it does                                                                                                         |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                                                         | Client and server in watch mode.                                                                                     |
+| `docker compose -f docker-compose.checks.yml run --build --rm checks` | The five checks in the image; this is what "done" means.                                                             |
+| `npm run build`                                                       | Production client bundle to `dist/client`.                                                                           |
+| `npm start`                                                           | Runs the server with `tsx` (production entry point).                                                                 |
+| `npm run lint`                                                        | ESLint over the whole project.                                                                                       |
+| `npm run typecheck`                                                   | `tsc --noEmit` for the client and server tsconfigs.                                                                  |
+| `npm test`                                                            | Vitest unit and API tests (no network, no cost).                                                                     |
+| `npm run format`                                                      | Prettier over the project (`format:check` only reports); `docs/` is excluded on purpose.                             |
+| `npm run db:generate`                                                 | Generates a Drizzle migration under `drizzle/` from `src/server/db/schema.ts`.                                       |
+| `npm run eval:extraction`                                             | Runs real receipts through the configured LLM provider and scores extraction quality (costs money, never run in CI). |
+| `npm run eval:bootstrap -- <photo>`                                   | Drafts an `.expected.json` for one receipt photo from a real extraction (see `eval/README.md`).                      |
 
 ## Deploy
 

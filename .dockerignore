@@ -1,7 +1,10 @@
+# The checks stage (T46) builds from this context, so `test/` has to stay in it: without the
+# tests `npm test` finds no files and exits 1, which reads exactly like a failing suite (E6).
+# The runtime stage copies `src`, `drizzle` and the start files by name, so nothing here
+# reaches the shipped image anyway.
 node_modules
 dist
 data
 .env
 docs/reviews/screenshots
-test
 eval/receipts
