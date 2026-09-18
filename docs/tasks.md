@@ -980,3 +980,37 @@ Acceptance criteria:
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval.
 
 Tests: the read-time guard in all four response shapes; the warning intact with the pointer set; other warnings untouched; the delete path proven against the database row rather than the API; delete with no referring row; delete of a receipt that itself points at another.
+
+---
+
+## T42 — Slipp et bilde på /scan
+
+Goal: an image dragged onto `/scan` from the file manager, the desktop or another window is uploaded exactly as one chosen through `Velg fra bilder`, with no second upload path and nothing added to the resting layout.
+
+Files: `src/client/pages/ScanPage.tsx`, `test/client/ScanPage.test.tsx`, `docs/architecture.md`, `docs/tasks.md`.
+
+Steps: see `docs/reviews/T42-plan.md`.
+
+Acceptance criteria:
+
+- Dropping two images uploads both, in the order dropped, with the same per-file states the file input produces; the file input itself is unchanged, through the same `enqueueFiles`.
+- Dropping a PDF alone uploads nothing and shows `Bare bilder kan lastes opp`; a PDF with an image uploads the image and shows the toast once.
+- The overlay appears on a `dragenter` carrying files, survives the pointer crossing child elements, and is gone after `dragleave` off the window and after a drop; a `dragenter` without `Files` leaves the page untouched.
+- With nothing being dragged the overlay is absent from the DOM, not transparent, and the listeners are gone after unmount.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval.
+
+Tests: two images in order; a non-image filtered with one toast; the file input after the refactor; the overlay's four states; no listeners after unmount. At least one test must be shown to fail without the implementation.
+
+---
+
+## T43 — Opplasting fra iPhone-delingsmenyen (held)
+
+Held by the foreman on 2026-09-18, not ready to start.
+
+Goal: a receipt image on the phone reaches the app from the iOS share sheet without opening the app first.
+
+Why it is held: iOS Safari has no Web Share Target, so the route is a Shortcut, and a Shortcut cannot carry the `kvitteringer_auth` cookie. That makes this task a second credential — a value pasted in plain text into a shortcut on a phone, which can add receipts to the household — and a new credential is an amendment to ADR-0009 and Ruben's decision, not the foreman's.
+
+Waiting on: Ruben's answer on whether the household wants that credential at all, and on the scope the foreman recommends — a token derived from `SESSION_SECRET` under its own label, sent in `X-Kvitteringer-Token`, accepted on `POST /api/receipts` and nowhere else, so a token on a lost phone can add to the pile but cannot read the household's receipts or images.
+
+The claim that a Shortcut cannot send `Cookie` is inferred from NSURLSession's reserved headers and has not been tested on a phone; it does not change the recommendation, since a credential that iOS may silently strip is not one to build an upload on.
