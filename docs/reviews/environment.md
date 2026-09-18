@@ -26,3 +26,20 @@ Acceptance: `rm -rf node_modules && npm ci` exits 0 with npm 12, and `node -e "n
 Reproduced in `training-log` on a fresh `node_modules`: the first `app.inject()` test timed out at 5 s, the second run took 160 ms, identical with the `forks` and `threads` pools.
 The pool is not the cause; Vitest 3 already defaults to `forks`.
 Mitigation: `testTimeout: 15000` in `vitest.config.ts`, with the comment "First Fastify boot on a cold module cache can exceed 5 s on Windows."
+
+## E3 — `node` is not on `PATH` in a fresh shell on this machine
+
+Verified by the foreman on 2026-09-18 while reviewing the subtractive design pass, and hit independently by the working session the same day.
+
+- nvm for Windows is installed with five versions under `%APPDATA%\nvm`, the newest `v24.21.0`, but the shim directory `C:\Program Files\nodejs` does not exist, so `node` and every `npm` script fail in a new shell: `npm` itself resolves and then dies with `The term 'node.exe' is not recognized`, exit 127. A run that "fails" that way has not run at all; read the exit code before believing a red result.
+- `nvm use` wants elevation and hangs on the UAC prompt in a non-interactive shell, so it is not the fix here.
+- The fix in a session: prepend `%APPDATA%\nvm\v24.21.0` to `PATH` once per shell (PowerShell: `$env:Path = "$env:APPDATA\nvm\v24.21.0;" + $env:Path`). Every script then behaves normally; that version carries npm 11.19.0.
+- E1 still applies on top of this: npm 11 cannot run `npm ci` here because of `better-sqlite3`, so a fresh install is `npx npm@12 ci`. Running the existing `node_modules` needs nothing beyond the `PATH` line.
+
+## E4 — Two sessions share one checkout
+
+The foreman session and the working session both operate in `C:\Code\apps\receipt-scanner`.
+A verification run is worthless if the tree moves under it, so the foreman verifies in its own `git worktree` outside the checkout and the checkout belongs to the working session.
+
+`gh` holds three accounts in one keyring (`rubenr_aboveit`, `rubenring`, `ruberino`) and `gh auth switch` changes the active one for every session at once; only `ruberino` can push to `ruberino/receipt-scanner`, and the others get a `403`.
+The repository is pinned with `git config --local credential.https://github.com.username ruberino` so a push survives the next flip.
