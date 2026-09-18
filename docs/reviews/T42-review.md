@@ -30,6 +30,9 @@ The mutation check reproduced: reverting only `ScanPage.tsx` to `main` leaves `7
 - The cleanup test in its first form — unmount, drop, assert nothing happened — also passed without the implementation, and the working session found that with the stash check and rewrote it to drop once before and once after the unmount. That is the rule earning its keep in its second task, and it is worth saying so here.
 - Clipboard paste falls out of the same `enqueueFiles` and is the useful sibling on a phone, where there is no drag at all. Noted as a follow-up in the pull request; it gets its own task.
 
-## Go-ahead
+## Go-ahead, 2026-09-18
 
-Pending F1. Add the checklist line, push, and report; the second pass is a read of one line and does not need another full run.
+F1 verified at `4e93d06`: the line is verbatim, it sits directly under `Scan a receipt from a phone camera.` so the two scan checks stand together, and `docs/release-checklist.md` is the only file in the commit — no code moved for a checklist line, which is what a second pass is for.
+CI is green on both jobs at that commit.
+Approved: merge with `gh pr merge --rebase --delete-branch`, then `git pull --ff-only`.
+Expect one more CI run first: this go-ahead is itself a commit and resets the requirement, and the checks take about half a minute to register on a new head before they start reporting.
