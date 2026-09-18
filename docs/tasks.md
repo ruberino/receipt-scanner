@@ -1034,3 +1034,25 @@ Acceptance criteria:
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval.
 
 Tests: one image pasted; the empty-name fallback; text only; a mixed paste; the drop and input after the change; no listener after unmount, proven with a paste before and a paste after. At least one test must be shown to fail without the implementation.
+
+---
+
+## T45 — En størrelsesvakt som faktisk begrenser
+
+Goal: the proposal context's size guard bounds what it claims to bound, and its log line says something true — issue #15, filed after the T37 real-data check, where the guard fired and the narrowing changed nothing.
+
+Files: `src/server/domain/proposalContext.ts`, its tests, `docs/architecture.md`, `docs/adr/0016-llm-shopping-list-proposal.md` if it states the old number, `docs/tasks.md`.
+
+Steps: see `docs/reviews/T45-plan.md`.
+
+Acceptance criteria:
+
+- A context that fits at full size is returned unchanged and logs nothing.
+- A fixture over the guard by product count alone, and one over it by purchases per product with few products, both come back under the guard, and the log names the step that got them there.
+- A fixture that no rung can bring under the guard is returned anyway with one `warn` naming the final length; every successful narrowing logs at `info`.
+- The ladder stops at the first rung that fits, and the narrowing stays pure and deterministic.
+- The log carries the real serialised length, before and after, so the characters-per-token ratio for this context can be derived against the `promptTokens` already recorded on every proposal.
+- `SIZE_GUARD_CHARS` is 120,000, marked in the code as provisional on that measurement.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval (the prompt, the schema, the model and the thinking mode are untouched).
+
+Tests: the four fixtures, the stop-at-first-rung case, the unchanged-when-it-fits case, and one asserting the logged lengths are real serialised lengths rather than estimates. At least one test must be shown to fail without the implementation.
