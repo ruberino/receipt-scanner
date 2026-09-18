@@ -129,7 +129,10 @@ export default function ScanPage() {
       ...current,
       ...items.map(({ id, file }) => ({
         id,
-        name: file.name,
+        // A picked or dropped file always carries a name; a pasted screenshot arrives as
+        // `image.png` in some browsers and as an empty string in others, and the row below renders
+        // this straight (T44). The name is display only.
+        name: file.name || 'Limt inn bilde',
         state: { kind: 'preparing' as const },
       })),
     ]);
@@ -205,6 +208,28 @@ export default function ScanPage() {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
+    };
+  }, [showToast]);
+
+  useEffect(() => {
+    function onPaste(event: ClipboardEvent) {
+      // No preventDefault: nothing on this page would otherwise receive the image, and a listener
+      // that takes every paste is one that breaks the search fields if it ever outlives the page.
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (files.length === 0) {
+        return;
+      }
+
+      const images = files.filter((file) => file.type.startsWith('image/'));
+      if (images.length < files.length) {
+        showToast('Bare bilder kan lastes opp');
+      }
+      enqueueFilesRef.current(images);
+    }
+
+    window.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('paste', onPaste);
     };
   }, [showToast]);
 
