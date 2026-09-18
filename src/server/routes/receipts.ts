@@ -30,6 +30,21 @@ const listQuerySchema = z.object({
 const receiptDateKey = sql`coalesce(${receipts.purchasedAt}, substr(${receipts.createdAt}, 1, 10))`;
 const MATCHING_WARNINGS: readonly MatchLinesWarning[] = ['UNMATCHED_LINES', 'MATCHING_FAILED'];
 
+/** `possible_duplicate_of` is `ON DELETE SET NULL`, so deleting the receipt a duplicate warning
+ * points at leaves `POSSIBLE_DUPLICATE` behind with nothing to name, and the label interpolates the
+ * null. The pointer is the warning: with no pointer the code is not reported. Reading it out here
+ * covers every response shape and every row already stored, without a migration. No other warning
+ * carries a foreign key, so no other warning gets this treatment (T41). */
+function withoutDanglingDuplicate(
+  warnings: string[],
+  possibleDuplicateOf: number | null,
+): string[] {
+  if (possibleDuplicateOf !== null) {
+    return warnings;
+  }
+  return warnings.filter((warning) => warning !== 'POSSIBLE_DUPLICATE');
+}
+
 /** Exported for the shopping list routes, which build a receipt summary for each linked receipt
  * (T39, ADR-0018). */
 export function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCount: number) {
@@ -40,7 +55,10 @@ export function toReceiptSummary(receipt: typeof receipts.$inferSelect, lineCoun
     purchasedAt: receipt.purchasedAt,
     totalOre: receipt.totalOre,
     lineCount,
-    warnings: JSON.parse(receipt.warningsJson) as string[],
+    warnings: withoutDanglingDuplicate(
+      JSON.parse(receipt.warningsJson) as string[],
+      receipt.possibleDuplicateOf,
+    ),
     errorMessage: receipt.errorMessage,
     possibleDuplicateOf: receipt.possibleDuplicateOf,
     reviewedAt: receipt.reviewedAt,
@@ -306,8 +324,29 @@ export default async function receiptsRoutes(
       throw new NotFoundError();
     }
 
+    // Clearing the referring rows has to happen before the delete: afterwards SQLite has already
+    // nulled their `possible_duplicate_of` and they can no longer be found. One transaction, so a
+    // crash cannot drop the receipt and leave the warning standing (T41).
     // receipt_images and receipt_lines cascade via their foreign keys (architecture.md section 6).
-    app.db.delete(receipts).where(eq(receipts.id, params.id)).run();
+    app.sqlite.transaction(() => {
+      const now = new Date().toISOString();
+      const referring = app.db
+        .select()
+        .from(receipts)
+        .where(eq(receipts.possibleDuplicateOf, params.id))
+        .all();
+      for (const other of referring) {
+        const warnings = (JSON.parse(other.warningsJson) as string[]).filter(
+          (warning) => warning !== 'POSSIBLE_DUPLICATE',
+        );
+        app.db
+          .update(receipts)
+          .set({ warningsJson: JSON.stringify(warnings), updatedAt: now })
+          .where(eq(receipts.id, other.id))
+          .run();
+      }
+      app.db.delete(receipts).where(eq(receipts.id, params.id)).run();
+    })();
 
     reply.status(204).send();
   });

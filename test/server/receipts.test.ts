@@ -507,4 +507,169 @@ describe('DELETE /api/receipts/:id', () => {
       app.db.select().from(receiptImages).where(eq(receiptImages.receiptId, id)).all(),
     ).toHaveLength(0);
   });
+
+  it('clears POSSIBLE_DUPLICATE from the stored warnings of the receipts pointing at this one', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const original = insertDoneReceipt();
+    const survivor = insertDoneReceipt({
+      warningsJson: JSON.stringify(['TOTAL_MISMATCH', 'POSSIBLE_DUPLICATE']),
+      possibleDuplicateOf: original,
+    });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/receipts/${original}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(204);
+    // Read the row rather than the response: the point of the delete-time cleanup is that the
+    // stored state matches what the read-time guard serves, so the guard stays a safety net.
+    const row = getReceipt(survivor)!;
+    expect(JSON.parse(row.warningsJson)).toEqual(['TOTAL_MISMATCH']);
+    expect(row.possibleDuplicateOf).toBeNull();
+    expect(row.updatedAt).not.toBe(NOW);
+  });
+
+  it('leaves other receipts alone when nothing points at the deleted one', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const other = insertDoneReceipt({
+      warningsJson: JSON.stringify(['POSSIBLE_DUPLICATE']),
+      possibleDuplicateOf: insertDoneReceipt(),
+    });
+    const unrelated = insertDoneReceipt();
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/receipts/${unrelated}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(204);
+    const row = getReceipt(other)!;
+    expect(JSON.parse(row.warningsJson)).toEqual(['POSSIBLE_DUPLICATE']);
+    expect(row.updatedAt).toBe(NOW);
+  });
+
+  it('deletes a receipt that itself points at another', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const original = insertDoneReceipt();
+    const duplicate = insertDoneReceipt({
+      warningsJson: JSON.stringify(['POSSIBLE_DUPLICATE']),
+      possibleDuplicateOf: original,
+    });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/receipts/${duplicate}`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(getReceipt(duplicate)).toBeUndefined();
+    expect(getReceipt(original)).toBeDefined();
+  });
+});
+
+/** `possible_duplicate_of` is `ON DELETE SET NULL`, so a household that deals with a duplicate the
+ * way the warning asks it to is left with a warning naming nothing (T41). */
+describe('POSSIBLE_DUPLICATE without a pointer', () => {
+  function insertDangling(): number {
+    return insertDoneReceipt({
+      warningsJson: JSON.stringify(['MISSING_STORE', 'POSSIBLE_DUPLICATE', 'TOTAL_MISMATCH']),
+      possibleDuplicateOf: null,
+    });
+  }
+
+  it('is left out of the list, keeping every other warning on the row', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertDangling();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/receipts',
+      headers: { cookie },
+    });
+
+    const row = response.json().find((r: { id: number }) => r.id === id);
+    expect(row.warnings).toEqual(['MISSING_STORE', 'TOTAL_MISMATCH']);
+  });
+
+  it('is left out of the detail', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertDangling();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/receipts/${id}`,
+      headers: { cookie },
+    });
+
+    expect(response.json().warnings).toEqual(['MISSING_STORE', 'TOTAL_MISMATCH']);
+    expect(response.json().possibleDuplicateOf).toBeNull();
+  });
+
+  it('is left out of the scan response', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const id = insertDoneReceipt({
+      status: 'uploaded',
+      warningsJson: JSON.stringify(['POSSIBLE_DUPLICATE']),
+      possibleDuplicateOf: null,
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/receipts/${id}/scan`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json().warnings).toEqual([]);
+    await app.receiptProcessor.drain();
+  });
+
+  it("is left out of a shopping list's linked receipts", async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const listId = insertDoneList();
+    const id = insertDoneReceipt({
+      warningsJson: JSON.stringify(['POSSIBLE_DUPLICATE']),
+      possibleDuplicateOf: null,
+      shoppingListId: listId,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/shopping-lists/${listId}`,
+      headers: { cookie },
+    });
+
+    const linked = response.json().receipts.find((r: { id: number }) => r.id === id);
+    expect(linked.warnings).toEqual([]);
+  });
+
+  it('is returned untouched while the pointer is set', async () => {
+    app = createTestApp();
+    cookie = await loginCookie(app);
+    const original = insertDoneReceipt();
+    const duplicate = insertDoneReceipt({
+      warningsJson: JSON.stringify(['POSSIBLE_DUPLICATE']),
+      possibleDuplicateOf: original,
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/receipts/${duplicate}`,
+      headers: { cookie },
+    });
+
+    expect(response.json().warnings).toEqual(['POSSIBLE_DUPLICATE']);
+    expect(response.json().possibleDuplicateOf).toBe(original);
+  });
 });
