@@ -960,3 +960,23 @@ Acceptance criteria:
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` pass; no extraction eval (no extraction prompt, model or schema change).
 
 Tests: fold with summed quantities, dates, units, suppressed child and parent, `variants`; candidates heuristic; trip with a parent map; proposal context `variants` and parser mapping; routes (`401`s, attach, detach, conflicts, group creation, duplicate name, candidates, detail of a parent, merge interactions); migration survival and `SET NULL`; engine end to end with grouped histories; client pages and flows.
+
+---
+
+## T41 — Et duplikatvarsel som peker på ingenting
+
+Goal: a receipt stops announcing `Ligner på kvittering #null` once the receipt it pointed at has been deleted — the case the household hits every time it deals with a duplicate the way the warning asks it to.
+
+Files: `src/server/routes/receipts.ts`, `docs/architecture.md`, `test/server/receipts.test.ts`.
+
+Steps: see `docs/reviews/T41-plan.md`.
+
+Acceptance criteria:
+
+- A receipt with `POSSIBLE_DUPLICATE` stored and `possible_duplicate_of` null returns `warnings` without that code from the list, the detail, the scan response and a shopping list's linked receipts; its other warnings survive.
+- With the pointer set, the warning and `possibleDuplicateOf` are returned exactly as today.
+- Deleting one of two duplicate receipts clears `POSSIBLE_DUPLICATE` from the survivor's stored `warnings_json`, not only from the response, and its warning count drops by one.
+- Deleting a receipt nothing points at, and deleting one that points at another, both still return `204` and leave other receipts' warnings alone.
+- `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, `npm run format:check` pass; no extraction eval.
+
+Tests: the read-time guard in all four response shapes; the warning intact with the pointer set; other warnings untouched; the delete path proven against the database row rather than the API; delete with no referring row; delete of a receipt that itself points at another.
