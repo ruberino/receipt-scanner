@@ -64,6 +64,17 @@ function imageFile(name: string): File {
   return new File(['x'], name, { type: 'image/jpeg' });
 }
 
+/** jsdom has no `ClipboardEvent` either, so the paste carries a stand-in with the one property the
+ * page reads. */
+function dispatchPaste(files: File[]) {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', { value: { files } });
+  act(() => {
+    window.dispatchEvent(event);
+  });
+  return event;
+}
+
 function selectFiles(names: string[]) {
   const files = names.map((name) => new File(['x'], name, { type: 'image/jpeg' }));
   const input = screen.getByTestId('library-input');
@@ -404,6 +415,94 @@ describe('ScanPage', () => {
 
       unmount();
       dispatchDrag('drop', [imageFile('b.jpg')]);
+
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  describe('pasting an image on the page (T44)', () => {
+    it('uploads a pasted image', async () => {
+      const { mutateAsync, calls } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchPaste([imageFile('skjermbilde.png')]);
+
+      await waitFor(() => expect(screen.getByText('skjermbilde.png')).toBeInTheDocument());
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        callAt(calls, 0).resolve({ id: 1 });
+      });
+      await waitFor(() => expect(screen.getByText('Lastet opp')).toBeInTheDocument());
+    });
+
+    it('calls a pasted image with no filename "Limt inn bilde" and uploads it', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchPaste([new File(['x'], '', { type: 'image/png' })]);
+
+      await waitFor(() => expect(screen.getByText('Limt inn bilde')).toBeInTheDocument());
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    });
+
+    it('ignores a paste that carries no files, and still takes the next one that does', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      renderScanPage();
+
+      // Pasting text must do nothing at all — no upload and no toast. The image that follows is
+      // what makes this a test of the filter rather than of an absent listener.
+      dispatchPaste([]);
+
+      expect(mutateAsync).not.toHaveBeenCalled();
+      expect(screen.queryByText('Bare bilder kan lastes opp')).not.toBeInTheDocument();
+
+      dispatchPaste([imageFile('etterpa.png')]);
+
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    });
+
+    it('uploads only the image in a mixed paste and says so once', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchPaste([
+        new File(['x'], 'kvittering.pdf', { type: 'application/pdf' }),
+        imageFile('bilde.jpg'),
+      ]);
+
+      await waitFor(() =>
+        expect(screen.getByText('Bare bilder kan lastes opp')).toBeInTheDocument(),
+      );
+      expect(screen.getAllByText('Bare bilder kan lastes opp')).toHaveLength(1);
+      expect(screen.getByText('bilde.jpg')).toBeInTheDocument();
+      expect(screen.queryByText('kvittering.pdf')).not.toBeInTheDocument();
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    });
+
+    it('uploads nothing when the paste carries files but no image', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      renderScanPage();
+
+      dispatchPaste([new File(['x'], 'kvittering.pdf', { type: 'application/pdf' })]);
+
+      await waitFor(() =>
+        expect(screen.getByText('Bare bilder kan lastes opp')).toBeInTheDocument(),
+      );
+      expect(mutateAsync).not.toHaveBeenCalled();
+    });
+
+    it('stops listening once the page is gone', async () => {
+      const { mutateAsync } = mockControllableUpload();
+      const { unmount } = renderScanPage();
+
+      // As in T42: the first paste proves the listener was there to be removed, so the second is
+      // evidence of cleanup rather than of nothing having been wired up.
+      dispatchPaste([imageFile('a.png')]);
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+
+      unmount();
+      dispatchPaste([imageFile('b.png')]);
 
       await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
     });
